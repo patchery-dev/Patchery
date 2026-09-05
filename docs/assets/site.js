@@ -1,28 +1,23 @@
 /* ============================================================================
    Patchery — docs/assets/site.js
 
-   Motion is Framer Motion's animation engine in its standalone browser build
-   (motion.dev), so the springs here are the same ones the React version uses —
-   without React, and without a build step. Everything degrades to plain CSS if
-   the CDN is unreachable or the visitor asks for reduced motion.
+   No animation library. No smooth-scroll library. Nothing here decides whether
+   anything is visible — the stylesheet already renders a complete, readable
+   page on its own, and every custom property this file writes has an initial
+   value that means "nothing has happened yet".
+
+   That is not minimalism for its own sake. An earlier build hid all of its
+   content in CSS and handed the job of revealing it to JavaScript springs
+   running on the animation frame loop. When that loop stalled — a busy laptop,
+   a background tab, one dropped frame — the page froze part-way and stayed
+   black. Everything below is written so that failing to run is survivable.
    ========================================================================== */
 (function () {
   "use strict";
 
-  var M = window.Motion || null;
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var fine = window.matchMedia("(pointer: fine)").matches;
-  var animated = !!M && !reduced;
-
-  if (reduced) document.documentElement.classList.add("no-motion");
-
   var $  = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
-
-  /* One spring for entrances, one for anything that follows the pointer. The
-     whole page moves with the same physics instead of a dozen ad-hoc easings. */
-  var ENTER  = { type: "spring", stiffness: 150, damping: 22, mass: 0.7 };
-  var LIFT   = { type: "spring", stiffness: 120, damping: 19, mass: 0.8 };
 
   /* ══════════════════════════  boot  ══════════════════════════ */
 
@@ -35,9 +30,7 @@
     setTimeout(function () {
       if (boot) boot.classList.add("is-done");
       document.body.classList.remove("is-loading");
-      revealHero();
-      watchReveals();
-    }, reduced ? 0 : 260);
+    }, reduced ? 0 : 240);
   }
 
   if (bootBar && !reduced) {
@@ -56,30 +49,13 @@
     else window.addEventListener("load", res, { once: true });
   }));
   Promise.all(ready).then(finishBoot);
-  setTimeout(finishBoot, reduced ? 0 : 2600);   // never hold the page hostage
+  setTimeout(finishBoot, reduced ? 0 : 2400);   // never hold the page hostage
 
-  /* ══════════════════════════  smooth scroll  ══════════════════════════ */
-
-  /* No smooth-scroll library, deliberately.
-
-     A momentum-scroll library swallows the wheel event and then does the
-     scrolling itself on the animation frame loop. When that loop stalls, the
-     event has already been consumed and the replacement never happens: the
-     page simply stops scrolling. Trading the browser's own scrolling — which
-     cannot break, and which already honours the reader's operating-system
-     settings — for a slightly softer feel is a bad bargain on any page, and an
-     absurd one on a page whose entire argument is that things should be
-     verifiable rather than merely pleasant.
-
-     In-page links get smooth behaviour from CSS scroll-behavior instead, with
-     scroll-margin-top on the targets to clear the fixed header. */
-
-  /* ══════════════════════  nav, folio, paper mode  ══════════════════════ */
+  /* ══════════════════  chrome, folio, progress  ══════════════════ */
 
   var nav = $("#nav");
-  var folio = $("#folio");
-  var folioNow = $("#folioNow");
-  var folioName = $("#folioName");
+  var folio = $("#folio"), folioNow = $("#folioNow"), folioName = $("#folioName");
+  var fillEl = $("#scrollbarFill");
   var sections = $$("[data-folio]");
   var lastY = 0, lastFolio = "";
 
@@ -92,13 +68,9 @@
     }
     lastY = y;
 
-    // Which section owns the line just under the header?
-    var probe = y + 90;
-    var here = null;
+    var probe = y + 90, here = null;
     for (var i = 0; i < sections.length; i++) {
-      var s = sections[i];
-      var top = s.offsetTop;
-      if (probe >= top) here = s;
+      if (probe >= sections[i].offsetTop) here = sections[i];
     }
     if (!here) here = sections[0];
     if (!here) return;
@@ -108,127 +80,37 @@
       lastFolio = id;
       if (folioNow) folioNow.textContent = id;
       if (folioName) folioName.textContent = here.getAttribute("data-folio-name") || "";
-
     }
 
-    // The inverted section needs the fixed chrome to invert with it.
     var onPaper = here.hasAttribute("data-invert");
     if (nav) nav.classList.toggle("on-paper", onPaper);
     if (folio) folio.classList.toggle("on-paper", onPaper);
   }
 
-  /* One scroll listener, coalesced to a frame, drives the header, the folio,
-     the progress bar and the pinned run. Scroll position is the single source
-     of truth: every one of these is a pure function of scrollY, so it cannot
-     drift out of sync or get stuck part-way the way a timed animation can. */
-  var fillEl = $("#scrollbarFill");
-  var lastRun = -1;
+  /* ══════════════════  the vanishing line  ══════════════════
 
-  function onScroll() {
-    rescueVisible();
-    chromeUpdate();
-    if (fillEl) {
-      var max = document.documentElement.scrollHeight - window.innerHeight;
-      fillEl.style.transform = "scaleX(" + (max > 0 ? window.scrollY / max : 0).toFixed(4) + ")";
-    }
-    pipeUpdate();
-  }
+     Where the browser supports scroll-driven animation the whole effect is in
+     the stylesheet, running on the compositor, and this does nothing. Where it
+     does not, the same three properties are written from scroll position —
+     still a pure function of where the page is, never of elapsed time, so it
+     cannot end up stranded half-finished. */
 
-  /* Throttled on the clock, not on requestAnimationFrame.
+  var vanish = $("#vanish");
+  var vanishNative = window.CSS && CSS.supports && CSS.supports("animation-timeline: view()");
 
-     rAF only fires when the browser is actually rendering. Coalescing scroll
-     work into it means that on a machine that has stopped painting — which is
-     precisely when things go wrong — the handler never runs at all, and the
-     page is left in whatever state it was in. A timestamp throttle keeps the
-     cost the same and has no such failure mode. Every function called here is
-     a pure function of scroll position, so running it late is harmless and
-     running it never is not an option. */
-  window.addEventListener("scroll", function () {
-    var now = performance.now();
-    if (now - lastRun < 8) return;
-    lastRun = now;
-    onScroll();
-  }, { passive: true });
-  window.addEventListener("resize", onScroll, { passive: true });
+  function vanishUpdate() {
+    if (!vanish || vanishNative || reduced) return;
+    var r = vanish.getBoundingClientRect();
+    var h = window.innerHeight;
+    var t = Math.min(1, Math.max(0, 1 - (r.top + r.height * 0.35) / (h * 0.75)));
 
-  /* ══════════════════════════  reveals  ══════════════════════════ */
+    var strike = t < 0.38 ? t / 0.38 : t < 0.72 ? 1 : Math.max(0, 1 - (t - 0.72) / 0.28);
+    var erase  = t < 0.38 ? 0 : Math.min(1, (t - 0.38) / 0.34);
+    var note   = t < 0.72 ? 0 : Math.min(1, 0.35 + 0.65 * ((t - 0.72) / 0.28));
 
-  /* Reveals are a CSS transition switched on by a class, never a JavaScript
-     animation. This is not a style preference — it is the difference between a
-     page that always ends up readable and one that does not.
-
-     A JS-driven spring holds the element at opacity 0 and walks it to 1 frame
-     by frame. If the frame loop stalls even once — a background tab, a slow
-     device, a dropped frame — the element stays stuck at whatever opacity it
-     had reached, forever. That is exactly what was happening: content frozen
-     at 0.19 opacity, present in the DOM, invisible on screen, and never
-     recovering. A CSS transition runs on the compositor and finishes whether
-     or not the main thread is busy. */
-  var pending = [];
-  var rescueVisible = function () {};
-
-  function watchReveals() {
-    var items = $$("[data-reveal]").filter(function (el) { return !el.closest("#hero"); });
-
-    var show = function (el) { el.classList.add("is-in"); };
-
-    if (!("IntersectionObserver" in window)) {
-      items.forEach(show);
-    } else {
-      var io = new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) {
-          if (!e.isIntersecting) return;
-          show(e.target);
-          io.unobserve(e.target);
-        });
-      }, { rootMargin: "0px 0px -8% 0px", threshold: 0.04 });
-      items.forEach(function (el) { io.observe(el); });
-    }
-
-    /* The observer is an optimisation, not the guarantee.
-
-       IntersectionObserver callbacks are delivered as part of the browser's
-       rendering steps. If rendering stalls — a busy machine, a background tab,
-       a compositor hiccup — the callbacks simply never arrive and every
-       element stays hidden with no way back. So the real mechanism is the
-       scroll handler below, which is plain arithmetic on getBoundingClientRect
-       and cannot be starved. Elements drop out of the list once revealed, so
-       this costs nothing after the first pass. */
-    pending = items.slice();
-    rescueVisible = function () {
-      if (!pending.length) return;
-      var still = [];
-      for (var i = 0; i < pending.length; i++) {
-        var el = pending[i], r = el.getBoundingClientRect();
-        if (r.top < window.innerHeight && r.bottom > 0) show(el);
-        else still.push(el);
-      }
-      pending = still;
-    };
-    document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) rescueVisible();
-    });
-    window.addEventListener("pageshow", rescueVisible);
-    rescueVisible();
-
-    // Headlines built from masked lines get their own staggered slide-up the
-    // first time they come into view.
-    $$(".thesis__h").forEach(function (h) {
-      if (!("IntersectionObserver" in window)) { h.classList.add("is-revealed"); return; }
-      var io = new IntersectionObserver(function (e) {
-        if (!e[0].isIntersecting) return;
-        h.classList.add("is-revealed");
-        io.disconnect();
-      }, { threshold: 0.25 });
-      io.observe(h);
-      setTimeout(function () { h.classList.add("is-revealed"); }, 3000);
-    });
-  }
-
-  function revealHero() {
-    var title = $(".hero__title");
-    if (title) title.classList.add("is-revealed");
-    $$("#hero [data-reveal]").forEach(function (el) { el.classList.add("is-in"); });
+    vanish.style.setProperty("--strike", (strike * 100).toFixed(1) + "%");
+    vanish.style.setProperty("--erase",  (erase  * 100).toFixed(1) + "%");
+    vanish.style.setProperty("--note",   note.toFixed(3));
   }
 
   /* ══════════════════════════  the pinned run  ══════════════════════════ */
@@ -243,11 +125,7 @@
   function setStep(n) {
     if (n === current) return;
     current = n;
-
     screens.forEach(function (s, i) {
-      // Whether a step is on screen is a class, not an animation. Same reason
-      // as the reveals: a stalled frame loop must never be able to hide it.
-      s.style.opacity = ""; s.style.transform = "";
       s.classList.toggle("is-on", i === n);
       s.classList.toggle("is-back", i > n);
     });
@@ -263,16 +141,15 @@
     var r = track.getBoundingClientRect();
     var span = r.height - window.innerHeight;
     if (span <= 0) return;
-    var p = Math.min(1, Math.max(0, -r.top / span));
-    setStep(Math.min(STEPS - 1, Math.floor(p * STEPS)));
+    var t = Math.min(1, Math.max(0, -r.top / span));
+    setStep(Math.min(STEPS - 1, Math.floor(t * STEPS)));
   }
 
   function handleLayout() {
     current = -1;
     if (stacked.matches) {
       screens.forEach(function (s, i) {
-        s.classList.remove("is-on");
-        s.style.opacity = ""; s.style.transform = "";
+        s.classList.remove("is-on", "is-back");
         onStepEnter(i);
       });
       railItems.forEach(function (r) { r.classList.remove("is-on", "is-past"); });
@@ -280,11 +157,10 @@
       pipeUpdate();
     }
   }
-
   stacked.addEventListener ? stacked.addEventListener("change", handleLayout)
                            : stacked.addListener(handleLayout);
 
-  /* ── per-step animations ─────────────────────────────────────────────── */
+  /* ── per-step detail ── */
 
   var timers = {};
 
@@ -317,38 +193,59 @@
 
     var shared = 0;
     while (shared < FROM.length && FROM[shared] === TO[shared]) shared++;
-
     el.textContent = FROM;
     var n = FROM.length;
 
     function erase() {
       if (n > shared) { el.textContent = FROM.slice(0, --n); rewriteTimer = setTimeout(erase, 42); }
-      else rewriteTimer = setTimeout(write, 260);
+      else rewriteTimer = setTimeout(write, 240);
     }
     function write() {
-      if (n >= TO.length) {
-        if (animated) M.animate(el, { scale: [1, 1.07, 1] }, { duration: 0.5, ease: "easeOut" });
-        return;
-      }
+      if (n >= TO.length) return;
       el.textContent = TO.slice(0, ++n);
-      rewriteTimer = setTimeout(write, 58);
+      rewriteTimer = setTimeout(write, 56);
     }
-    rewriteTimer = setTimeout(erase, 1400);
+    rewriteTimer = setTimeout(erase, 1300);
   }
 
   function onStepEnter(n) {
     var scr = screens[n];
     if (!scr) return;
-
     var typed = $("code[data-type]", scr);
-    if (typed) typeLines(typed, 52);
-
+    if (typed) typeLines(typed, 50);
     if (n === 1) {
       var rw = $("#rewrite", scr);
       if (rw) runRewrite(rw);
     }
-
   }
+
+  /* ══════════════════  one scroll driver  ══════════════════
+
+     Throttled on the clock rather than coalesced into requestAnimationFrame.
+     rAF only fires while the browser is rendering, so putting scroll work
+     inside it means the handler stops exactly when things are going wrong.
+     Everything below is a pure function of scroll position; running it late is
+     harmless, and running it never is not an option. */
+
+  var lastRun = -1;
+
+  function onScroll() {
+    chromeUpdate();
+    if (fillEl) {
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      fillEl.style.transform = "scaleX(" + (max > 0 ? window.scrollY / max : 0).toFixed(4) + ")";
+    }
+    pipeUpdate();
+    vanishUpdate();
+  }
+
+  window.addEventListener("scroll", function () {
+    var now = performance.now();
+    if (now - lastRun < 8) return;
+    lastRun = now;
+    onScroll();
+  }, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
 
   /* ══════════════════════════  the guard  ══════════════════════════ */
 
@@ -366,20 +263,20 @@
     return null;
   }
 
-  /* Same verdicts, said the way the rest of the page talks. */
-  var PLAIN = {
-    "inside node_modules":       "an installed library",
-    "test file":                 "one of your tests",
-    "inside a test directory":   "inside a test folder",
-    "CI configuration":          "your build settings",
-    "lockfile":                  "the file that pins your versions"
-  };
-
   /* Handed to audit.js, which fetches guard.mjs from GitHub and checks that
      what is running here really is what is in the repository. */
   window.PatcheryGuard = protectedReason;
 
-  var gForm  = $("#guardForm"), gInput = $("#guardInput"), gList = $("#guardList");
+  /* The same verdicts, said the way the rest of the page talks. */
+  var PLAIN = {
+    "inside node_modules":     "an installed library",
+    "test file":               "one of your tests",
+    "inside a test directory": "inside a test folder",
+    "CI configuration":        "your build settings",
+    "lockfile":                "the file that pins your versions"
+  };
+
+  var gForm = $("#guardForm"), gInput = $("#guardInput"), gList = $("#guardList");
   var gEmpty = $("#guardEmpty"), gCount = $("#guardCount");
   var gVerdict = $("#guardVerdict"), gText = $("#guardVerdictText");
   var staged = [], lastVerdict = "idle";
@@ -390,10 +287,10 @@
     });
   }
 
-  function renderGuard(justAdded) {
+  function renderGuard() {
     if (!gList) return;
 
-    gList.innerHTML = staged.map(function (path, i) {
+    gList.innerHTML = staged.map(function (path) {
       var why = protectedReason(path);
       return '<li><div class="guard__row ' + (why ? "is-bad" : "is-ok") + '">' +
                '<span class="g-sign">' + (why ? "&#10005;" : "&#10003;") + "</span>" +
@@ -409,21 +306,17 @@
     var blocked = staged.filter(function (path) { return !!protectedReason(path); });
     var verdict, text;
 
-    if (!staged.length) {
-      verdict = "idle"; text = "waiting";
-    } else if (blocked.length) {
+    if (!staged.length) { verdict = "idle"; text = "waiting"; }
+    else if (blocked.length) {
       verdict = "fail";
       text = "the whole attempt is thrown away — " + blocked.length +
              (blocked.length === 1 ? " file was off-limits" : " files were off-limits");
-    } else {
-      verdict = "pass"; text = "allowed through — your tests run again from scratch";
-    }
+    } else { verdict = "pass"; text = "allowed through — your tests run again from scratch"; }
 
     gVerdict.setAttribute("data-verdict", verdict);
     gText.textContent = text;
 
     if (verdict === "fail" && verdict !== lastVerdict) {
-      // a CSS keyframe, so a stalled frame loop cannot leave it shunted sideways
       gVerdict.classList.remove("is-shaken");
       void gVerdict.offsetWidth;
       gVerdict.classList.add("is-shaken");
@@ -435,7 +328,7 @@
     path = String(path || "").trim().replace(/^\.\//, "");
     if (!path || staged.indexOf(path) !== -1) return;
     staged.push(path);
-    renderGuard(true);
+    renderGuard();
   }
 
   if (gForm) {
@@ -447,25 +340,20 @@
     });
   }
   $$(".guard__chips button").forEach(function (b) {
-    b.addEventListener("click", function () {
-      stage(b.getAttribute("data-path"));
-      if (animated) M.animate(b, { scale: [1, 0.93, 1] }, { duration: 0.28 });
-    });
+    b.addEventListener("click", function () { stage(b.getAttribute("data-path")); });
   });
   if (gList) {
     gList.addEventListener("click", function (e) {
       var btn = e.target.closest("[data-rm]");
       if (!btn) return;
-      // Identify the row by its path, not its index: the list re-renders on
-      // every change, so an index captured a moment ago can point at a
-      // different file by the time the click lands.
+      // keyed by path, not by index: the list re-renders on every change
       var at = staged.indexOf(btn.getAttribute("data-rm"));
       if (at === -1) return;
       staged.splice(at, 1);
-      renderGuard(false);
+      renderGuard();
     });
   }
-  renderGuard(false);
+  renderGuard();
 
   /* ══════════════════════════  ticker + marquee  ══════════════════════════ */
 
@@ -561,11 +449,10 @@
       var done = function (ok) {
         copyBtn.textContent = ok ? "copied" : "select it";
         copyBtn.classList.toggle("is-done", ok);
-        if (animated && ok) M.animate(copyBtn, { scale: [1, 1.1, 1] }, { duration: 0.35 });
         setTimeout(function () {
           copyBtn.textContent = "copy";
           copyBtn.classList.remove("is-done");
-        }, 1900);
+        }, 1800);
       };
       if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(YML).then(function () { done(true); }, function () { done(false); });
@@ -580,62 +467,6 @@
         document.body.removeChild(ta);
         done(ok);
       }
-    });
-  }
-
-  /* ══════════════════════════  cursor + magnets  ══════════════════════════ */
-
-  /* Pointer following is done by hand, in one frame loop, writing transforms
-     directly. Starting a fresh spring on every pointermove event meant
-     allocating a hundred animation objects a second and asking the engine to
-     interrupt and blend all of them — it was the single most expensive thing
-     on the page after the compositing layers. */
-  if (fine && animated && window.innerWidth >= 1000) {
-    var cur = $("#cursor");
-    var magnets = $$(".magnetic");
-    var mx = innerWidth / 2, my = innerHeight / 2, cx = mx, cy = my;
-    var held = null, hx = 0, hy = 0, tx = 0, ty = 0;
-
-    window.addEventListener("pointermove", function (e) {
-      mx = e.clientX; my = e.clientY;
-      cur.classList.add("is-on");
-
-      var t = e.target;
-      var near = function (sel) { return !!(t.closest && t.closest(sel)); };
-      cur.classList.toggle("is-link", near("a, button"));
-      cur.classList.toggle("is-text", near("pre, input"));
-
-      var over = t.closest && t.closest(".magnetic");
-      if (over !== held) { if (held) { tx = ty = 0; } held = over; }
-      if (held) {
-        var r = held.getBoundingClientRect();
-        tx = (mx - (r.left + r.width / 2)) * 0.2;
-        ty = (my - (r.top + r.height / 2)) * 0.32;
-      }
-    }, { passive: true });
-
-    document.addEventListener("pointerleave", function () { cur.classList.remove("is-on"); });
-
-    (function follow() {
-      requestAnimationFrame(follow);
-      if (document.hidden) return;
-      cx += (mx - cx) * 0.19;
-      cy += (my - cy) * 0.19;
-      cur.style.transform = "translate3d(" + cx.toFixed(1) + "px," + cy.toFixed(1) + "px,0)";
-
-      if (!held) { tx = ty = 0; }
-      hx += (tx - hx) * 0.16;
-      hy += (ty - hy) * 0.16;
-      for (var i = 0; i < magnets.length; i++) {
-        var el = magnets[i];
-        if (el === held) el.style.transform = "translate3d(" + hx.toFixed(2) + "px," + hy.toFixed(2) + "px,0)";
-        else if (el.style.transform) el.style.transform = "";
-      }
-    })();
-
-    $$(".proofcard").forEach(function (card) {
-      card.addEventListener("pointerenter", function () { M.animate(card, { y: -5 }, LIFT); });
-      card.addEventListener("pointerleave", function () { M.animate(card, { y: 0 }, LIFT); });
     });
   }
 

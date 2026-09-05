@@ -29,7 +29,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script>document.documentElement.classList.add("js");</script>
 <link rel="stylesheet" href="assets/site.css">
 </head>
 
@@ -89,73 +88,77 @@
 <main id="top">
 
 <!-- ═══════════════════  01 · HERO  ═══════════════════ -->
+<!-- Three bands separated by full-bleed hairlines. No artwork, no scroll cue,
+     no filled buttons. Exactly one word on this screen is teal — "proves" —
+     because that word is the product. -->
 <section class="hero" id="hero" data-folio="01" data-folio-name="Patchery">
-  <div class="hero__veil" aria-hidden="true"></div>
 
-  <div class="hero__type">
-    <p class="eyebrow" data-reveal><span class="dot"></span>A GitHub Action <i>·</i> MIT <i>·</i> early</p>
+  <p class="hero__slug">
+    <span>Patchery</span><i></i><span>GitHub Action</span><i></i><span>npm</span><i></i><span>MIT</span><i></i><span>early</span>
+  </p>
 
-    <h1 class="hero__title">
-      <span class="line"><span>When a dependency</span></span>
-      <span class="line"><span>breaks your code,</span></span>
-      <span class="line"><span class="mend">Patchery fixes it</span></span>
-      <span class="line"><span>and <em>proves</em> the fix.</span></span>
-    </h1>
-  </div>
+  <h1 class="display display--hero">
+    <span class="line"><span>When a dependency</span></span>
+    <span class="line"><span>breaks your code,</span></span>
+    <span class="line"><span>Patchery fixes it</span></span>
+    <span class="line"><span>and <em class="accent">proves</em> the fix.</span></span>
+  </h1>
 
-  <!-- A specimen strip rather than a hero paragraph: ruled columns of plain
-       fact, the way a datasheet states things. -->
-  <div class="spec">
-    <div class="spec__col spec__col--wide">
-      <span class="spec__k">In plain words</span>
-      <p>
-        Your project runs on other people&rsquo;s code. When they change how it works, your app
-        stops working. Patchery finds what broke, rewrites the lines that need rewriting, and
-        checks the result against your own tests before it shows you anything — and throws its
-        own work away if that check goes badly.
-      </p>
-    </div>
+  <!-- Specimen strip: facts with units, and not one adjective. -->
+  <div class="strip">
+    <p class="strip__plain">
+      Your project runs on other people&rsquo;s code. When they change how it works, your app
+      stops working. Patchery finds what broke, rewrites the lines that need rewriting, and
+      checks the result against your own tests before it shows you anything — and throws its
+      own work away if that check goes badly.
+    </p>
 
-    <div class="spec__col">
-      <span class="spec__k">See for yourself</span>
-      <div class="spec__cta">
-        <a class="btn btn--primary magnetic" href="https://github.com/patchery-dev/Patchery/pull/2">
-          <span>The pull request it opened</span>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/></svg>
-        </a>
-        <a class="btn btn--ghost magnetic" href="https://github.com/patchery-dev/Patchery"><span>Read the source</span></a>
-      </div>
-    </div>
+    <ul class="strip__facts">
+      <li><b>1</b><span>pull request it opened on its own</span></li>
+      <li><b>$0.1213</b><span>what that run cost, end to end</span></li>
+      <li><b>0</b><span>users, customers, logos</span></li>
+      <li><b>MIT</b><span>every line of it public</span></li>
+    </ul>
 
-    <div class="spec__col">
-      <span class="spec__k">What exists today</span>
-      <ul class="spec__facts">
-        <li><b>1</b><span>pull request it opened on its own</span></li>
-        <li><b>$0.12</b><span>what that run cost, end to end</span></li>
-        <li><b>0</b><span>users, customers or logos to show you</span></li>
-      </ul>
-    </div>
+    <p class="strip__go">
+      <a class="go" href="https://github.com/patchery-dev/Patchery/pull/2">
+        <span>Read the pull request it opened</span>
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/></svg>
+      </a>
+      <a class="go go--quiet" href="https://github.com/patchery-dev/Patchery"><span>Read the source</span></a>
+    </p>
   </div>
 </section>
 
 <!-- ═══════════════════  02 · THE THESIS  ═══════════════════ -->
 <section class="thesis" id="thesis" data-folio="02" data-folio-name="The idea">
   <div class="shell">
-    <div class="sechead" data-reveal>
+    <div class="sechead">
       <span class="sechead__idx">02</span>
       <span class="sechead__rule"></span>
       <span class="sechead__label">Why this is harder than it looks</span>
     </div>
 
-    <h2 class="thesis__h">
+    <!-- The vanishing line. Scroll strikes the last line through, eats the
+         words left to right, then withdraws the rule and leaves a held blank
+         with one note in the margin. Every custom property involved has an
+         initial value that renders the sentence INTACT, so with no JavaScript
+         and no scroll-driven animation this is simply a headline. -->
+    <h2 class="display display--thesis" id="vanish">
       <span class="line"><span>Tell an AI to</span></span>
       <span class="line"><span>make the tests pass.</span></span>
       <span class="line"><span>It might just</span></span>
-      <span class="line"><span class="fail">delete them.</span></span>
+      <span class="line line--vanish">
+        <span class="vanish">
+          <span class="vanish__word">delete them.</span>
+          <i class="vanish__rule" aria-hidden="true"></i>
+        </span>
+        <small class="vanish__note">// 4 tests removed &middot; suite green</small>
+      </span>
     </h2>
 
     <div class="thesis__grid">
-      <div class="thesis__col" data-reveal>
+      <div class="thesis__col">
         <span class="spec__k">This is not a hypothetical</span>
         <p>
           Deleting the test is the cheapest way to satisfy the instruction, so it is the one an
@@ -171,7 +174,7 @@
         </p>
       </div>
 
-      <div class="thesis__col" data-reveal>
+      <div class="thesis__col">
         <span class="spec__k">Why anyone needs it now</span>
         <p>
           The libraries underneath modern software change faster than the teams using them can
@@ -226,7 +229,7 @@
         <div class="pipe__screens" id="screens">
 
           <!-- 01 -->
-          <figure class="scr is-on" data-scr="0">
+          <figure class="scr is-on" data-scr="0" data-num="01">
             <div class="scr__bar"><span class="scr__tag">step 01</span><span class="scr__path">your test command</span><span class="scr__state fail">failed</span></div>
             <pre class="term"><code data-type>$ npm test
 
@@ -245,7 +248,7 @@ node_modules/fake-lib/index.js:3
           </figure>
 
           <!-- 02 -->
-          <figure class="scr" data-scr="1">
+          <figure class="scr" data-scr="1" data-num="02">
             <div class="split">
               <div class="split__col">
                 <div class="scr__bar"><span class="scr__tag">reading</span><span class="scr__path">what the library changed</span></div>
@@ -280,7 +283,7 @@ node_modules/fake-lib/index.js:3
           </figure>
 
           <!-- 03 -->
-          <figure class="scr" data-scr="2">
+          <figure class="scr" data-scr="2" data-num="03">
             <div class="scr__bar"><span class="scr__tag">step 03</span><span class="scr__path">every file it touched</span><span class="scr__state ok">clean</span></div>
             <pre class="term"><code>changed on disk:
 <i class="gl" data-gl="0">  app.js                       <b class="t-ok">allowed</b></i>
@@ -296,7 +299,7 @@ checked, and untouched:
           </figure>
 
           <!-- 04 -->
-          <figure class="scr" data-scr="3">
+          <figure class="scr" data-scr="3" data-num="04">
             <div class="scr__bar"><span class="scr__tag">step 04</span><span class="scr__path">your test command, again</span><span class="scr__state ok">passed</span></div>
             <pre class="term"><code data-type>$ npm test
 
@@ -308,7 +311,7 @@ checked, and untouched:
           </figure>
 
           <!-- 05 -->
-          <figure class="scr" data-scr="4">
+          <figure class="scr" data-scr="4" data-num="05">
             <div class="prcard">
               <div class="prcard__top">
                 <span class="prcard__badge">Open</span>
@@ -340,25 +343,25 @@ checked, and untouched:
 <!-- ═══════════════════  04 · THE GUARD  ═══════════════════ -->
 <section class="guard" id="guard" data-folio="04" data-folio-name="Try to break it">
   <div class="shell">
-    <div class="sechead" data-reveal>
+    <div class="sechead">
       <span class="sechead__idx">04</span>
       <span class="sechead__rule"></span>
       <span class="sechead__label">The part that matters, in your hands</span>
     </div>
 
-    <p class="plain" data-reveal><span class="plain__k">In plain terms</span>Some files are off-limits, and touching one throws away the whole attempt — including a fix that worked.</p>
+    <p class="plain"><span class="plain__k">In plain terms</span>Some files are off-limits, and touching one throws away the whole attempt — including a fix that worked.</p>
 
     <div class="guard__head">
-      <h2 data-reveal>Try to<br>break it.</h2>
+      <h2>Try to<br>break it.</h2>
       <div>
-        <p data-reveal>
+        <p>
           The off-limits list is short: your tests, the file that pins your versions, your
           build settings, and the installed libraries themselves. Those are the four ways an
           AI could make a broken project look fixed, so none of them may move. Two more rules
           sit alongside them — nothing may be deleted, and nothing outside the folder you
           pointed it at may be touched at all.
         </p>
-        <p class="guard__sub" data-reveal>
+        <p class="guard__sub">
           The box below runs the real check — the same few lines that run inside
           <a class="ilink" href="https://github.com/patchery-dev/Patchery/blob/main/scripts/guard.mjs">Patchery&rsquo;s source</a>,
           copied character for character, not a demo of it. Give it any file path and see what
@@ -367,7 +370,7 @@ checked, and untouched:
       </div>
     </div>
 
-    <div class="guard__panel" data-reveal>
+    <div class="guard__panel">
       <div class="guard__io">
         <form class="guard__form" id="guardForm" autocomplete="off">
           <label class="guard__prompt" for="guardInput">Pretend the AI changed this file</label>
@@ -405,7 +408,7 @@ checked, and untouched:
       </div>
     </div>
 
-    <p class="guard__src" data-reveal>
+    <p class="guard__src">
       Five rules on the off-limits list, in the order they run — installed libraries, test
       files, test folders, build settings, version-lock files — plus a ban on deletions and on
       anything outside the folder you pointed it at. All of it is covered by a test that runs
@@ -419,17 +422,17 @@ checked, and untouched:
      and check, so it is set as a printed sheet rather than another dark panel. -->
 <section class="proof" id="proof" data-folio="05" data-folio-name="Proof" data-invert>
   <div class="shell">
-    <div class="sechead" data-reveal>
+    <div class="sechead">
       <span class="sechead__idx">05</span>
       <span class="sechead__rule"></span>
       <span class="sechead__label">Evidence, not adjectives</span>
     </div>
 
-    <p class="plain" data-reveal><span class="plain__k">In plain terms</span>Everything below is a link you can open and check for yourself, right now.</p>
+    <p class="plain"><span class="plain__k">In plain terms</span>Everything below is a link you can open and check for yourself, right now.</p>
 
-    <h2 class="proof__h" data-reveal>It has done this once,<br>with nobody watching.</h2>
+    <h2 class="proof__h">It has done this once,<br>with nobody watching.</h2>
 
-    <a class="proofcard proofcard--lead" href="https://github.com/patchery-dev/Patchery/pull/2" data-reveal>
+    <a class="proofcard proofcard--lead" href="https://github.com/patchery-dev/Patchery/pull/2">
       <div class="proofcard__meta">
         <span class="tag tag--auto">no human involved</span>
         <span class="proofcard__repo">patchery-dev/Patchery #2</span>
@@ -452,7 +455,7 @@ checked, and untouched:
       <span class="proofcard__go">Open it on GitHub <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg></span>
     </a>
 
-    <div class="proof__sep" data-reveal>
+    <div class="proof__sep">
       <span class="sechead__rule"></span>
       <p>
         And here is the same job done <b>by hand</b>, on two projects we don&rsquo;t own. No AI was
@@ -462,7 +465,7 @@ checked, and untouched:
     </div>
 
     <div class="proof__pair">
-      <a class="proofcard" href="https://github.com/ianarawjo/ChainForge/pull/416" data-reveal>
+      <a class="proofcard" href="https://github.com/ianarawjo/ChainForge/pull/416">
         <div class="proofcard__meta">
           <span class="tag">written by hand</span>
           <span class="proofcard__repo">ianarawjo/ChainForge #416</span>
@@ -474,7 +477,7 @@ checked, and untouched:
         <span class="proofcard__go">Open <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg></span>
       </a>
 
-      <a class="proofcard" href="https://github.com/ToolJet/ToolJet/pull/17829" data-reveal>
+      <a class="proofcard" href="https://github.com/ToolJet/ToolJet/pull/17829">
         <div class="proofcard__meta">
           <span class="tag">written by hand</span>
           <span class="proofcard__repo">ToolJet/ToolJet #17829</span>
@@ -487,7 +490,7 @@ checked, and untouched:
       </a>
     </div>
 
-    <p class="proof__caveat" data-reveal>
+    <p class="proof__caveat">
       All three are still open. None has been merged. We will change this sentence the day that changes.
     </p>
   </div>
@@ -496,35 +499,35 @@ checked, and untouched:
 <!-- ═══════════════════  06 · INSTALL  ═══════════════════ -->
 <section class="install" id="install" data-folio="06" data-folio-name="Install">
   <div class="shell">
-    <div class="sechead" data-reveal>
+    <div class="sechead">
       <span class="sechead__idx">06</span>
       <span class="sechead__rule"></span>
       <span class="sechead__label">If you want to run it</span>
     </div>
 
-    <p class="plain" data-reveal><span class="plain__k">In plain terms</span>You copy one file into your project, and nothing happens until you press a button.</p>
+    <p class="plain"><span class="plain__k">In plain terms</span>You copy one file into your project, and nothing happens until you press a button.</p>
 
     <div class="install__grid">
       <div class="install__side">
-        <h2 data-reveal>One file in,<br>one workflow out.</h2>
-        <p class="install__lede" data-reveal>
+        <h2>One file in,<br>one workflow out.</h2>
+        <p class="install__lede">
           Patchery is not a service you sign up for. It is a file you put in your own project,
           running on your own machines, with your own key — which is also why there is nothing
           for us to charge you for yet.
         </p>
-        <ol class="steps" data-reveal>
+        <ol class="steps">
           <li><b>01</b><span>Put your AI key in the repository&rsquo;s secrets, as <code>ANTHROPIC_AUTH_TOKEN</code>.</span></li>
           <li><b>02</b><span>Save the file on the right as <code>.github/workflows/self-maintain.yml</code>.</span></li>
           <li><b>03</b><span>Start it from the Actions tab. You choose which library it works on.</span></li>
         </ol>
-        <p class="muted" data-reveal>
+        <p class="muted">
           No scheduler, no background scanning. Nothing runs unless you press the button — that
           is deliberate, and it is the next thing to change.
         </p>
-        <div data-reveal><a class="btn btn--ghost magnetic" href="https://github.com/patchery-dev/Patchery#setup"><span>Full setup guide</span></a></div>
+        <a class="go go--quiet" href="https://github.com/patchery-dev/Patchery#setup"><span>Full setup guide</span></a>
       </div>
 
-      <div class="install__code" data-reveal>
+      <div class="install__code">
         <div class="scr__bar">
           <span class="scr__tag">yaml</span>
           <span class="scr__path">.github/workflows/self-maintain.yml</span>
@@ -574,16 +577,16 @@ checked, and untouched:
 <!-- ═══════════════════  07 · STATUS  ═══════════════════ -->
 <section class="status" id="status" data-folio="07" data-folio-name="Where it stands">
   <div class="shell">
-    <div class="sechead" data-reveal>
+    <div class="sechead">
       <span class="sechead__idx">07</span>
       <span class="sechead__rule"></span>
       <span class="sechead__label">Where this actually is</span>
     </div>
 
-    <h2 class="status__h" data-reveal>We&rsquo;d rather you audit us<br>than trust us.</h2>
+    <h2 class="status__h">We&rsquo;d rather you audit us<br>than trust us.</h2>
 
     <div class="status__cols">
-      <div class="status__col" data-reveal>
+      <div class="status__col">
         <h3><i class="mark mark--yes"></i>True today</h3>
         <ul class="ledger ledger--yes">
           <li>Anyone can install it right now, and read every line of it. MIT licensed.</li>
@@ -593,7 +596,7 @@ checked, and untouched:
           <li>Works on JavaScript projects. You decide what counts as a passing test.</li>
         </ul>
       </div>
-      <div class="status__col" data-reveal>
+      <div class="status__col">
         <h3><i class="mark mark--no"></i>Not yet</h3>
         <ul class="ledger ledger--no">
           <li>Nothing hosted. It runs on your machines, not ours.</li>
@@ -605,7 +608,7 @@ checked, and untouched:
       </div>
     </div>
 
-    <div class="audit" id="audit" data-reveal>
+    <div class="audit" id="audit">
       <div class="audit__head">
         <div>
           <span class="spec__k">Live, in your browser, right now</span>
@@ -629,7 +632,7 @@ checked, and untouched:
       </div>
     </div>
 
-    <p class="status__foot" data-reveal>
+    <p class="status__foot">
       Every number on this page comes from a run you can open and read for yourself. And one
       thing worth saying plainly: the AI reads your code. Check what your model provider does
       with it before you point this at anything private.
@@ -667,10 +670,8 @@ checked, and untouched:
   </div>
 </footer>
 
-<div class="cursor" id="cursor" aria-hidden="true"><i></i></div>
 <div class="grain" aria-hidden="true"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/motion@12.23.12/dist/motion.js"></script>
 <script src="assets/site.js"></script>
 <script src="assets/audit.js"></script>
 </body>
