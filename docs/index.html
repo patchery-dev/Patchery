@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patchery — dependency breaks, fixed and proven</title>
+<meta name="description" content="When a dependency breaks your code, Patchery fixes it and proves the fix.">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<style>
+  :root {
+    --bg: #0b0f10;
+    --surface: #12181a;
+    --border: #22302f;
+    --text: #eef4f2;
+    --text-muted: #9fb0ac;
+    --accent: #17c98c;
+    --accent-ink: #06231a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 28px 0;
+  }
+  header img { width: 28px; height: 28px; }
+  header span { font-weight: 600; font-size: 18px; }
+  .hero { padding: 48px 0 32px; }
+  .hero h1 {
+    font-size: clamp(28px, 5vw, 40px);
+    line-height: 1.25;
+    margin: 0 0 16px;
+    font-weight: 600;
+  }
+  .hero h1 em {
+    color: var(--accent);
+    font-style: normal;
+  }
+  .hero p {
+    color: var(--text-muted);
+    font-size: 18px;
+    max-width: 60ch;
+  }
+  .cta { display: flex; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block;
+    padding: 12px 20px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  section { padding: 32px 0; border-top: 1px solid var(--border); }
+  section h2 { font-size: 20px; margin: 0 0 16px; }
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+  .steps li {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .steps li b { color: var(--accent); }
+  code {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.9em;
+  }
+  .proof {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .proof a { color: var(--accent); }
+  .note {
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  footer {
+    padding: 32px 0 48px;
+    color: var(--text-muted);
+    font-size: 14px;
+    border-top: 1px solid var(--border);
+  }
+  footer a { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <img src="assets/logo.png" alt="">
+    <span>Patchery</span>
+  </header>
+
+  <div class="hero">
+    <h1>When a dependency breaks your code,<br><em>Patchery fixes it</em> and proves the fix.</h1>
+    <p>A GitHub Action that reads the changelog, migrates the call sites, re-runs your own tests, and only then opens a pull request. It never trusts its own report — it verifies the diff itself.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/patchery-dev/Patchery">View on GitHub</a>
+      <a class="btn btn-secondary" href="https://github.com/patchery-dev/Patchery#setup">Setup guide</a>
+    </div>
+  </div>
+
+  <section>
+    <h2>How it works</h2>
+    <ul class="steps">
+      <li><b>1. Run the tests.</b> Is it actually broken? If it passes, do nothing.</li>
+      <li><b>2. Run the agent.</b> Read the changelog, migrate the affected call sites.</li>
+      <li><b>3. Check with git.</b> What changed? Touched a test file or a lockfile? Revert everything.</li>
+      <li><b>4. Run the tests again.</b> Never trust the agent's own word — measure it.</li>
+      <li><b>5. Open a PR.</b> Only if every step above came back clean.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>See it work</h2>
+    <div class="proof">
+      A live, fully automated run: the agent found a real breaking change, fixed the one affected file, verified the tests went from failing to passing, and opened a pull request — no human in the loop until review.
+      <br><br>
+      → <a href="https://github.com/patchery-dev/Patchery/pull/2">patchery-dev/Patchery#2</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Status</h2>
+    <p class="note">Patchery is early. It's a GitHub Action you install yourself today (<code>.github/workflows/</code>), not a hosted service yet. It has been run successfully against its own test fixture and is now being tried against real open-source projects — see the setup guide on GitHub for exact steps and current limitations, stated honestly.</p>
+  </section>
+
+  <footer>
+    <a href="https://github.com/patchery-dev/Patchery">github.com/patchery-dev/Patchery</a>
+  </footer>
+
+</div>
+</body>
+</html>
