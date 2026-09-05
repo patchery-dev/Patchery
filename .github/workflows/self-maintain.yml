@@ -1,28 +1,28 @@
-# Bu workflow, action'ı kendi test fixture'ımız üzerinde uçtan uca çalıştırır.
-# Amaç: "gerçekten çalışıyor" kanıtı — elle tetiklenir (workflow_dispatch).
+# Runs the action end to end against this repo's own broken fixture.
+# Purpose: a real, reproducible "it works" run. Triggered by hand.
 name: self-maintain (demo)
 
 on:
   workflow_dispatch:
     inputs:
       package:
-        description: "Kıran paketin adı"
+        description: "Name of the package that broke"
         required: true
         default: "fake-lib"
       target-dir:
-        description: "Düzeltilecek klasör"
+        description: "Directory to fix"
         required: true
         default: "test-fixture"
       test-command:
-        description: "Doğrulama komutu"
+        description: "Verification command"
         required: true
         default: "npm test"
       changelog:
-        description: "Changelog yolu (boş = ajan kendi bulsun)"
+        description: "Changelog path (empty = let the agent find it)"
         required: false
         default: "node_modules/fake-lib/CHANGELOG.md"
       dry-run:
-        description: "Sadece baseline testi ölç, ajanı çalıştırma"
+        description: "Only measure the baseline, do not run the agent"
         required: false
         default: "false"
 
@@ -34,12 +34,12 @@ jobs:
   fix:
     runs-on: ubuntu-latest
     steps:
-      - name: Repoyu al
+      - name: Check out the repository
         uses: actions/checkout@v4
 
-      # Fixture bilerek KIRIK halde commit'li. Her çalıştırmada temiz bir kırık
-      # başlangıç olsun diye ekstra bir şey yapmıyoruz — git zaten bunu sağlıyor.
-      - name: Ajanı çalıştır
+      # The fixture is committed in its broken state on purpose, so every run
+      # starts from the same red baseline. Git gives us that for free.
+      - name: Run the agent
         id: sma
         uses: ./
         with:
@@ -52,16 +52,16 @@ jobs:
           anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
           anthropic-model: ${{ secrets.ANTHROPIC_MODEL }}
 
-      - name: PR aç
+      - name: Open a pull request
         if: steps.sma.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           branch: self-maintain/${{ inputs.package }}
           base: main
-          title: "fix(deps): ${{ inputs.package }} kırıcı değişikliğini uygula"
+          title: "fix(deps): migrate ${{ inputs.package }} call sites"
           body-path: ${{ steps.sma.outputs.pr-body-file }}
-          # Sadece ajanın gerçekten değiştirdiği dosyalar commit'lensin —
-          # kurulum artıkları (node_modules vb.) asla PR'a sızmasın.
+          # Commit only what the agent actually changed, so install leftovers
+          # (node_modules and friends) can never leak into the PR.
           add-paths: ${{ steps.sma.outputs.files }}
           commit-message: |
             fix(deps): migrate ${{ inputs.package }} call sites

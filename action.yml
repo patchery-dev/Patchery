@@ -1,7 +1,8 @@
 name: "Self-Maintaining APIs"
 description: >-
-  Kırılan bir bağımlılığı bir AI ajanına düzelttirir, testleri kendisi doğrular ve
-  sonucu PR'a hazır hale getirir. Testler geçmezse hiçbir şey teslim etmez.
+  Let an AI agent fix your code when a dependency ships a breaking change,
+  verify the fix against your own tests, and hand you a ready-to-review PR.
+  If the tests do not pass, it delivers nothing.
 author: "ugursku"
 
 branding:
@@ -10,92 +11,93 @@ branding:
 
 inputs:
   package:
-    description: "Kıran paketin adı (örn. fake-lib, openai, @langchain/google-genai)."
+    description: "Name of the package that broke (e.g. fake-lib, openai, @langchain/google-genai)."
     required: true
   changelog:
     description: >-
-      Changelog / migration notu yolu ya da URL'i. Boş bırakılırsa ajan
-      node_modules/<paket>/CHANGELOG.md'yi kendisi arar.
+      Path or URL to the changelog / migration notes. If empty, the agent looks for
+      node_modules/<package>/CHANGELOG.md itself.
     required: false
     default: ""
   target-dir:
-    description: "Düzeltilecek proje klasörü (repo kökine göre)."
+    description: "Project directory to fix, relative to the repository root."
     required: false
     default: "."
   test-command:
-    description: "Doğrulama komutu. Düzeltme öncesi ve sonrası ikisinde de çalıştırılır."
+    description: "Verification command. Run both before and after the fix."
     required: false
     default: "npm test"
   max-turns:
-    description: "Ajanın en fazla kaç tur sürebileceği (maliyet freni)."
+    description: "Maximum number of agent turns - this is your cost brake."
     required: false
     default: "25"
   extra-instructions:
-    description: "Ajana verilecek ek talimat (opsiyonel, serbest metin)."
+    description: "Free-form extra instructions passed to the agent."
     required: false
     default: ""
   require-failing-baseline:
     description: >-
-      true ise, test zaten geçiyorsa ajan hiç çalıştırılmaz (gereksiz PR'ı önler).
+      When true, the agent is not run at all if the tests already pass. Prevents
+      pointless PRs.
     required: false
     default: "true"
   dry-run:
-    description: "true ise sadece baseline testi ölçülür, ajan çalıştırılmaz."
+    description: "When true, only measure the baseline test run; do not run the agent."
     required: false
     default: "false"
   node-version:
-    description: "Kurulacak Node sürümü."
+    description: "Node version to install."
     required: false
     default: "20"
   anthropic-auth-token:
-    description: "API anahtarı / token. GitHub Secrets'tan verin, asla düz yazmayın."
+    description: "API key / token. Pass it from GitHub Secrets, never inline."
     required: true
   anthropic-base-url:
-    description: "Özel endpoint (opsiyonel). Boşsa Anthropic'in kendi API'si kullanılır."
+    description: "Custom API endpoint (optional). Empty means Anthropic's own API."
     required: false
     default: ""
   anthropic-model:
-    description: "Model adı (opsiyonel)."
+    description: "Model name (optional)."
     required: false
     default: ""
 
 outputs:
   changed:
-    description: "Ajan gerçekten dosya değiştirdi mi ('true' / 'false')."
+    description: "Whether the agent actually changed files ('true' / 'false')."
     value: ${{ steps.run.outputs.changed }}
   tests-passed:
-    description: "Düzeltme sonrası testler geçti mi."
+    description: "Whether the tests passed after the fix."
     value: ${{ steps.run.outputs.tests_passed }}
   files:
-    description: "Değişen dosyalar (satır satır)."
+    description: "Changed files, one per line - ready to feed into add-paths."
     value: ${{ steps.run.outputs.files }}
   pr-body-file:
-    description: "Hazır PR gövdesinin dosya yolu."
+    description: "Path to the generated PR body - ready to feed into body-path."
     value: ${{ steps.run.outputs.pr_body_file }}
   summary:
-    description: "Tek satırlık insan-okur özet."
+    description: "One-line human-readable summary."
     value: ${{ steps.run.outputs.summary }}
 
 runs:
   using: "composite"
   steps:
-    - name: Node kur
+    - name: Set up Node
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
 
-    - name: Ajan bağımlılıklarını kur
+    - name: Install agent dependencies
       shell: bash
       run: npm install --no-save --no-audit --no-fund "@anthropic-ai/claude-agent-sdk@^0.1.77"
       working-directory: ${{ github.action_path }}
 
-    - name: Ajanı çalıştır ve doğrula
+    - name: Run the agent and verify
       id: run
       shell: bash
       working-directory: ${{ github.workspace }}
       env:
-        # agent.mjs, action_path/scripts/ içinde durduğu için Node paketi
-        # action_path/node_modules'da kendiliğinden bulur (ESM NODE_PATH'i yok sayar).
+        # agent.mjs lives in action_path/scripts/, so Node resolves the SDK from
+        # action_path/node_modules on its own (ESM ignores NODE_PATH).
         SMA_WORKSPACE: ${{ github.workspace }}
         SMA_TARGET_DIR: ${{ inputs.target-dir }}
         SMA_PACKAGE: ${{ inputs.package }}

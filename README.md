@@ -1,108 +1,111 @@
 # self-maintaining-action
 
-**Bir bağımlılık kırıcı bir değişiklik yaptığında, kodunuzu bir AI ajanına düzelttiren, düzeltmeyi kendi testlerinizle doğrulayan ve size PR açan GitHub Action'ı.**
+**A GitHub Action that fixes your code when a dependency ships a breaking change — verified against your own tests, delivered as a pull request.**
 
-Dependabot paketin sürümünü yükseltir ve testleriniz kırılırsa sizi orada bırakır.
-Bu action bir adım ötesini yapar: changelog'u okur, çağrı yerlerini yeni API'ye taşır,
-testleri çalıştırır — ve **sadece testler geçerse** PR açar.
+Dependabot bumps the version and leaves you with a red build. This action goes one
+step further: it reads the changelog, migrates the call sites to the new API, runs
+your tests, and opens a PR **only if those tests pass**.
 
 ---
 
-## Nasıl çalışır
+## How it works
 
 ```
-1. Testi çalıştır      →  gerçekten kırık mı? Geçiyorsa hiçbir şey yapma.
-2. Ajanı çalıştır      →  changelog'u oku, çağrı yerlerini düzelt.
-3. git ile kontrol et  →  ne değişti? Testlere/node_modules'a dokunulduysa GERİ AL.
-4. Testi tekrar çalıştır →  ajanın "geçti" demesine güvenme, kendin ölç.
-5. PR aç               →  sadece 1-4 temiz geçtiyse.
+1. Run the tests        -> Is it actually broken? If it passes, do nothing.
+2. Run the agent        -> Read the changelog, migrate the call sites.
+3. Check with git       -> What changed? Touched a test or node_modules? REVERT.
+4. Run the tests again  -> Never trust the agent's word; measure it.
+5. Open a PR            -> Only if steps 1-4 came back clean.
 ```
 
-Kritik olan 3. ve 4. adım. Bir AI ajanına "testi geçir" derseniz, testi silerek de
-geçirebilir. Bu action ajanın raporuna hiç bakmaz: değişiklikleri `git status` ile
-kendisi okur, korumalı bir dosyaya dokunulmuşsa her şeyi geri alır, ve testi
-kendisi yeniden çalıştırır.
+Steps 3 and 4 are the point of this project. If you tell an AI agent to make the
+tests pass, deleting the tests is a valid way to do that. So this action never reads
+the agent's own report: it inspects the diff with `git status`, reverts everything if
+a protected file was touched, and re-runs the test command itself.
 
-**Korumalı dosyalar** (ajan bunlara dokunursa çalışma tamamen iptal edilir):
+**Protected paths** — if the agent touches any of these, the whole run is discarded:
 
-- test dosyaları — `*.test.*`, `*.spec.*`, `test/`, `tests/`, `__tests__/`, `__mocks__/`
+- test files — `*.test.*`, `*.spec.*`, `test/`, `tests/`, `__tests__/`, `__mocks__/`
 - `node_modules/`
 - `.github/`
-- lock dosyaları — `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`
+- lockfiles — `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`
+
+That guard is covered by [`scripts/selftest.mjs`](scripts/selftest.mjs), which runs on
+every push and needs no API key.
 
 ---
 
-## Kurulum
+## Setup
 
-### 1. Secret'ları ekleyin
+### 1. Add your secrets
 
 Repo → **Settings → Secrets and variables → Actions → New repository secret**:
 
-| Secret | Zorunlu | Ne için |
+| Secret | Required | Purpose |
 | --- | --- | --- |
-| `ANTHROPIC_AUTH_TOKEN` | ✅ | Ajanın API anahtarı / token'ı |
-| `ANTHROPIC_BASE_URL` | ➖ | Uyumlu, farklı bir endpoint kullanıyorsanız |
-| `ANTHROPIC_MODEL` | ➖ | Model adı (boşsa varsayılan) |
+| `ANTHROPIC_AUTH_TOKEN` | yes | The agent's API key / token |
+| `ANTHROPIC_BASE_URL` | no | Only if you use a compatible custom endpoint |
+| `ANTHROPIC_MODEL` | no | Model name (default if empty) |
 
-Anahtarı **asla** workflow dosyasına düz yazmayın; Actions log'ları herkese açık olabilir.
+Never inline the key in a workflow file — Actions logs can be public.
 
-### 2. Workflow'u kopyalayın
+### 2. Copy the workflow
 
-[`examples/self-maintain.yml`](examples/self-maintain.yml) dosyasını kendi reponuzda
-`.github/workflows/self-maintain.yml` olarak kaydedin.
+Save [`examples/self-maintain.yml`](examples/self-maintain.yml) in your own repository
+as `.github/workflows/self-maintain.yml`.
 
-### 3. Çalıştırın
+### 3. Run it
 
-Repo → **Actions → self-maintain → Run workflow**. Hangi paketin kırdığını ve hangi
-klasörün düzeltileceğini orada yazarsınız.
+Repo → **Actions → self-maintain → Run workflow**, then fill in which package broke
+and which directory to fix.
 
-> Bu sürümde otomatik zamanlama/tarama **yok** — bilerek. Hangi paketin ele alınacağına
-> siz karar veriyorsunuz. Tam otomatik tarama sonraki sürümün işi.
+> There is deliberately **no scheduling or automatic package scanning** in this
+> version. You decide which package gets handled. Full automation is the next step.
 
 ---
 
-## Girdiler
+## Inputs
 
-| Girdi | Varsayılan | Açıklama |
+| Input | Default | Description |
 | --- | --- | --- |
-| `package` | — (zorunlu) | Kıran paketin adı |
-| `target-dir` | `.` | Düzeltilecek proje klasörü |
-| `test-command` | `npm test` | Doğrulama komutu (öncesi + sonrası çalışır) |
-| `changelog` | `""` | Changelog yolu/URL'i. Boşsa ajan kendi arar |
-| `max-turns` | `25` | Ajanın tur limiti — maliyet freni |
-| `extra-instructions` | `""` | Ajana ek talimat |
-| `require-failing-baseline` | `true` | Test zaten geçiyorsa ajanı hiç çalıştırma |
-| `dry-run` | `false` | Sadece baseline testi ölç |
-| `node-version` | `20` | Kurulacak Node sürümü |
-| `anthropic-auth-token` | — (zorunlu) | Secret'tan verin |
-| `anthropic-base-url` | `""` | Secret'tan verin |
-| `anthropic-model` | `""` | Secret'tan verin |
+| `package` | *(required)* | Name of the package that broke |
+| `target-dir` | `.` | Project directory to fix |
+| `test-command` | `npm test` | Verification command (runs before and after) |
+| `changelog` | `""` | Changelog path or URL; empty means the agent looks for it |
+| `max-turns` | `25` | Agent turn limit — your cost brake |
+| `extra-instructions` | `""` | Extra instructions for the agent |
+| `require-failing-baseline` | `true` | Skip the agent entirely if tests already pass |
+| `dry-run` | `false` | Only measure the baseline test run |
+| `node-version` | `20` | Node version to install |
+| `anthropic-auth-token` | *(required)* | Pass from secrets |
+| `anthropic-base-url` | `""` | Pass from secrets |
+| `anthropic-model` | `""` | Pass from secrets |
 
-## Çıktılar
+## Outputs
 
-| Çıktı | Açıklama |
+| Output | Description |
 | --- | --- |
-| `changed` | `true` / `false` — gerçekten dosya değişti mi |
-| `tests-passed` | Düzeltme sonrası testler geçti mi |
-| `files` | Değişen dosyalar, satır satır (`add-paths` için hazır) |
-| `pr-body-file` | Doldurulmuş PR gövdesinin yolu (`body-path` için hazır) |
-| `summary` | Tek satır özet |
+| `changed` | `true` / `false` — whether files actually changed |
+| `tests-passed` | Whether tests passed after the fix |
+| `files` | Changed files, one per line (ready for `add-paths`) |
+| `pr-body-file` | Path to the generated PR body (ready for `body-path`) |
+| `summary` | One-line summary |
 
 ---
 
-## Kendi üstünde deneme (demo)
+## Try it on this repo
 
-Bu repoda bilerek kırık bir örnek var: [`test-fixture/`](test-fixture/) — `fake-lib`
-1.x'ten 2.0.0'a çıkmış, `formatPrice(amount)` artık `formatPrice(amount, currency)`.
-`test-fixture/app.js` hâlâ eski çağrıyı yapıyor, bu yüzden `npm test` kalıyor.
+[`test-fixture/`](test-fixture/) is broken on purpose: `fake-lib` went from 1.x to
+2.0.0 and `formatPrice(amount)` became `formatPrice(amount, currency)`.
+`test-fixture/app.js` still makes the old call, so `npm test` fails.
 
-**Actions → self-maintain (demo) → Run workflow** deyin. Beklenen sonuç: ajan
-`app.js`'i düzeltir, testler geçer, `self-maintain/fake-lib` dalında bir PR açılır.
+Go to **Actions → self-maintain (demo) → Run workflow**. Expected result: the agent
+fixes `app.js`, the tests pass, and a PR appears on the `self-maintain/fake-lib` branch.
 
-> Demo PR'ını **birleştirmeyin** — fixture'ın kırık kalması gerekiyor, yoksa sonraki
-> çalıştırmalar "düzeltilecek bir şey yok" der.
+> Do **not** merge the demo PR — the fixture has to stay broken, otherwise later runs
+> will correctly report "nothing to fix".
 
-Yerelde denemek için (Actions'a gerek yok):
+To try it locally, without Actions:
 
 ```bash
 npm install
@@ -115,17 +118,16 @@ node scripts/agent.mjs
 
 ---
 
-## Sınırlar (dürüstçe)
+## Limitations (stated honestly)
 
-- Şu an sadece **Node/npm** projelerinde denendi. Test komutu değiştirilebildiği için
-  başka ekosistemler de çalışabilir ama doğrulanmadı.
-- Tek seferde **tek paket**. Zincirleme kırılmaları çözmez.
-- Ajanın maliyeti çalışma başına değişir; `max-turns` bunun frenidir.
-- Açılan PR **insan tarafından gözden geçirilmelidir**. Otomatik birleştirme yoktur ve
-  önerilmez.
-- Ajan gizli/özel kod görür. Kullandığınız modelin sağlayıcısının veri politikasını
-  bilmeden özel repolarda kullanmayın.
+- Only tried on **Node/npm** projects so far. The test command is configurable, so
+  other ecosystems may work, but that is unverified.
+- **One package per run.** It does not resolve cascading breakages.
+- Cost varies per run; `max-turns` is the brake.
+- The resulting PR **needs human review**. There is no auto-merge, and there should not be.
+- The agent sees your source code. Do not point it at private repositories without
+  checking the data policy of the model provider you configured.
 
-## Lisans
+## License
 
 MIT
