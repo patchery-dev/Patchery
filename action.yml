@@ -8,7 +8,7 @@ author: "ugursku"
 
 branding:
   icon: "refresh-cw"
-  color: "purple"
+  color: "green"
 
 inputs:
   package:
