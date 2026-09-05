@@ -1,0 +1,66 @@
+# Bunu kendi reponuzda .github/workflows/self-maintain.yml olarak kaydedin.
+#
+# Gerekli GitHub Secrets (Settings -> Secrets and variables -> Actions):
+#   ANTHROPIC_AUTH_TOKEN  (zorunlu)
+#   ANTHROPIC_BASE_URL    (opsiyonel — özel/uyumlu bir endpoint kullanıyorsanız)
+#   ANTHROPIC_MODEL       (opsiyonel)
+name: self-maintain
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Kıran paketin adı (örn. openai)"
+        required: true
+      target-dir:
+        description: "Düzeltilecek klasör (repo kökine göre)"
+        required: true
+        default: "."
+      test-command:
+        description: "Doğrulama komutu"
+        required: true
+        default: "npm test"
+      changelog:
+        description: "Changelog yolu/URL'i (boş = ajan kendi bulsun)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Projenizin bağımlılıkları kurulu olmalı ki ajan changelog'u okuyabilsin
+      # ve testler çalışsın. Kendi kurulum komutunuzla değiştirin.
+      - name: Bağımlılıkları kur
+        run: npm ci
+        working-directory: ${{ inputs.target-dir }}
+
+      - name: Kırık bağımlılığı düzelt
+        id: sma
+        uses: ugursku/self-maintaining-action@v0
+        with:
+          package: ${{ inputs.package }}
+          target-dir: ${{ inputs.target-dir }}
+          test-command: ${{ inputs.test-command }}
+          changelog: ${{ inputs.changelog }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL }}
+
+      - name: PR aç
+        if: steps.sma.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: self-maintain/${{ inputs.package }}
+          title: "fix(deps): ${{ inputs.package }} kırıcı değişikliğini uygula"
+          body-path: ${{ steps.sma.outputs.pr-body-file }}
+          add-paths: ${{ steps.sma.outputs.files }}
+          commit-message: "fix(deps): migrate ${{ inputs.package }} call sites"
+          labels: dependencies, automated
+          delete-branch: true

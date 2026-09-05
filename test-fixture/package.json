@@ -1,0 +1,11 @@
+{
+  "name": "toy-project",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node app.test.js"
+  },
+  "dependencies": {
+    "fake-lib": "^2.0.0"
+  }
+}
