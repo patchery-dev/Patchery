@@ -1,0 +1,73 @@
+# Bu workflow, action'ı kendi test fixture'ımız üzerinde uçtan uca çalıştırır.
+# Amaç: "gerçekten çalışıyor" kanıtı — elle tetiklenir (workflow_dispatch).
+name: self-maintain (demo)
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Kıran paketin adı"
+        required: true
+        default: "fake-lib"
+      target-dir:
+        description: "Düzeltilecek klasör"
+        required: true
+        default: "test-fixture"
+      test-command:
+        description: "Doğrulama komutu"
+        required: true
+        default: "npm test"
+      changelog:
+        description: "Changelog yolu (boş = ajan kendi bulsun)"
+        required: false
+        default: "node_modules/fake-lib/CHANGELOG.md"
+      dry-run:
+        description: "Sadece baseline testi ölç, ajanı çalıştırma"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repoyu al
+        uses: actions/checkout@v4
+
+      # Fixture bilerek KIRIK halde commit'li. Her çalıştırmada temiz bir kırık
+      # başlangıç olsun diye ekstra bir şey yapmıyoruz — git zaten bunu sağlıyor.
+      - name: Ajanı çalıştır
+        id: sma
+        uses: ./
+        with:
+          package: ${{ inputs.package }}
+          target-dir: ${{ inputs.target-dir }}
+          test-command: ${{ inputs.test-command }}
+          changelog: ${{ inputs.changelog }}
+          dry-run: ${{ inputs.dry-run }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL }}
+
+      - name: PR aç
+        if: steps.sma.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: self-maintain/${{ inputs.package }}
+          base: main
+          title: "fix(deps): ${{ inputs.package }} kırıcı değişikliğini uygula"
+          body-path: ${{ steps.sma.outputs.pr-body-file }}
+          # Sadece ajanın gerçekten değiştirdiği dosyalar commit'lensin —
+          # kurulum artıkları (node_modules vb.) asla PR'a sızmasın.
+          add-paths: ${{ steps.sma.outputs.files }}
+          commit-message: |
+            fix(deps): migrate ${{ inputs.package }} call sites
+
+            ${{ steps.sma.outputs.summary }}
+          labels: |
+            dependencies
+            automated
+          delete-branch: true

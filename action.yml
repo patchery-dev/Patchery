@@ -1,0 +1,115 @@
+name: "Self-Maintaining APIs"
+description: >-
+  Kırılan bir bağımlılığı bir AI ajanına düzelttirir, testleri kendisi doğrular ve
+  sonucu PR'a hazır hale getirir. Testler geçmezse hiçbir şey teslim etmez.
+author: "ugursku"
+
+branding:
+  icon: "refresh-cw"
+  color: "purple"
+
+inputs:
+  package:
+    description: "Kıran paketin adı (örn. fake-lib, openai, @langchain/google-genai)."
+    required: true
+  changelog:
+    description: >-
+      Changelog / migration notu yolu ya da URL'i. Boş bırakılırsa ajan
+      node_modules/<paket>/CHANGELOG.md'yi kendisi arar.
+    required: false
+    default: ""
+  target-dir:
+    description: "Düzeltilecek proje klasörü (repo kökine göre)."
+    required: false
+    default: "."
+  test-command:
+    description: "Doğrulama komutu. Düzeltme öncesi ve sonrası ikisinde de çalıştırılır."
+    required: false
+    default: "npm test"
+  max-turns:
+    description: "Ajanın en fazla kaç tur sürebileceği (maliyet freni)."
+    required: false
+    default: "25"
+  extra-instructions:
+    description: "Ajana verilecek ek talimat (opsiyonel, serbest metin)."
+    required: false
+    default: ""
+  require-failing-baseline:
+    description: >-
+      true ise, test zaten geçiyorsa ajan hiç çalıştırılmaz (gereksiz PR'ı önler).
+    required: false
+    default: "true"
+  dry-run:
+    description: "true ise sadece baseline testi ölçülür, ajan çalıştırılmaz."
+    required: false
+    default: "false"
+  node-version:
+    description: "Kurulacak Node sürümü."
+    required: false
+    default: "20"
+  anthropic-auth-token:
+    description: "API anahtarı / token. GitHub Secrets'tan verin, asla düz yazmayın."
+    required: true
+  anthropic-base-url:
+    description: "Özel endpoint (opsiyonel). Boşsa Anthropic'in kendi API'si kullanılır."
+    required: false
+    default: ""
+  anthropic-model:
+    description: "Model adı (opsiyonel)."
+    required: false
+    default: ""
+
+outputs:
+  changed:
+    description: "Ajan gerçekten dosya değiştirdi mi ('true' / 'false')."
+    value: ${{ steps.run.outputs.changed }}
+  tests-passed:
+    description: "Düzeltme sonrası testler geçti mi."
+    value: ${{ steps.run.outputs.tests_passed }}
+  files:
+    description: "Değişen dosyalar (satır satır)."
+    value: ${{ steps.run.outputs.files }}
+  pr-body-file:
+    description: "Hazır PR gövdesinin dosya yolu."
+    value: ${{ steps.run.outputs.pr_body_file }}
+  summary:
+    description: "Tek satırlık insan-okur özet."
+    value: ${{ steps.run.outputs.summary }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Node kur
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Ajan bağımlılıklarını kur
+      shell: bash
+      run: npm install --no-save --no-audit --no-fund "@anthropic-ai/claude-agent-sdk@^0.1.77"
+      working-directory: ${{ github.action_path }}
+
+    - name: Ajanı çalıştır ve doğrula
+      id: run
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        # agent.mjs, action_path/scripts/ içinde durduğu için Node paketi
+        # action_path/node_modules'da kendiliğinden bulur (ESM NODE_PATH'i yok sayar).
+        SMA_WORKSPACE: ${{ github.workspace }}
+        SMA_TARGET_DIR: ${{ inputs.target-dir }}
+        SMA_PACKAGE: ${{ inputs.package }}
+        SMA_CHANGELOG: ${{ inputs.changelog }}
+        SMA_TEST_COMMAND: ${{ inputs.test-command }}
+        SMA_MAX_TURNS: ${{ inputs.max-turns }}
+        SMA_EXTRA_INSTRUCTIONS: ${{ inputs.extra-instructions }}
+        SMA_REQUIRE_FAILING_BASELINE: ${{ inputs.require-failing-baseline }}
+        SMA_DRY_RUN: ${{ inputs.dry-run }}
+        ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-auth-token }}
+        ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
+        ANTHROPIC_MODEL: ${{ inputs.anthropic-model }}
+        ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.anthropic-model }}
+        ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.anthropic-model }}
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.anthropic-model }}
+        CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.anthropic-model }}
+      run: node "${{ github.action_path }}/scripts/agent.mjs"
