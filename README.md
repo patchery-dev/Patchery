@@ -55,12 +55,29 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 
 Never inline the key in a workflow file — Actions logs can be public.
 
-### 2. Copy the workflow
+### 2. Let Actions open pull requests
+
+Repo → **Settings → Actions → General → Workflow permissions** → tick
+**"Allow GitHub Actions to create and approve pull requests"**.
+
+Without it the agent runs, fixes your code, verifies the tests — and then the last
+step fails with:
+
+```
+GitHub Actions is not permitted to create or approve pull requests.
+```
+
+The work is done at that point but has nowhere to go, and the error does not say
+which setting to change. If your repository belongs to an organisation, the same
+switch also has to be on at the org level (**Organisation settings → Actions →
+General**); a repository cannot grant itself more than the org allows.
+
+### 3. Copy the workflow
 
 Save [`examples/self-maintain.yml`](examples/self-maintain.yml) in your own repository
 as `.github/workflows/self-maintain.yml`.
 
-### 3. Run it
+### 4. Run it
 
 Repo → **Actions → self-maintain → Run workflow**, then fill in which package broke
 and which directory to fix.

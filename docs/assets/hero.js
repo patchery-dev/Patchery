@@ -28,7 +28,7 @@
 
   var narrow = window.innerWidth < 900;
   var COUNT = narrow ? 74 : 132;
-  var RADIUS = 92;
+  var RADIUS = 124;
 
   var pos = new Float32Array(COUNT * 3);
   var drift = new Float32Array(COUNT * 3);   // per-node idle wander
@@ -96,8 +96,14 @@
     }
     if (best[0] > -1) link(i, best[0]);
     if (best[1] > -1 && Math.random() < 0.55) link(i, best[1]);
-    if (d2(i, 0) < RADIUS * RADIUS * 0.36) link(0, i);
   }
+
+  // Only a handful of spokes reach the project node. Linking every nearby node
+  // to the hub turns the whole graph into a starburst instead of a network.
+  var byDistance = [];
+  for (i = 1; i < COUNT; i++) byDistance.push([i, d2(i, 0)]);
+  byDistance.sort(function (a, b) { return a[1] - b[1]; });
+  for (i = 0; i < Math.min(7, byDistance.length); i++) link(0, byDistance[i][0]);
 
   var EDGE_COUNT = edges.length / 2;
 
@@ -105,7 +111,7 @@
 
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(50, 1, 1, 900);
-  camera.position.set(0, 0, 215);
+  camera.position.set(0, 0, 232);
 
   var group = new THREE.Group();
   group.position.x = narrow ? 0 : 36;
@@ -173,7 +179,7 @@
 
   /* ── the break / repair cycle ────────────────────────────────────────── */
 
-  var IDLE = [0.075, 0.125, 0.150];   // slate, barely there
+  var IDLE = [0.105, 0.170, 0.205];   // slate, present but never loud
   var TEAL = [0.000, 0.769, 0.549];   // #00c48c
   var RED  = [0.949, 0.333, 0.353];   // #f2555a
 
@@ -274,15 +280,13 @@
     var t = (now - start) * 0.001;
     var elapsed = now - start;
 
-    if (elapsed > nextCycle) scheduleCycle(elapsed);
+    if (elapsed > nextCycle) { scheduleCycle(elapsed); queue.sort(function (a, b) { return a.at - b.at; }); }
 
     while (queue.length && queue[0].at <= elapsed) {
       var ev = queue.shift();
       heatT[ev.i] = ev.heat;
       glowT[ev.i] = ev.glow;
     }
-    // events are pushed out of order, so keep the head of the queue honest
-    if (queue.length > 1) queue.sort(function (a, b) { return a.at - b.at; });
 
     mx += (tx - mx) * 0.045;
     my += (ty - my) * 0.045;
@@ -302,8 +306,8 @@
       glow[n] += (glowT[n] - glow[n]) * (glowT[n] > glow[n] ? 0.22 : 0.035);
 
       // idle shimmer so the graph never looks frozen
-      var breathe = 0.10 + 0.10 * (0.5 + 0.5 * Math.sin(t * 1.15 + phase[n] * 2.2));
-      var g = Math.min(1, glow[n] + (n === 0 ? 0.55 : breathe * 0.55));
+      var breathe = 0.16 + 0.18 * (0.5 + 0.5 * Math.sin(t * 1.15 + phase[n] * 2.2));
+      var g = Math.min(1, glow[n] + (n === 0 ? 0.62 : breathe));
 
       var r0 = IDLE[0] + (TEAL[0] - IDLE[0]) * g;
       var g0 = IDLE[1] + (TEAL[1] - IDLE[1]) * g;
@@ -321,7 +325,7 @@
       edgePos[eo]     = pos[ao];     edgePos[eo + 1] = pos[ao + 1]; edgePos[eo + 2] = pos[ao + 2];
       edgePos[eo + 3] = pos[bo];     edgePos[eo + 4] = pos[bo + 1]; edgePos[eo + 5] = pos[bo + 2];
 
-      var f = 0.30;
+      var f = 0.34;
       edgeCol[eo]     = col[ao] * f;     edgeCol[eo + 1] = col[ao + 1] * f; edgeCol[eo + 2] = col[ao + 2] * f;
       edgeCol[eo + 3] = col[bo] * f;     edgeCol[eo + 4] = col[bo + 1] * f; edgeCol[eo + 5] = col[bo + 2] * f;
     }

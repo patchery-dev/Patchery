@@ -25,6 +25,12 @@ on:
         required: false
         default: ""
 
+# These are necessary but NOT sufficient. You must also tick
+# Settings -> Actions -> General -> Workflow permissions ->
+# "Allow GitHub Actions to create and approve pull requests"
+# (and the same switch at the organisation level, if the repo belongs to one).
+# Without it the fix is made and verified, then the PR step fails with
+# "GitHub Actions is not permitted to create or approve pull requests".
 permissions:
   contents: write
   pull-requests: write

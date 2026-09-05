@@ -20,7 +20,8 @@
   --ink:         #e9eef4;
   --ink-2:       #aab4c2;
   --muted:       #8390a1;
-  --dim:         #5a6575;
+  --dim:         #7b8798;   /* 5.3:1 on --bg — passes AA as body text */
+  --edge:        #616c7d;   /* 3.4:1 — the border that identifies a real control */
 
   --fail:        #f2555a;
   --fail-dim:    #9e3b3f;
@@ -95,7 +96,7 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 .t-ok, .ok   { color: var(--teal); font-style: normal; }
 .t-fail, .fail { color: var(--fail); font-style: normal; }
 .t-dim  { color: var(--dim); font-style: normal; }
-.t-ln   { color: #39424f; font-style: normal; }
+.t-ln   { color: #5e6879; font-style: normal; }
 .t-key  { color: var(--ink); font-style: normal; }
 
 .ilink {
@@ -166,7 +167,7 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 .nav__gh {
   display: inline-flex; align-items: center; gap: 7px;
   font: 400 12.5px/1 var(--mono); color: var(--ink);
-  padding: 9px 14px; border: 1px solid var(--line);
+  padding: 9px 14px; border: 1px solid var(--edge);
   border-radius: 2px;
   transition: border-color .25s var(--ease), background .25s var(--ease);
 }
@@ -178,7 +179,11 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
   position: fixed; top: 0; left: 0; right: 0; height: 1px; z-index: 95;
   background: transparent; pointer-events: none;
 }
-.scrollbar i { display: block; height: 100%; width: 0; background: var(--teal); }
+.scrollbar i {
+  display: block; height: 100%; width: 100%;
+  background: var(--teal);
+  transform: scaleX(0); transform-origin: 0 50%;
+}
 
 /* ─────────────────────────  shared type  ───────────────────────── */
 
@@ -227,7 +232,7 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 .btn:hover svg { transform: translateX(4px); }
 .btn--primary { background: var(--teal); color: #04120d; }
 .btn--primary:hover { background: #0ad99c; }
-.btn--ghost { border-color: var(--line); color: var(--ink); }
+.btn--ghost { border-color: var(--edge); color: var(--ink); }
 .btn--ghost:hover { border-color: var(--teal); background: var(--teal-glow); }
 
 /* ─────────────────────────────  hero  ───────────────────────────── */
@@ -236,7 +241,7 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
   position: relative;
   min-height: 100svh;
   display: flex; align-items: center;
-  padding: 140px 0 96px;
+  padding: 118px 0 84px;
   isolation: isolate;
 }
 .hero__canvas {
@@ -258,18 +263,20 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 .hero__title {
   margin: 30px 0 0;
   font-family: var(--serif);
-  font-size: clamp(44px, 7.4vw, 108px);
+  font-size: clamp(40px, 6.2vw, 84px);
   line-height: .99;
   letter-spacing: -.022em;
   max-width: 15ch;
 }
-.hero__title .line { display: block; overflow: hidden; padding-bottom: .06em; }
+/* The mask box is grown by .2em and pulled back by the same amount, so the
+   reveal can clip the slide-up without also clipping descenders. */
+.hero__title .line { display: block; overflow: hidden; padding-bottom: .2em; margin-bottom: -.2em; }
 .hero__title .line > span { display: block; }
 .hero__title .accent { color: var(--teal); }
 .hero__title em { font-style: italic; }
 
 .hero__sub {
-  margin-top: 30px;
+  margin-top: 26px;
   max-width: 54ch;
   font-size: clamp(15px, 1.15vw, 17px);
   color: var(--ink-2);
@@ -277,11 +284,11 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 }
 .hero__sub code { color: var(--teal); }
 
-.hero__cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 38px; }
+.hero__cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
 
 .hero__facts {
   display: flex; flex-wrap: wrap; gap: 8px 30px;
-  margin-top: 52px; padding-top: 22px;
+  margin-top: 38px; padding-top: 18px;
   border-top: 1px solid var(--line-soft);
   font: 400 12.5px/1.5 var(--mono);
   color: var(--muted);
@@ -416,11 +423,11 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 .rail__i.is-past { opacity: .62; }
 .rail__i.is-past::before { background: var(--teal-dim); border-color: var(--teal-dim); }
 
-.pipe__screens { position: relative; min-height: 460px; }
+.pipe__screens { position: relative; height: min(70vh, 560px); }
 
 .scr {
   position: absolute; inset: 0; margin: 0;
-  display: flex; flex-direction: column; gap: 16px;
+  display: flex; flex-direction: column; gap: 16px; min-height: 0;
   opacity: 0; visibility: hidden;
   transform: translateY(16px);
   transition: opacity .5s var(--ease), transform .6s var(--ease), visibility .5s;
@@ -445,6 +452,11 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 .scr__state { margin-left: auto; color: var(--dim); white-space: nowrap; }
 .scr__state.ok { color: var(--teal); }
 .scr__state.fail { color: var(--fail); }
+
+.pipe__screens .term { flex: 1 1 auto; min-height: 0; }
+.pipe__screens .split { flex: 1 1 auto; min-height: 0; }
+.pipe__screens .scr__note { flex: 0 0 auto; }
+.scr[data-scr="4"] { justify-content: center; }
 
 .term {
   margin: 0; padding: 18px;
@@ -601,7 +613,7 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 }
 .guard__field {
   display: flex; align-items: center; gap: 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: 2px;
   background: var(--bg-2);
   padding: 0 6px 0 12px;
@@ -635,7 +647,7 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 .guard__chips button {
   cursor: pointer;
   background: var(--bg-2);
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: 2px;
   color: var(--muted);
   font: 400 11.5px/1 var(--mono);
@@ -823,7 +835,7 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 .copy {
   margin-left: auto;
   cursor: pointer;
-  background: none; border: 1px solid var(--line); border-radius: 2px;
+  background: none; border: 1px solid var(--edge); border-radius: 2px;
   color: var(--muted); font: 400 11px/1 var(--mono);
   letter-spacing: .1em; text-transform: uppercase;
   padding: 6px 11px;
@@ -897,7 +909,7 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
   font-family: var(--serif);
   font-size: clamp(28px, 4.4vw, 62px);
   line-height: 1.15; letter-spacing: -.02em;
-  color: #1c2431;
+  color: #232d3c;
   animation: slide 34s linear infinite;
   white-space: nowrap;
 }
@@ -960,10 +972,18 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
 
 /* ────────────────────────────  reveal  ──────────────────────────── */
 
-[data-reveal] { opacity: 0; transform: translateY(22px); }
-.no-motion [data-reveal],
-[data-reveal].is-in { opacity: 1; transform: none; }
-[data-reveal].is-in { transition: opacity .8s var(--ease), transform .9s var(--ease); }
+/* Hidden only for browsers that ran the inline .js flag — without
+   JavaScript nothing is ever hidden in the first place. */
+.js [data-reveal] { opacity: 0; transform: translateY(22px); }
+
+/* Motion owns opacity and transform on these elements. The CSS transition
+   below is the fallback path only; when Motion is driving, .is-in is never
+   added, so the two never animate the same property at once. */
+.js [data-reveal].is-in {
+  opacity: 1; transform: none;
+  transition: opacity .7s var(--ease), transform .8s var(--ease);
+}
+.no-motion [data-reveal] { opacity: 1; transform: none; transition: none; }
 
 /* ────────────────────────────  responsive  ──────────────────────────── */
 
@@ -1023,3 +1043,48 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
   [data-reveal] { opacity: 1; transform: none; }
   .hero__title .line > span { transform: none !important; }
 }
+
+
+/* ============================================================================
+   Resilience pass — the rules that survive a real audit rather than a demo.
+   ========================================================================== */
+
+/* Decorative auto-scrolling strips stop for anyone who reaches them, not just
+   for prefers-reduced-motion. Hovering or tabbing nearby halts the loop. */
+.ticker:hover .ticker__row,
+.ticker:focus-within .ticker__row,
+.marquee:hover .marquee__row,
+.marquee:focus-within .marquee__row { animation-play-state: paused; }
+
+/* Touch targets. On a coarse pointer every control clears 44px, without
+   inflating the same controls on a mouse-driven layout. */
+@media (pointer: coarse) {
+  .guard__chips button { min-height: 44px; padding-inline: 14px; }
+  .guard__field button { min-height: 44px; min-width: 56px; }
+  .guard__field input  { padding-block: 15px; }
+  .guard__row .g-x     { min-width: 44px; min-height: 44px; }
+  .copy                { min-height: 44px; padding-inline: 16px; }
+  .nav__gh             { min-height: 44px; }
+  .nav__links a        { padding-block: 12px; }
+  .foot__links a       { padding-block: 11px; }
+}
+
+/* Anything clickable says so. */
+button, .copy, .guard__chips button, [role=button] { cursor: pointer; }
+
+/* Without WebGL the hero still needs a horizon, or it reads as a broken page. */
+.hero::before {
+  content: ;
+  position: absolute; z-index: -3;
+  right: -6%; top: 50%; width: 68vw; height: 68vw;
+  max-width: 900px; max-height: 900px;
+  transform: translateY(-50%);
+  background: radial-gradient(circle at center, rgba(0, 196, 140, .10) 0%, rgba(0, 196, 140, .04) 34%, transparent 68%);
+  pointer-events: none;
+}
+@media (max-width: 860px) { .hero::before { right: -30%; opacity: .8; } }
+
+/* Focus has to survive the dark surfaces it lands on. */
+.guard__chips button:focus-visible,
+.guard__field button:focus-visible,
+.copy:focus-visible { outline-offset: 2px; }
