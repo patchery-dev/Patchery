@@ -43,8 +43,7 @@ jobs:
 
       - name: Fix the broken dependency
         id: sma
-        # TODO: update once the repo move to patchery-dev/patchery is done (see vault 12 Aktif İş Listesi)
-        uses: ugursku/self-maintaining-action@v0
+        uses: patchery-dev/Patchery@v0
         with:
           package: ${{ inputs.package }}
           target-dir: ${{ inputs.target-dir }}
