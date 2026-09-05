@@ -46,6 +46,26 @@ inputs:
     description: "When true, only measure the baseline test run; do not run the agent."
     required: false
     default: "false"
+  baseline-retries:
+    description: >-
+      How many extra times a failing test run is repeated before it is believed.
+      A suite that fails once and passes on retry is flaky, not broken, and the
+      agent is not run. Set to 0 to trust the first result.
+    required: false
+    default: "2"
+  stall-repeats:
+    description: >-
+      Stop early if the agent makes the exact same tool call this many times -
+      it is going in circles and would otherwise burn the whole turn budget.
+    required: false
+    default: "3"
+  stall-no-edit-turns:
+    description: >-
+      Stop early if this many turns in a row use tools but change nothing.
+      Kept generous on purpose: reading the changelog and the call sites before
+      editing is normal, and cutting that short throws away a good run.
+    required: false
+    default: "15"
   node-version:
     description: "Node version to install."
     required: false
@@ -63,6 +83,11 @@ inputs:
     default: ""
 
 outputs:
+  outcome:
+    description: >-
+      How the run ended: 'fixed', 'nothing-to-do', 'flaky', 'inconclusive',
+      'no-changes', 'dry-run' or 'failed'. Everything except 'failed' exits 0.
+    value: ${{ steps.run.outputs.outcome }}
   changed:
     description: "Whether the agent actually changed files ('true' / 'false')."
     value: ${{ steps.run.outputs.changed }}
@@ -108,6 +133,9 @@ runs:
         SMA_EXTRA_INSTRUCTIONS: ${{ inputs.extra-instructions }}
         SMA_REQUIRE_FAILING_BASELINE: ${{ inputs.require-failing-baseline }}
         SMA_DRY_RUN: ${{ inputs.dry-run }}
+        SMA_BASELINE_RETRIES: ${{ inputs.baseline-retries }}
+        SMA_STALL_REPEATS: ${{ inputs.stall-repeats }}
+        SMA_STALL_NO_EDIT_TURNS: ${{ inputs.stall-no-edit-turns }}
         ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-auth-token }}
         ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
         ANTHROPIC_MODEL: ${{ inputs.anthropic-model }}

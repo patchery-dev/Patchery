@@ -16,7 +16,14 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { protectedReason, parsePorcelain } from "./guard.mjs";
+import {
+  protectedReason,
+  parsePorcelain,
+  testCommandLooksUnavailable,
+  looksLikeDependencyConflict,
+  redactSecrets,
+  createStallDetector,
+} from "./guard.mjs";
 
 // ------------------------------------------------------------------ config
 
@@ -36,10 +43,25 @@ const MAX_TURNS = Number(env("SMA_MAX_TURNS", "25"));
 const EXTRA = env("SMA_EXTRA_INSTRUCTIONS");
 const REQUIRE_RED = bool("SMA_REQUIRE_FAILING_BASELINE", true);
 const DRY_RUN = bool("SMA_DRY_RUN", false);
+// How many extra times a failing baseline is re-run before we believe it. A test
+// that fails once but passes on a retry is flaky, not broken.
+const BASELINE_RETRIES = Math.max(0, Number(env("SMA_BASELINE_RETRIES", "2")) || 0);
+const STALL_REPEATS = Math.max(2, Number(env("SMA_STALL_REPEATS", "3")) || 3);
+// Deliberately generous: a careful agent legitimately spends 8-10 turns reading
+// the changelog, the call sites and the tests before it edits anything. Measured
+// on a real run - a threshold of 8 cut off an agent that was about to fix the bug.
+const STALL_NO_EDIT_TURNS = Math.max(2, Number(env("SMA_STALL_NO_EDIT_TURNS", "15")) || 15);
 
 // ----------------------------------------------------------------- helpers
 
-const log = (...a) => console.log(...a);
+// Literal values that must never reach a log or a PR body, whatever the
+// pattern matcher thinks. The run's own credentials are the obvious case.
+const SECRET_VALUES = [env("ANTHROPIC_AUTH_TOKEN"), env("ANTHROPIC_API_KEY")].filter(Boolean);
+const clean = (text) => redactSecrets(text, SECRET_VALUES);
+
+// Everything printed goes through redaction: test output and agent chatter are
+// the two places a stray key from a .env or an error message shows up.
+const log = (...a) => console.log(...a.map((x) => (typeof x === "string" ? clean(x) : x)));
 const group = (title) => log("\n" + "=".repeat(8) + " " + title + " " + "=".repeat(8));
 
 function writeOutputs(obj) {
@@ -47,21 +69,33 @@ function writeOutputs(obj) {
   if (!file) return;
   const lines = Object.entries(obj).map(([k, v]) => {
     const delimiter = "__sma_" + k + "_" + Date.now() + "__";
-    return k + "<<" + delimiter + "\n" + String(v) + "\n" + delimiter;
+    return k + "<<" + delimiter + "\n" + clean(String(v)) + "\n" + delimiter;
   });
   fs.appendFileSync(file, lines.join("\n") + "\n");
 }
 
 function writeStepSummary(md) {
   const file = process.env.GITHUB_STEP_SUMMARY;
-  if (file) fs.appendFileSync(file, md + "\n");
+  if (file) fs.appendFileSync(file, clean(md) + "\n");
 }
 
 function fail(message) {
-  console.error("\n[ERROR] " + message);
-  writeOutputs({ changed: "false", tests_passed: "false", summary: message });
-  writeStepSummary("### self-maintaining-action\n\nFailed: " + message);
+  console.error("\n[ERROR] " + clean(message));
+  writeOutputs({ outcome: "failed", changed: "false", tests_passed: "false", summary: message });
+  writeStepSummary("### Patchery\n\nFailed: " + message);
   process.exit(1);
+}
+
+/**
+ * A run that produced nothing but is not an error: nothing was broken, the agent
+ * got stuck, or a human needs to look. Exits 0 so the workflow stays green - the
+ * PR step is gated on `changed`, not on the exit code.
+ */
+function stop(outcome, message, extra = {}) {
+  log("\n" + message);
+  writeStepSummary("### Patchery\n\n" + message);
+  writeOutputs({ outcome, changed: "false", files: "", summary: message, ...extra });
+  process.exit(0);
 }
 
 function git(args, { trim = true } = {}) {
@@ -127,24 +161,82 @@ if (filesBefore.size > 0) {
   log("note: working tree is already dirty (" + filesBefore.size + " files) - those are not counted as the agent's work.");
 }
 
+/** What the agent changed. Anything already dirty before the run does not count. */
+function agentChangedFiles() {
+  return [...workingTreeFiles()].filter((f) => !filesBefore.has(f)).sort();
+}
+
+/** Undo the agent's work: restore tracked files, delete ones it created. */
+function revertPaths(paths) {
+  for (const f of paths) {
+    try {
+      git(["checkout", "--", f]);
+    } catch {
+      // Untracked file: checkout cannot restore it, so remove it.
+      try {
+        fs.rmSync(path.join(repoRoot, f), { force: true });
+      } catch {}
+    }
+  }
+}
+
 group("1. Run the tests first (is it really broken?)");
 const baseline = runTests();
 log(baseline.output.slice(-4000) || "(no output)");
 log("\n-> baseline: " + (baseline.ok ? "PASS" : "FAIL (exit " + baseline.code + ")"));
 
+// A command that does not exist is a setup mistake, not a broken project. Saying
+// "baseline FAIL" here would send a paid agent after a typo.
+if (!baseline.ok) {
+  const unavailable = testCommandLooksUnavailable(baseline.output, baseline.code);
+  if (unavailable) {
+    fail(
+      "`" +
+        TEST_COMMAND +
+        "` did not run: " +
+        unavailable +
+        ". This is not a broken dependency - either the test command is wrong for this " +
+        "target, or this target has no tests. Patchery needs a command that actually " +
+        "runs the tests, because that command is the only thing proving a fix is correct. " +
+        "Fix `test-command` (or point `target-dir` at a package that has tests) and run again."
+    );
+  }
+}
+
+// A test that fails once but passes on a retry is flaky, not broken. Believing
+// the first failure sends the agent after a problem that is not there.
+if (!baseline.ok && BASELINE_RETRIES > 0) {
+  log("\nRe-running the tests " + BASELINE_RETRIES + "x to rule out a flaky failure...");
+  for (let attempt = 1; attempt <= BASELINE_RETRIES; attempt++) {
+    const retry = runTests();
+    log("   attempt " + (attempt + 1) + ": " + (retry.ok ? "PASS" : "FAIL (exit " + retry.code + ")"));
+    if (retry.ok) {
+      stop(
+        "flaky",
+        "`" +
+          TEST_COMMAND +
+          "` failed once but passed on retry, so this is a flaky test, not a broken " +
+          "dependency. The agent was not run. Stabilise the test, or re-run Patchery once " +
+          "the suite is reliable.",
+        { tests_passed: "true" }
+      );
+    }
+  }
+  log("   -> consistently failing, this is a real break.");
+}
+
 if (baseline.ok && REQUIRE_RED) {
-  const msg = "`" + TEST_COMMAND + "` already passes - nothing to fix. The agent was not run.";
-  log("\n" + msg);
-  writeStepSummary("### self-maintaining-action\n\n" + msg);
-  writeOutputs({ changed: "false", tests_passed: "true", files: "", summary: msg });
-  process.exit(0);
+  stop(
+    "nothing-to-do",
+    "`" + TEST_COMMAND + "` already passes - nothing to fix. The agent was not run.",
+    { tests_passed: "true" }
+  );
 }
 
 if (DRY_RUN) {
-  const msg = "SMA_DRY_RUN=true - only the baseline was measured, the agent was not run.";
-  log("\n" + msg);
-  writeOutputs({ changed: "false", tests_passed: String(baseline.ok), files: "", summary: msg });
-  process.exit(0);
+  stop("dry-run", "SMA_DRY_RUN=true - only the baseline was measured, the agent was not run.", {
+    tests_passed: String(baseline.ok),
+  });
 }
 
 group("2. Run the agent");
@@ -198,6 +290,11 @@ const prompt = [
 
 const agentText = [];
 let result = null;
+let stalledReason = null;
+const stallDetector = createStallDetector({
+  repeats: STALL_REPEATS,
+  noEditTurns: STALL_NO_EDIT_TURNS,
+});
 
 try {
   for await (const message of query({
@@ -210,13 +307,23 @@ try {
     },
   })) {
     if (message.type === "assistant") {
+      const toolUses = [];
       for (const block of message.message.content) {
         if (block.type === "text" && block.text.trim()) {
           agentText.push(block.text);
           log("\n[agent] " + block.text);
         } else if (block.type === "tool_use") {
           log("[tool] " + block.name + " " + JSON.stringify(block.input).slice(0, 180));
+          toolUses.push({ name: block.name, input: block.input });
         }
+      }
+
+      // Stop a run that is going in circles instead of letting it eat the whole
+      // turn budget. Breaking the loop ends the iteration and shuts the agent down.
+      stalledReason = stallDetector.observeTurn(toolUses);
+      if (stalledReason) {
+        log("\n[STALLED] " + stalledReason + " - stopping early.");
+        break;
       }
     } else if (message.type === "result") {
       result = message;
@@ -224,6 +331,24 @@ try {
   }
 } catch (err) {
   fail("The agent crashed: " + (err?.message ?? err));
+}
+
+// Stopped early because it was going in circles. Anything it half-changed is
+// unverified, so throw it away and hand the problem to a human.
+if (stalledReason) {
+  const partial = agentChangedFiles();
+  if (partial.length > 0) {
+    log("Discarding " + partial.length + " unverified change(s): " + partial.join(", "));
+    revertPaths(partial);
+  }
+  stop(
+    "inconclusive",
+    "Inconclusive, needs human review: " +
+      stalledReason +
+      ". Patchery stopped early rather than spending the rest of its turn budget, and " +
+      "reverted the unverified changes. Nothing was delivered.",
+    { tests_passed: "false" }
+  );
 }
 
 if (!result) {
@@ -251,6 +376,25 @@ if (usingCustomEndpoint && modelsUsed.some((m) => /^claude-/.test(m))) {
   );
 }
 
+// Running out of turns is not a crash - it is the agent failing to reach a
+// conclusion, which is exactly the "needs human review" outcome.
+if (result.subtype === "error_max_turns") {
+  const partial = agentChangedFiles();
+  if (partial.length > 0) {
+    log("Discarding " + partial.length + " unverified change(s): " + partial.join(", "));
+    revertPaths(partial);
+  }
+  stop(
+    "inconclusive",
+    "Inconclusive, needs human review: the agent used all " +
+      MAX_TURNS +
+      " turns without producing a verified fix. Either the migration is bigger than one " +
+      "run, or the premise is wrong (the code may not actually be broken). Any partial " +
+      "changes were reverted.",
+    { tests_passed: "false" }
+  );
+}
+
 if (result.subtype !== "success") {
   fail(
     "The agent did not finish successfully: " +
@@ -260,39 +404,90 @@ if (result.subtype !== "success") {
 }
 
 group("3. What changed? (verified independently with git)");
-const filesAfter = workingTreeFiles();
-const changed = [...filesAfter].filter((f) => !filesBefore.has(f)).sort();
+const changed = agentChangedFiles();
 
 if (changed.length === 0) {
-  const msg = "The agent changed no files. Nothing to open a PR for.";
-  log(msg);
-  writeStepSummary("### self-maintaining-action\n\n" + msg);
-  writeOutputs({ changed: "false", tests_passed: "false", files: "", summary: msg });
-  process.exit(0);
+  stop("no-changes", "The agent changed no files. Nothing to open a PR for.", {
+    tests_passed: "false",
+  });
 }
 
 log(changed.map((f) => "  " + f).join("\n"));
 
-function revertAll() {
-  for (const f of changed) {
+const revertAll = () => revertPaths(changed);
+
+/** A short, readable diff for one path - so a human can judge the change, not just its name. */
+function diffSummary(file, maxLines = 40) {
+  let body = "";
+  try {
+    body = git(["diff", "--", file]);
+  } catch {}
+  if (!body.trim()) {
+    // Untracked files have no diff; show the head of the file instead.
     try {
-      git(["checkout", "--", f]);
+      body = fs.readFileSync(path.join(repoRoot, file), "utf8");
     } catch {
-      // Untracked file: checkout cannot restore it, so remove it.
-      try {
-        fs.rmSync(path.join(repoRoot, f), { force: true });
-      } catch {}
+      return "(no diff available)";
     }
   }
+  const lines = body.split("\n");
+  const head = lines.slice(0, maxLines).join("\n");
+  return lines.length > maxLines ? head + "\n... (" + (lines.length - maxLines) + " more lines)" : head;
 }
 
 const violations = changed.map((f) => [f, protectedReason(f)]).filter(([, reason]) => reason);
 if (violations.length > 0) {
   log("\n[SAFETY] The agent touched files it must never touch:");
   for (const [f, reason] of violations) log("  - " + f + " (" + reason + ")");
+
+  // Show WHAT it did to them, not just that it did. The guard still blocks the
+  // run either way - this only lets a human tell a malicious test edit from a
+  // migration that legitimately needed one.
+  log("\nWhat it changed in those files (blocked, shown for review):");
+  const violationDiffs = [];
+  for (const [f] of violations) {
+    const d = diffSummary(f);
+    violationDiffs.push("--- " + f + " ---\n" + d);
+    log("\n--- " + f + " ---\n" + d);
+  }
+
   log("\nReverting every change...");
   revertAll();
-  fail("The agent modified protected files (tests / node_modules / CI). Everything was reverted, no PR will be opened.");
+
+  // A lockfile in the blocked set plus a resolver error in the test output is a
+  // specific, common dead end - not generic misbehaviour.
+  const lockfileBlocked = violations.some(([, reason]) => reason === "lockfile");
+  const conflict =
+    looksLikeDependencyConflict(baseline.output) || looksLikeDependencyConflict(agentText.join("\n"));
+
+  if (lockfileBlocked && conflict) {
+    writeStepSummary(
+      "### Patchery\n\nBlocked: peer-dependency conflict.\n\n```\n" +
+        violationDiffs.join("\n\n").slice(0, 4000) +
+        "\n```"
+    );
+    fail(
+      "This is a peer-dependency conflict, not a code problem: resolving it requires " +
+        "updating a lockfile, and lockfiles are protected so the agent cannot touch them. " +
+        "Patchery cannot fix this class of break - resolve the dependency conflict by hand " +
+        "(e.g. update the lockfile yourself), then run Patchery again for the code migration."
+    );
+  }
+
+  writeStepSummary(
+    "### Patchery\n\nBlocked: the agent modified protected files.\n\n" +
+      violations.map(([f, reason]) => "- `" + f + "` (" + reason + ")").join("\n") +
+      "\n\n```diff\n" +
+      violationDiffs.join("\n\n").slice(0, 4000) +
+      "\n```"
+  );
+  fail(
+    "The agent modified protected files (" +
+      violations.map(([f, reason]) => f + ": " + reason).join(", ") +
+      "). Everything was reverted, no PR will be opened. The diffs above show what it " +
+      "tried to change - review them to tell a legitimate migration apart from an agent " +
+      "trying to make the tests pass by editing them."
+  );
 }
 
 group("4. Run the tests again myself (do not trust the agent's word)");
@@ -369,10 +564,12 @@ const prBody = [
 // commit it. Prefer the runner's temp dir, otherwise just outside the repo.
 const prBodyDir = env("RUNNER_TEMP", path.join(repoRoot, ".."));
 const prBodyPath = path.join(prBodyDir, "sma-pr-body.md");
-fs.writeFileSync(prBodyPath, prBody, "utf8");
+// Redact before writing: this file becomes a public pull request body, and it
+// embeds raw test output and whatever the agent chose to quote.
+fs.writeFileSync(prBodyPath, clean(prBody), "utf8");
 
 writeStepSummary(
-  "### self-maintaining-action\n\nFixed `" +
+  "### Patchery\n\nFixed `" +
     PACKAGE +
     "`, `" +
     TEST_COMMAND +
@@ -380,6 +577,7 @@ writeStepSummary(
     changed.map((f) => "- `" + f + "`").join("\n")
 );
 writeOutputs({
+  outcome: "fixed",
   changed: "true",
   tests_passed: "true",
   files: changed.join("\n"),
