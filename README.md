@@ -4,17 +4,30 @@
 
 <h1 align="center">Patchery</h1>
 
+<p align="center"><a href="https://patchery.dev">patchery.dev</a></p>
+
 **When a dependency breaks your code, Patchery fixes it and proves the fix.**
 
-A GitHub Action that fixes your code when a dependency ships a breaking change — verified against your own tests, delivered as a pull request.
+Your project runs on other people's code. When they change how it works, your app
+stops working. Patchery finds what broke, rewrites the lines that need rewriting,
+and checks the result against your own tests before it shows you anything — and
+throws its own work away if that check goes badly.
 
 Dependabot bumps the version and leaves you with a red build. This action goes one
 step further: it reads the changelog, migrates the call sites to the new API, runs
-your tests, and opens a PR **only if those tests pass**.
+your tests, and opens a pull request **only if those tests pass**.
 
 ---
 
-## How it works
+## Writing the fix is the easy part
+
+Tell an AI to make your tests pass and it can pass them by deleting them. It can
+soften a check, stub out the function, or edit the very file that decides what
+"working" means. Every one of those makes a broken project look fixed.
+
+So this action never reads the agent's own account of what it did. It looks at the
+files themselves, throws the whole attempt away if anything off-limits moved, and
+re-runs your test command itself.
 
 ```
 1. Run the tests        -> Is it actually broken? If it passes, do nothing.
@@ -24,10 +37,7 @@ your tests, and opens a PR **only if those tests pass**.
 5. Open a PR            -> Only if steps 1-4 came back clean.
 ```
 
-Steps 3 and 4 are the point of this project. If you tell an AI agent to make the
-tests pass, deleting the tests is a valid way to do that. So this action never reads
-the agent's own report: it inspects the diff with `git status`, reverts everything if
-a protected file was touched, and re-runs the test command itself.
+Steps 3 and 4 are the point of this project.
 
 **Blocked changes** — if any of these show up in the diff, the whole run is
 reverted and no PR is opened:
@@ -45,8 +55,39 @@ exceeding its brief or another process dirtying the tree mid-run — and Patcher
 cannot tell those apart, so it treats both the same way: show you the diff, revert,
 open nothing. Whatever it blocks, it names, with the input that would allow it.
 
-That guard is covered by [`scripts/selftest.mjs`](scripts/selftest.mjs), which runs on
-every push and needs no API key.
+That guard lives in [`scripts/guard.mjs`](scripts/guard.mjs) as pure functions, and
+is covered by [`scripts/selftest.mjs`](scripts/selftest.mjs), which runs on every
+push, offline, in about a second, with no API key.
+
+---
+
+## What it has actually done
+
+One pull request, opened end to end with no human in the loop:
+
+**[patchery-dev/Patchery#2](https://github.com/patchery-dev/Patchery/pull/2)** — `fake-lib`
+went 1.x → 2.0.0 and made `formatPrice`'s second argument required. The action ran
+the tests (failed), read the changelog, changed one line in one file, checked the
+diff against the guard, ran the tests again (passed), and opened the pull request.
+The first human to see it was the reviewer.
+
+| files | lines | tests | turns | cost |
+| --- | --- | --- | --- | --- |
+| 1 | +1 −1 | failed → passed | 11 | $0.1213 |
+
+And the same job by hand, on projects we don't own — no agent involved in either,
+they are here because doing the work manually is how we learned what the automated
+version has to survive:
+
+| Repo | What changed |
+| --- | --- |
+| [ianarawjo/ChainForge#416](https://github.com/ianarawjo/ChainForge/pull/416) | OpenAI SDK v3 → v4: three call sites, plus response unwrapping and `APIError` handling |
+| [ToolJet/ToolJet#17829](https://github.com/ToolJet/ToolJet/pull/17829) | Gemini plugin off `@google/generative-ai`, end-of-life since 30 Nov 2025 |
+
+All three are open. None has been merged. We will change this sentence the day that
+changes — and [patchery.dev](https://patchery.dev) checks it against the GitHub API
+every time someone loads the page, so if it ever stops being true the site says so
+before we do.
 
 ---
 
@@ -152,15 +193,31 @@ node scripts/agent.mjs
 
 ---
 
-## Limitations (stated honestly)
+## Where this actually is
 
-- Only tried on **Node/npm** projects so far. The test command is configurable, so
-  other ecosystems may work, but that is unverified.
-- **One package per run.** It does not resolve cascading breakages.
+**True today**
+
+- Anyone can install it right now, and read every line of it. MIT licensed.
+- One pull request opened start to finish with no human in the loop.
+- The off-limits check is pure, unit-tested, and runs on every push with no AI.
+- Keys and passwords are redacted before anything reaches a log or a PR body.
+- Works on Node / npm projects. You decide what counts as a passing test.
+
+**Not yet**
+
+- Nothing hosted. It runs in your Actions runner, not ours.
+- No revenue, no users, no logo wall. Nobody is paying for this.
+- No open-source pull request accepted yet — two are waiting.
+- One package per run. It does not resolve cascading breakages.
+- Ecosystems beyond Node / npm are plausible, but nobody has proven it.
 - Cost varies per run; `max-turns` is the brake.
-- The resulting PR **needs human review**. There is no auto-merge, and there should not be.
-- The agent sees your source code. Do not point it at private repositories without
-  checking the data policy of the model provider you configured.
+- The resulting PR **needs human review**. There is no auto-merge, and there
+  should not be.
+- The agent sees your source code. Check what your model provider does with it
+  before you point this at anything private.
+
+We would rather you audit this than trust it. Every number above comes from a run
+you can open and read.
 
 ## License
 
