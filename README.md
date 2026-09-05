@@ -1,6 +1,8 @@
-# self-maintaining-action
+# Patchery
 
-**A GitHub Action that fixes your code when a dependency ships a breaking change — verified against your own tests, delivered as a pull request.**
+**When a dependency breaks your code, Patchery fixes it and proves the fix.**
+
+A GitHub Action that fixes your code when a dependency ships a breaking change — verified against your own tests, delivered as a pull request.
 
 Dependabot bumps the version and leaves you with a red build. This action goes one
 step further: it reads the changelog, migrates the call sites to the new API, runs

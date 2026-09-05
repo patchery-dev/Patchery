@@ -1,8 +1,9 @@
-name: "Self-Maintaining APIs"
+name: "Patchery"
 description: >-
-  Let an AI agent fix your code when a dependency ships a breaking change,
-  verify the fix against your own tests, and hand you a ready-to-review PR.
-  If the tests do not pass, it delivers nothing.
+  When a dependency breaks your code, Patchery fixes it and proves the fix.
+  Reads the changelog, migrates the call sites, verifies against your own
+  tests, and hands you a ready-to-review PR. If the tests do not pass, it
+  delivers nothing.
 author: "ugursku"
 
 branding:

@@ -1,9 +1,9 @@
 {
-  "name": "self-maintaining-action",
+  "name": "patchery",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "GitHub Action: kirilan bir bagimliligi AI ajanina duzelttir, testleri dogrula, PR ac.",
+  "description": "Patchery — when a dependency breaks your code, Patchery fixes it and proves the fix.",
   "scripts": {
     "check": "node --check scripts/agent.mjs",
     "test:fixture": "cd test-fixture && npm test"
