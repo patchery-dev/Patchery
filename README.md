@@ -29,12 +29,21 @@ tests pass, deleting the tests is a valid way to do that. So this action never r
 the agent's own report: it inspects the diff with `git status`, reverts everything if
 a protected file was touched, and re-runs the test command itself.
 
-**Protected paths** — if the agent touches any of these, the whole run is discarded:
+**Blocked changes** — if any of these show up in the diff, the whole run is
+reverted and no PR is opened:
 
 - test files — `*.test.*`, `*.spec.*`, `test/`, `tests/`, `__tests__/`, `__mocks__/`
 - `node_modules/`
 - `.github/`
 - lockfiles — `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`
+- **anything outside `target-dir`** — unless you list it in `allowed-paths`
+- **any deleted tracked file** — unless you set `allow-deletions: true`
+
+The last two exist because a migration edits call sites; it does not delete files
+or wander into unrelated directories. Anything that does is either the agent
+exceeding its brief or another process dirtying the tree mid-run — and Patchery
+cannot tell those apart, so it treats both the same way: show you the diff, revert,
+open nothing. Whatever it blocks, it names, with the input that would allow it.
 
 That guard is covered by [`scripts/selftest.mjs`](scripts/selftest.mjs), which runs on
 every push and needs no API key.
@@ -95,6 +104,8 @@ and which directory to fix.
 | `target-dir` | `.` | Project directory to fix |
 | `test-command` | `npm test` | Verification command (runs before and after) |
 | `changelog` | `""` | Changelog path or URL; empty means the agent looks for it |
+| `allowed-paths` | `""` | Paths outside `target-dir` the run may still change, one per line |
+| `allow-deletions` | `false` | Allow the run to delete tracked files |
 | `max-turns` | `25` | Agent turn limit — your cost brake |
 | `extra-instructions` | `""` | Extra instructions for the agent |
 | `require-failing-baseline` | `true` | Skip the agent entirely if tests already pass |

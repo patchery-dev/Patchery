@@ -18,7 +18,9 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   protectedReason,
-  parsePorcelain,
+  parsePorcelainEntries,
+  outOfScopeReason,
+  parsePathList,
   testCommandLooksUnavailable,
   looksLikeDependencyConflict,
   redactSecrets,
@@ -46,6 +48,10 @@ const DRY_RUN = bool("SMA_DRY_RUN", false);
 // How many extra times a failing baseline is re-run before we believe it. A test
 // that fails once but passes on a retry is flaky, not broken.
 const BASELINE_RETRIES = Math.max(0, Number(env("SMA_BASELINE_RETRIES", "2")) || 0);
+// Paths outside target-dir the agent is nonetheless allowed to touch (a monorepo
+// often needs the root manifest), and whether deleting a tracked file is allowed.
+const ALLOWED_PATHS = parsePathList(env("SMA_ALLOWED_PATHS"));
+const ALLOW_DELETIONS = bool("SMA_ALLOW_DELETIONS", false);
 const STALL_REPEATS = Math.max(2, Number(env("SMA_STALL_REPEATS", "3")) || 3);
 // Deliberately generous: a careful agent legitimately spends 8-10 turns reading
 // the changelog, the call sites and the tests before it edits anything. Measured
@@ -118,9 +124,9 @@ function runTests() {
   return { ok: r.status === 0, code: r.status, output: output.trim() };
 }
 
-/** `git status --porcelain` -> the set of changed paths (new and deleted included). */
-function workingTreeFiles() {
-  return parsePorcelain(git(["status", "--porcelain", "-uall", "--no-renames"], { trim: false }));
+/** `git status --porcelain` -> changed entries, status included (new and deleted too). */
+function workingTreeEntries() {
+  return parsePorcelainEntries(git(["status", "--porcelain", "-uall", "--no-renames"], { trim: false }));
 }
 
 // -------------------------------------------------------------------- flow
@@ -156,14 +162,25 @@ try {
 }
 log("git root     : " + repoRoot);
 
-const filesBefore = workingTreeFiles();
+const filesBefore = new Set(workingTreeEntries().map((e) => e.path));
 if (filesBefore.size > 0) {
   log("note: working tree is already dirty (" + filesBefore.size + " files) - those are not counted as the agent's work.");
 }
 
-/** What the agent changed. Anything already dirty before the run does not count. */
+// Where the agent was told to work, relative to the repo root. "" means the
+// whole repository, which is the default and makes the scope rule a no-op.
+const targetRel = path.relative(repoRoot, TARGET_DIR).replace(/\\/g, "/");
+
+/** What the agent changed, with status. Anything already dirty before the run does not count. */
+function agentChangedEntries() {
+  return workingTreeEntries()
+    .filter((e) => !filesBefore.has(e.path))
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** Just the paths, for the places that only need names. */
 function agentChangedFiles() {
-  return [...workingTreeFiles()].filter((f) => !filesBefore.has(f)).sort();
+  return agentChangedEntries().map((e) => e.path);
 }
 
 /** Undo the agent's work: restore tracked files, delete ones it created. */
@@ -282,6 +299,9 @@ const prompt = [
   "  The tests define correct behaviour. If a test fails, the source is wrong, not the test.",
   "- NEVER edit anything inside node_modules/.",
   "- NEVER edit .github/ or lockfiles.",
+  "- NEVER delete a file. This migration edits call sites; it does not remove files.",
+  "- NEVER change anything outside the directory named below, even to tidy up." +
+    (ALLOWED_PATHS.length ? " The only exceptions are: " + ALLOWED_PATHS.join(", ") + "." : ""),
   "- Do not 'fix' the failure by deleting code, skipping assertions, or catching and",
   "  swallowing the error. Migrate the call sites properly.",
   EXTRA ? "\nAdditional instructions from the repository owner:\n" + EXTRA + "\n" : "",
@@ -404,7 +424,8 @@ if (result.subtype !== "success") {
 }
 
 group("3. What changed? (verified independently with git)");
-const changed = agentChangedFiles();
+const changedEntries = agentChangedEntries();
+const changed = changedEntries.map((e) => e.path);
 
 if (changed.length === 0) {
   stop("no-changes", "The agent changed no files. Nothing to open a PR for.", {
@@ -435,9 +456,31 @@ function diffSummary(file, maxLines = 40) {
   return lines.length > maxLines ? head + "\n... (" + (lines.length - maxLines) + " more lines)" : head;
 }
 
-const violations = changed.map((f) => [f, protectedReason(f)]).filter(([, reason]) => reason);
+/**
+ * Every reason a change must not be delivered.
+ *
+ * A dependency migration edits call sites inside the directory it was pointed
+ * at. Anything else - a protected file, a file outside that directory, or a
+ * tracked file deleted outright - is either the agent exceeding its brief or
+ * something else dirtying the tree mid-run. Both look identical from here, and
+ * neither belongs in a pull request the operator did not ask for.
+ */
+function violationReason(entry) {
+  const byPath = protectedReason(entry.path);
+  if (byPath) return byPath;
+
+  const byScope = outOfScopeReason(entry.path, targetRel, ALLOWED_PATHS);
+  if (byScope) return byScope;
+
+  if (entry.deleted && !ALLOW_DELETIONS) {
+    return "deletes a tracked file (migrations edit call sites, they do not delete files)";
+  }
+  return null;
+}
+
+const violations = changedEntries.map((e) => [e.path, violationReason(e)]).filter(([, reason]) => reason);
 if (violations.length > 0) {
-  log("\n[SAFETY] The agent touched files it must never touch:");
+  log("\n[SAFETY] The agent produced changes that must not be delivered:");
   for (const [f, reason] of violations) log("  - " + f + " (" + reason + ")");
 
   // Show WHAT it did to them, not just that it did. The guard still blocks the
@@ -474,19 +517,42 @@ if (violations.length > 0) {
     );
   }
 
+  // Point at the specific escape hatch, so a legitimate case is one input away
+  // rather than a dead end. Only mention the ones that actually apply.
+  const hints = [];
+  if (violations.some(([, r]) => r.startsWith("outside the target directory"))) {
+    hints.push(
+      "If those paths are a legitimate part of this migration (a monorepo root manifest, " +
+        "say), list them in `allowed-paths`."
+    );
+  }
+  if (violations.some(([, r]) => r.startsWith("deletes a tracked file"))) {
+    hints.push(
+      "If this migration is genuinely supposed to delete files, set `allow-deletions: true`."
+    );
+  }
+  if (violations.some(([, r]) => r === "test file" || r === "inside a test directory")) {
+    hints.push(
+      "Test files stay protected with no override: they are the only evidence a fix is " +
+        "correct. If the migration truly requires a test change, make that change yourself " +
+        "first, then run Patchery."
+    );
+  }
+
   writeStepSummary(
-    "### Patchery\n\nBlocked: the agent modified protected files.\n\n" +
-      violations.map(([f, reason]) => "- `" + f + "` (" + reason + ")").join("\n") +
+    "### Patchery\n\nBlocked: changes that must not be delivered.\n\n" +
+      violations.map(([f, reason]) => "- `" + f + "` - " + reason).join("\n") +
       "\n\n```diff\n" +
       violationDiffs.join("\n\n").slice(0, 4000) +
-      "\n```"
+      "\n```\n\n" +
+      hints.join(" ")
   );
   fail(
-    "The agent modified protected files (" +
-      violations.map(([f, reason]) => f + ": " + reason).join(", ") +
-      "). Everything was reverted, no PR will be opened. The diffs above show what it " +
-      "tried to change - review them to tell a legitimate migration apart from an agent " +
-      "trying to make the tests pass by editing them."
+    "Blocked and reverted, no PR will be opened. " +
+      violations.map(([f, reason]) => f + " - " + reason).join("; ") +
+      ". The diffs above show exactly what was changed, so you can tell a legitimate " +
+      "migration apart from an agent going outside its brief. " +
+      hints.join(" ")
   );
 }
 

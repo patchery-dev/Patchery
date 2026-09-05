@@ -35,17 +35,87 @@ export function protectedReason(relPath) {
  * @returns {Set<string>}
  */
 export function parsePorcelain(porcelain) {
-  if (!porcelain || !porcelain.trim()) return new Set();
-  return new Set(
-    porcelain
-      .split("\n")
-      .map((line) => {
-        const m = line.match(/^([ MADRCU?!]{1,2}) (.*)$/);
-        const p = (m ? m[2] : line).trim();
-        return p.replace(/^"|"$/g, "");
-      })
-      .filter(Boolean)
-  );
+  return new Set(parsePorcelainEntries(porcelain).map((e) => e.path));
+}
+
+/**
+ * Same parse, but keeps the status field. The status is what tells a deletion
+ * apart from an edit, and a deletion is the change most likely to destroy work
+ * that had nothing to do with the migration.
+ *
+ * @param {string} porcelain
+ * @returns {Array<{status: string, path: string, deleted: boolean}>}
+ */
+export function parsePorcelainEntries(porcelain) {
+  if (!porcelain || !porcelain.trim()) return [];
+  return porcelain
+    .split("\n")
+    .map((line) => {
+      const m = line.match(/^([ MADRCU?!]{1,2}) (.*)$/);
+      const status = m ? m[1] : "";
+      const p = (m ? m[2] : line).trim().replace(/^"|"$/g, "");
+      return { status, path: p, deleted: status.includes("D") };
+    })
+    .filter((e) => e.path);
+}
+
+/** Normalise a path for comparison: forward slashes, no leading "./", no trailing "/". */
+function normalisePath(p) {
+  return String(p ?? "")
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "")
+    .replace(/\/+$/, "");
+}
+
+/**
+ * Does `relPath` sit inside `dir`? An empty dir (or ".") means the whole repo.
+ */
+function isInside(relPath, dir) {
+  const d = normalisePath(dir);
+  if (d === "" || d === ".") return true;
+  const p = normalisePath(relPath);
+  return p === d || p.startsWith(d + "/");
+}
+
+/**
+ * Is this change outside the area the agent was told to work in?
+ *
+ * The agent is told "work only inside target-dir", but a prompt is a request,
+ * not a guarantee - and anything else running on the machine can dirty the tree
+ * mid-run too. Whatever the cause, a change the operator did not ask for must
+ * not ride along into a pull request unnoticed.
+ *
+ * `allowedPaths` is the escape hatch for the real case this would otherwise
+ * break: a monorepo where fixing `packages/api` legitimately means touching the
+ * root `package.json`. Entries are repo-root-relative files or directories; a
+ * trailing `/**` or `/*` is accepted and ignored (the directory is what counts).
+ *
+ * @param {string} relPath repo-root-relative path
+ * @param {string} targetDir repo-root-relative target directory ("" or "." = whole repo)
+ * @param {string[]} [allowedPaths]
+ * @returns {string|null} reason, or null if the change is in scope
+ */
+export function outOfScopeReason(relPath, targetDir, allowedPaths = []) {
+  if (isInside(relPath, targetDir)) return null;
+  for (const allowed of allowedPaths) {
+    const cleaned = normalisePath(allowed).replace(/\/\*\*?$/, "");
+    if (cleaned === "") continue;
+    if (isInside(relPath, cleaned)) return null;
+  }
+  const target = normalisePath(targetDir) || ".";
+  return "outside the target directory (" + target + ")";
+}
+
+/**
+ * Splits a newline/comma separated input into a list of paths.
+ * @param {string} raw
+ * @returns {string[]}
+ */
+export function parsePathList(raw) {
+  return String(raw ?? "")
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 /**

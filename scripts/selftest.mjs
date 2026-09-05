@@ -11,6 +11,9 @@ import assert from "node:assert";
 import {
   protectedReason,
   parsePorcelain,
+  parsePorcelainEntries,
+  outOfScopeReason,
+  parsePathList,
   testCommandLooksUnavailable,
   looksLikeDependencyConflict,
   redactSecrets,
@@ -87,6 +90,79 @@ check("multi-line output where only line 1 lost its space", () => {
   const s = parsePorcelain("M test-fixture/app.js\n?? new.js\n D gone.js");
   assert.deepStrictEqual([...s].sort(), ["gone.js", "new.js", "test-fixture/app.js"]);
 });
+
+console.log("\nparsePorcelainEntries - status is kept");
+check("unstaged edit", () => {
+  const [e] = parsePorcelainEntries(" M src/app.js");
+  assert.deepStrictEqual({ path: e.path, deleted: e.deleted }, { path: "src/app.js", deleted: false });
+});
+check("worktree deletion is flagged", () => {
+  const [e] = parsePorcelainEntries(" D docs/index.html");
+  assert.deepStrictEqual({ path: e.path, deleted: e.deleted }, { path: "docs/index.html", deleted: true });
+});
+check("staged deletion is flagged", () => {
+  const [e] = parsePorcelainEntries("D  docs/index.html");
+  assert.strictEqual(e.deleted, true);
+});
+check("untracked file is not a deletion", () => {
+  const [e] = parsePorcelainEntries("?? new.js");
+  assert.strictEqual(e.deleted, false);
+});
+check("mixed output keeps order and statuses", () => {
+  const es = parsePorcelainEntries(" M a.js\n D b.js\n?? c.js");
+  assert.deepStrictEqual(
+    es.map((e) => e.path + ":" + e.deleted),
+    ["a.js:false", "b.js:true", "c.js:false"]
+  );
+});
+
+console.log("\noutOfScopeReason - the agent stays where it was pointed");
+check("inside the target directory is fine", () =>
+  assert.strictEqual(outOfScopeReason("packages/api/src/x.js", "packages/api"), null)
+);
+check("the target directory itself is fine", () =>
+  assert.strictEqual(outOfScopeReason("packages/api", "packages/api"), null)
+);
+// The real incident: target-dir was test-fixture, and a docs/ file was deleted.
+check("a file elsewhere in the repo is out of scope", () =>
+  assert.match(String(outOfScopeReason("docs/index.html", "test-fixture")), /outside the target directory/)
+);
+check("an empty target means the whole repo, so nothing is out of scope", () =>
+  assert.strictEqual(outOfScopeReason("anywhere/at/all.js", ""), null)
+);
+check("'.' also means the whole repo (the default)", () =>
+  assert.strictEqual(outOfScopeReason("anywhere/at/all.js", "."), null)
+);
+check("a sibling with a shared prefix is NOT inside", () =>
+  assert.match(String(outOfScopeReason("packages/api-v2/x.js", "packages/api")), /outside/)
+);
+check("allowed-paths lets a specific file through", () =>
+  assert.strictEqual(outOfScopeReason("package.json", "packages/api", ["package.json"]), null)
+);
+check("allowed-paths lets a directory through", () =>
+  assert.strictEqual(outOfScopeReason("packages/shared/x.js", "packages/api", ["packages/shared"]), null)
+);
+check("a /** suffix on an allowed path is accepted", () =>
+  assert.strictEqual(outOfScopeReason("packages/shared/x.js", "packages/api", ["packages/shared/**"]), null)
+);
+check("allowed-paths does not open up everything else", () =>
+  assert.match(String(outOfScopeReason("docs/index.html", "packages/api", ["package.json"])), /outside/)
+);
+check("windows backslashes are handled", () =>
+  assert.strictEqual(outOfScopeReason("packages\\api\\src\\x.js", "packages/api"), null)
+);
+
+console.log("\nparsePathList");
+check("newline separated", () =>
+  assert.deepStrictEqual(parsePathList("package.json\npackages/shared"), ["package.json", "packages/shared"])
+);
+check("comma separated with spaces", () =>
+  assert.deepStrictEqual(parsePathList("a.json , b.json"), ["a.json", "b.json"])
+);
+check("empty input is an empty list", () => assert.deepStrictEqual(parsePathList(""), []));
+check("blank lines are dropped", () =>
+  assert.deepStrictEqual(parsePathList("a.json\n\n\nb.json\n"), ["a.json", "b.json"])
+);
 
 console.log("\ntestCommandLooksUnavailable - the command never ran");
 check("npm missing script", () =>

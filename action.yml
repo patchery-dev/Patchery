@@ -46,6 +46,22 @@ inputs:
     description: "When true, only measure the baseline test run; do not run the agent."
     required: false
     default: "false"
+  allowed-paths:
+    description: >-
+      Paths outside target-dir the agent may still change, one per line (or comma
+      separated). Everything else outside target-dir is blocked and reverted.
+      Use this for the real case it would otherwise break: a monorepo where
+      fixing one package legitimately means touching the root manifest.
+    required: false
+    default: ""
+  allow-deletions:
+    description: >-
+      Allow the run to delete tracked files. Off by default: a dependency
+      migration edits call sites, it does not remove files, so a deletion is
+      almost always the agent exceeding its brief - and it would otherwise ride
+      along into the pull request unnoticed.
+    required: false
+    default: "false"
   baseline-retries:
     description: >-
       How many extra times a failing test run is repeated before it is believed.
@@ -136,6 +152,8 @@ runs:
         SMA_EXTRA_INSTRUCTIONS: ${{ inputs.extra-instructions }}
         SMA_REQUIRE_FAILING_BASELINE: ${{ inputs.require-failing-baseline }}
         SMA_DRY_RUN: ${{ inputs.dry-run }}
+        SMA_ALLOWED_PATHS: ${{ inputs.allowed-paths }}
+        SMA_ALLOW_DELETIONS: ${{ inputs.allow-deletions }}
         SMA_BASELINE_RETRIES: ${{ inputs.baseline-retries }}
         SMA_STALL_REPEATS: ${{ inputs.stall-repeats }}
         SMA_STALL_NO_EDIT_TURNS: ${{ inputs.stall-no-edit-turns }}
