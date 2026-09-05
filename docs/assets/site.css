@@ -401,8 +401,20 @@ main, .foot { position: relative; z-index: 2; }
 .thesis__col em { font-family: var(--serif); font-style: italic; font-size: 1.12em; color: var(--ink); }
 
 .ticker {
-  margin-top: clamp(56px, 7vw, 96px);
-  border-block: 1px solid var(--line-soft);
+  margin: clamp(56px, 7vw, 96px) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line-soft);
+}
+.ticker__note {
+  padding: clamp(18px, 2vw, 26px) 0 clamp(16px, 1.8vw, 22px);
+  max-width: 76ch;
+  font-size: 13.5px; line-height: 1.65; color: var(--muted);
+}
+.ticker__note em { font-style: italic; color: var(--ink-2); }
+.ticker__note code { color: var(--ink-2); }
+.ticker__strip {
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
   padding-block: 15px; overflow: hidden;
   -webkit-mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent);
           mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent);

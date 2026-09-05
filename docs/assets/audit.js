@@ -121,7 +121,7 @@
 
     {
       id: "claims.nothing-merged",
-      claim: "None of the three pull requests has been merged.",
+      claim: "None of the three pull requests shown on this page has been merged.",
       run: function () {
         return Promise.all([
           gh("pulls/2"),
