@@ -38,9 +38,15 @@
 <!-- ───────────────────────────  boot  ─────────────────────────── -->
 <div class="boot" id="boot" aria-hidden="true">
   <div class="boot__mark">
-    <svg viewBox="0 0 180 180" width="54" height="54" fill="none" aria-hidden="true">
-      <path id="bootPath" d="M62 140 V56 a13 13 0 0 1 13-13 h31 l24 24 v17 a14 14 0 0 1-14 14 H86"
+    <svg viewBox="0 0 180 180" width="58" height="58" fill="none" aria-hidden="true">
+      <!-- pathLength="1" makes the browser normalise this path to a length of 1,
+           so the dash animation is correct no matter what the geometry is. The
+           previous hand-written 320 was wrong: the real length is 238, so the
+           mark finished drawing at 74% and then sat still. -->
+      <path id="bootPath" pathLength="1"
+            d="M62 140 V56 a13 13 0 0 1 13-13 h31 l24 24 v17 a14 14 0 0 1-14 14 H86"
             stroke="#00c48c" stroke-width="17" stroke-linecap="square" stroke-linejoin="miter"/>
+      <circle id="bootTip" r="4.5" fill="#00c48c"/>
     </svg>
   </div>
   <div class="boot__bar"><i id="bootBar"></i></div>

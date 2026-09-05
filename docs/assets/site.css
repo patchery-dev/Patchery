@@ -44,6 +44,8 @@
   --pad: clamp(20px, 4.4vw, 64px);
 
   --ease: cubic-bezier(.22, 1, .36, 1);
+  /* speed of a pen along the P: fast on the stem, slower into each corner */
+  --pen: linear(0, .33 22%, .42 34%, .62 52%, .72 66%, .86 80%, 1);
   --ease-io: cubic-bezier(.65, .05, .36, 1);
 }
 
@@ -119,8 +121,31 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
   transition: opacity .55s var(--ease), visibility .55s;
 }
 .boot.is-done { opacity: 0; visibility: hidden; pointer-events: none; }
-#bootPath { stroke-dasharray: 320; stroke-dashoffset: 320; animation: draw 1.05s var(--ease) forwards; }
+/* A hand does not draw at a constant speed. It runs down the long stem, slows
+   into each corner, and eases out of the last one. linear() lets the easing be
+   shaped around the actual corners of this particular letter rather than being
+   one generic curve. The stops correspond to: end of the stem, out of the top
+   arc, along the top, into the bowl, and the final run back to the left. */
+#bootPath {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 1.15s var(--pen) forwards;
+}
 @keyframes draw { to { stroke-dashoffset: 0; } }
+
+/* The pen itself, riding the same path on the same easing, so the dot is always
+   exactly where the ink stops. Only shown where offset-path is supported. */
+#bootTip { opacity: 0; }
+@supports (offset-path: path("M0 0 L1 1")) {
+  #bootTip {
+    offset-path: path("M62 140 V56 a13 13 0 0 1 13-13 h31 l24 24 v17 a14 14 0 0 1-14 14 H86");
+    offset-distance: 0%;
+    offset-rotate: 0deg;
+    animation: pen 1.15s var(--pen) forwards, penlift .3s 1.02s forwards;
+  }
+}
+@keyframes pen { to { offset-distance: 100%; } }
+@keyframes penlift { from { opacity: 1; } to { opacity: 0; transform: scale(2.2); } }
 .boot__bar { width: 132px; height: 1px; background: var(--line); overflow: hidden; }
 .boot__bar i { display: block; height: 100%; width: 0; background: var(--teal); transition: width .2s linear; }
 
