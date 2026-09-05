@@ -3,147 +3,569 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Patchery — dependency breaks, fixed and proven</title>
-<meta name="description" content="When a dependency breaks your code, Patchery fixes it and proves the fix.">
+<title>Patchery — when a dependency breaks your code</title>
+<meta name="description" content="When a dependency breaks your code, Patchery fixes it and proves the fix. A GitHub Action that migrates your call sites, audits its own diff with git, and opens a pull request only when your tests pass.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0e14">
+
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
-<style>
-  :root {
-    --bg: #0b0f10;
-    --surface: #12181a;
-    --border: #22302f;
-    --text: #eef4f2;
-    --text-muted: #9fb0ac;
-    --accent: #17c98c;
-    --accent-ink: #06231a;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    line-height: 1.6;
-  }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
-  header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 28px 0;
-  }
-  header img { width: 28px; height: 28px; }
-  header span { font-weight: 600; font-size: 18px; }
-  .hero { padding: 48px 0 32px; }
-  .hero h1 {
-    font-size: clamp(28px, 5vw, 40px);
-    line-height: 1.25;
-    margin: 0 0 16px;
-    font-weight: 600;
-  }
-  .hero h1 em {
-    color: var(--accent);
-    font-style: normal;
-  }
-  .hero p {
-    color: var(--text-muted);
-    font-size: 18px;
-    max-width: 60ch;
-  }
-  .cta { display: flex; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
-  .btn {
-    display: inline-block;
-    padding: 12px 20px;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 15px;
-  }
-  .btn-primary { background: var(--accent); color: var(--accent-ink); }
-  .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
-  section { padding: 32px 0; border-top: 1px solid var(--border); }
-  section h2 { font-size: 20px; margin: 0 0 16px; }
-  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
-  .steps li {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px 18px;
-  }
-  .steps li b { color: var(--accent); }
-  code {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 1px 6px;
-    font-size: 0.9em;
-  }
-  .proof {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 18px;
-  }
-  .proof a { color: var(--accent); }
-  .note {
-    color: var(--text-muted);
-    font-size: 14px;
-  }
-  footer {
-    padding: 32px 0 48px;
-    color: var(--text-muted);
-    font-size: 14px;
-    border-top: 1px solid var(--border);
-  }
-  footer a { color: var(--text-muted); }
-</style>
+<link rel="apple-touch-icon" href="assets/logo.png">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Patchery">
+<meta property="og:description" content="When a dependency breaks your code, Patchery fixes it and proves the fix.">
+<meta property="og:url" content="https://github.com/patchery-dev/Patchery">
+<!-- Drop a 1280x640 banner at assets/og.png and repoint the two image tags below at it. -->
+<meta property="og:image" content="https://patchery-dev.github.io/Patchery/assets/logo.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://patchery-dev.github.io/Patchery/assets/logo.png">
+<meta name="twitter:title" content="Patchery">
+<meta name="twitter:description" content="When a dependency breaks your code, Patchery fixes it and proves the fix.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css">
 </head>
-<body>
-<div class="wrap">
 
-  <header>
-    <img src="assets/logo.png" alt="">
+<body class="is-loading">
+
+<!-- ───────────────────────────  boot  ─────────────────────────── -->
+<div class="boot" id="boot" aria-hidden="true">
+  <div class="boot__mark">
+    <svg viewBox="0 0 180 180" width="54" height="54" fill="none" aria-hidden="true">
+      <path id="bootPath" d="M62 140 V56 a13 13 0 0 1 13-13 h31 l24 24 v17 a14 14 0 0 1-14 14 H86"
+            stroke="#00c48c" stroke-width="17" stroke-linecap="square" stroke-linejoin="miter"/>
+    </svg>
+  </div>
+  <div class="boot__bar"><i id="bootBar"></i></div>
+</div>
+
+<!-- ───────────────────────────  chrome  ─────────────────────────── -->
+<a class="skip" href="#pipeline">Skip to how it works</a>
+
+<header class="nav" id="nav">
+  <a class="nav__brand" href="#top" aria-label="Patchery, back to top">
+    <img src="assets/logo.png" width="26" height="26" alt="">
     <span>Patchery</span>
-  </header>
+  </a>
+  <nav class="nav__links" aria-label="Sections">
+    <a href="#pipeline">How it works</a>
+    <a href="#guard">The guard</a>
+    <a href="#proof">Proof</a>
+    <a href="#install">Install</a>
+  </nav>
+  <a class="nav__gh" href="https://github.com/patchery-dev/Patchery">
+    <span>GitHub</span>
+    <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg>
+  </a>
+</header>
 
-  <div class="hero">
-    <h1>When a dependency breaks your code,<br><em>Patchery fixes it</em> and proves the fix.</h1>
-    <p>A GitHub Action that reads the changelog, migrates the call sites, re-runs your own tests, and only then opens a pull request. It never trusts its own report — it verifies the diff itself.</p>
-    <div class="cta">
-      <a class="btn btn-primary" href="https://github.com/patchery-dev/Patchery">View on GitHub</a>
-      <a class="btn btn-secondary" href="https://github.com/patchery-dev/Patchery#setup">Setup guide</a>
+<div class="scrollbar" aria-hidden="true"><i id="scrollbarFill"></i></div>
+
+<main id="top">
+
+<!-- ═══════════════════════  01 · HERO  ═══════════════════════ -->
+<section class="hero" id="hero">
+  <canvas class="hero__canvas" id="graph" aria-hidden="true"></canvas>
+  <div class="hero__vignette" aria-hidden="true"></div>
+
+  <div class="hero__inner shell">
+    <p class="eyebrow" data-reveal>
+      <span class="dot"></span>GitHub&nbsp;Action <i>/</i> MIT <i>/</i> v0
+    </p>
+
+    <h1 class="hero__title">
+      <span class="line"><span>When a dependency</span></span>
+      <span class="line"><span>breaks your code,</span></span>
+      <span class="line"><span class="accent">Patchery fixes it</span></span>
+      <span class="line"><span>and <em>proves</em> the fix.</span></span>
+    </h1>
+
+    <p class="hero__sub" data-reveal>
+      An agent that reads the changelog and migrates your call sites — then refuses to take
+      its own word for it. It audits the diff with <code>git</code>, re-runs your tests
+      itself, and opens a pull request only when everything comes back clean.
+    </p>
+
+    <div class="hero__cta" data-reveal>
+      <a class="btn btn--primary magnetic" href="https://github.com/patchery-dev/Patchery/pull/2">
+        <span>Read the PR it opened</span>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/></svg>
+      </a>
+      <a class="btn btn--ghost magnetic" href="https://github.com/patchery-dev/Patchery"><span>View the source</span></a>
     </div>
+
+    <ul class="hero__facts" data-reveal>
+      <li><b>1</b> automated PR, live</li>
+      <li><b>+1&thinsp;/&thinsp;&minus;1</b> lines in it</li>
+      <li><b>$0.12</b> to produce</li>
+      <li class="muted">no hosted service yet</li>
+    </ul>
   </div>
 
-  <section>
-    <h2>How it works</h2>
-    <ul class="steps">
-      <li><b>1. Run the tests.</b> Is it actually broken? If it passes, do nothing.</li>
-      <li><b>2. Run the agent.</b> Read the changelog, migrate the affected call sites.</li>
-      <li><b>3. Check with git.</b> What changed? Touched a test file or a lockfile? Revert everything.</li>
-      <li><b>4. Run the tests again.</b> Never trust the agent's own word — measure it.</li>
-      <li><b>5. Open a PR.</b> Only if every step above came back clean.</li>
-    </ul>
-  </section>
+  <div class="hero__scroll" aria-hidden="true"><span>scroll</span><i></i></div>
+</section>
 
-  <section>
-    <h2>See it work</h2>
-    <div class="proof">
-      A live, fully automated run: the agent found a real breaking change, fixed the one affected file, verified the tests went from failing to passing, and opened a pull request — no human in the loop until review.
-      <br><br>
-      → <a href="https://github.com/patchery-dev/Patchery/pull/2">patchery-dev/Patchery#2</a>
+<!-- ═══════════════════════  02 · THE BREAK  ═══════════════════════ -->
+<section class="break" id="break">
+  <div class="shell">
+    <div class="sechead" data-reveal>
+      <span class="sechead__idx">02</span>
+      <span class="sechead__rule"></span>
+      <span class="sechead__label">The problem</span>
     </div>
-  </section>
 
-  <section>
-    <h2>Status</h2>
-    <p class="note">Patchery is early. It's a GitHub Action you install yourself today (<code>.github/workflows/</code>), not a hosted service yet. It has been run successfully against its own test fixture and is now being tried against real open-source projects — see the setup guide on GitHub for exact steps and current limitations, stated honestly.</p>
-  </section>
+    <div class="break__grid">
+      <h2 class="break__quote" data-reveal>
+        Dependabot bumps the version<br>
+        and leaves you with a <span class="fail">red build.</span>
+      </h2>
 
-  <footer>
-    <a href="https://github.com/patchery-dev/Patchery">github.com/patchery-dev/Patchery</a>
-  </footer>
+      <div class="break__body">
+        <p data-reveal>
+          The bump is the easy half. The hard half is the twenty call sites that used the old
+          signature, the changelog nobody read, and the afternoon you lose to a stack trace
+          before finding out that an argument quietly became required.
+        </p>
+        <p class="muted" data-reveal>
+          Patchery does the hard half — and then proves it did it. Because an agent told to
+          <em>&ldquo;make the tests pass&rdquo;</em> can always just delete the tests.
+        </p>
+      </div>
+    </div>
 
-</div>
+    <div class="ticker" aria-hidden="true"><div class="ticker__row" id="ticker"></div></div>
+  </div>
+</section>
+
+<!-- ═══════════════════════  03 · PIPELINE  ═══════════════════════ -->
+<section class="pipe" id="pipeline">
+  <div class="pipe__track" id="pipeTrack">
+    <div class="pipe__stage">
+      <div class="shell pipe__layout">
+
+        <div class="pipe__side">
+          <div class="sechead">
+            <span class="sechead__idx">03</span>
+            <span class="sechead__rule"></span>
+            <span class="sechead__label">One run, five gates</span>
+          </div>
+
+          <h2 class="pipe__h">Nothing here<br>is taken on trust.</h2>
+
+          <ol class="rail" id="rail">
+            <li class="rail__i" data-i="0"><b>01</b><span>Run the tests</span><em>Is it actually broken?</em></li>
+            <li class="rail__i" data-i="1"><b>02</b><span>Run the agent</span><em>Read the changelog, migrate the call sites.</em></li>
+            <li class="rail__i" data-i="2"><b>03</b><span>Check with git</span><em>What actually changed on disk?</em></li>
+            <li class="rail__i" data-i="3"><b>04</b><span>Run the tests again</span><em>Measure it. Don&rsquo;t ask it.</em></li>
+            <li class="rail__i" data-i="4"><b>05</b><span>Open a PR</span><em>Only if 01–04 came back clean.</em></li>
+          </ol>
+        </div>
+
+        <div class="pipe__screens" id="screens">
+
+          <!-- 01 -->
+          <figure class="scr is-on" data-scr="0">
+            <div class="scr__bar"><span class="scr__tag">shell</span><span class="scr__path">toy-project</span><span class="scr__state fail">exit 1</span></div>
+            <pre class="term"><code data-type>$ npm test
+
+&gt; toy-project@1.0.0 test
+&gt; node app.test.js
+
+node_modules/fake-lib/index.js:3
+    throw new TypeError("currency is required as of fake-lib@2.0.0");
+    ^
+
+<i class="t-fail">TypeError: formatPrice(amount, currency): currency is required</i>
+    at formatPrice (node_modules/fake-lib/index.js:3:11)
+    at renderCartTotal (app.js:4:20)
+    at Object.&lt;anonymous&gt; (app.test.js:4:16)</code></pre>
+            <figcaption class="scr__note">A failing baseline is the entry ticket. If your tests already pass, the run stops right here and costs nothing.</figcaption>
+          </figure>
+
+          <!-- 02 -->
+          <figure class="scr" data-scr="1">
+            <div class="split">
+              <div class="split__col">
+                <div class="scr__bar"><span class="scr__tag">read</span><span class="scr__path">fake-lib/CHANGELOG.md</span></div>
+                <pre class="term term--sm scan"><code><i class="t-dim"># fake-lib changelog</i>
+
+<i class="t-key">## 2.0.0 (breaking)</i>
+
+- <i class="t-fail">Removed</i> formatPrice(amount).
+  Returned a plain number string and
+  rounded inconsistently across locales.
+
+- <i class="t-ok">Added</i> formatPrice(amount, currency).
+  Now requires an explicit ISO currency
+  code, e.g. "USD".
+
+<i class="t-dim">### Migration</i>
+  formatPrice(19.9)        <i class="t-dim">// "19.90"</i>
+  formatPrice(19.9,"USD")  <i class="t-dim">// "$19.90"</i></code></pre>
+              </div>
+              <div class="split__col">
+                <div class="scr__bar"><span class="scr__tag">write</span><span class="scr__path">app.js</span><span class="scr__state">1 call site</span></div>
+                <pre class="term term--sm"><code><i class="t-ln">1</i>  const { formatPrice } = require("fake-lib");
+<i class="t-ln">2</i>
+<i class="t-ln">3</i>  function renderCartTotal(amount) {
+<i class="t-ln">4</i>    return `Total: ${<span id="rewrite" class="rewrite">formatPrice(amount)</span>}`;
+<i class="t-ln">5</i>  }
+<i class="t-ln">6</i>
+<i class="t-ln">7</i>  module.exports = { renderCartTotal };</code></pre>
+              </div>
+            </div>
+            <figcaption class="scr__note">The agent runs on a turn budget with a stall detector: repeat one tool call three times, or spend eight turns without an edit, and the run is cut off. That guard exists because a confused run once burned 25 turns and $0.88 producing nothing.</figcaption>
+          </figure>
+
+          <!-- 03 -->
+          <figure class="scr" data-scr="2">
+            <div class="scr__bar"><span class="scr__tag">audit</span><span class="scr__path">git status --porcelain</span><span class="scr__state ok">clean</span></div>
+            <pre class="term"><code>$ git status --porcelain -uall --no-renames
+ M app.js
+
+$ patchery guard
+<i class="gl" data-gl="0">  app.js                       <b class="t-ok">allowed</b></i>
+<i class="gl" data-gl="1">  app.test.js                  <b class="t-dim">untouched</b></i>
+<i class="gl" data-gl="2">  package-lock.json            <b class="t-dim">untouched</b></i>
+<i class="gl" data-gl="3">  node_modules/                <b class="t-dim">untouched</b></i>
+<i class="gl" data-gl="4">  .github/                     <b class="t-dim">untouched</b></i>
+
+<i class="gl" data-gl="5"><b class="t-ok">→ diff accepted, re-running tests</b></i></code></pre>
+            <figcaption class="scr__note">Not the agent&rsquo;s summary — the actual working tree. Every changed path is matched against the protected list, and one hit throws the whole run away, fix included. <a class="ilink" href="#guard">Try to get something past it →</a></figcaption>
+          </figure>
+
+          <!-- 04 -->
+          <figure class="scr" data-scr="3">
+            <div class="scr__bar"><span class="scr__tag">shell</span><span class="scr__path">toy-project</span><span class="scr__state ok">exit 0</span></div>
+            <pre class="term"><code data-type>$ npm test
+
+&gt; toy-project@1.0.0 test
+&gt; node app.test.js
+
+<i class="t-ok">PASS: app.test.js</i></code></pre>
+            <figcaption class="scr__note">Same command, same runner, run again from scratch. The agent is never asked whether it worked.</figcaption>
+          </figure>
+
+          <!-- 05 -->
+          <figure class="scr" data-scr="4">
+            <div class="prcard">
+              <div class="prcard__top">
+                <span class="prcard__badge">Open</span>
+                <span class="prcard__repo">patchery-dev/Patchery&nbsp;<b>#2</b></span>
+              </div>
+              <h3 class="prcard__title">fix(deps): migrate fake-lib call sites</h3>
+              <p class="prcard__branch"><code>self-maintain/fake-lib</code> → <code>main</code></p>
+              <pre class="diff"><code><i class="d-meta">--- a/test-fixture/app.js</i>
+<i class="d-meta">+++ b/test-fixture/app.js</i>
+<i class="d-hunk">@@ -2,7 +2,7 @@</i>
+   function renderCartTotal(amount) {
+<i class="d-del">-    return `Total: ${formatPrice(amount)}`;</i>
+<i class="d-add">+    return `Total: ${formatPrice(amount, "USD")}`;</i>
+   }</code></pre>
+              <ul class="prcard__stats">
+                <li><b>1</b> file</li>
+                <li><b class="t-ok">+1</b> <b class="t-fail">&minus;1</b></li>
+                <li><b>11</b> turns</li>
+                <li><b>$0.1213</b></li>
+              </ul>
+              <p class="prcard__foot">Opened automatically. Never merged automatically.</p>
+            </div>
+          </figure>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════  04 · THE GUARD  ═══════════════════════ -->
+<section class="guard" id="guard">
+  <div class="shell">
+    <div class="sechead" data-reveal>
+      <span class="sechead__idx">04</span>
+      <span class="sechead__rule"></span>
+      <span class="sechead__label">The guard</span>
+    </div>
+
+    <div class="guard__head">
+      <h2 data-reveal>Try to break it.</h2>
+      <p data-reveal>
+        Below runs <code>protectedReason()</code>, copied character for character out of
+        <a class="ilink" href="https://github.com/patchery-dev/Patchery/blob/main/scripts/guard.mjs">scripts/guard.mjs</a>.
+        It is the function that decides whether a run survives. Hand it a path — one of ours,
+        or one of yours — and it answers exactly the way it answers in CI.
+      </p>
+    </div>
+
+    <div class="guard__panel" data-reveal>
+      <div class="guard__io">
+        <form class="guard__form" id="guardForm" autocomplete="off">
+          <label class="guard__prompt" for="guardInput">stage a changed file</label>
+          <div class="guard__field">
+            <span class="guard__caret">+</span>
+            <input id="guardInput" type="text" placeholder="src/checkout/cart.ts" spellcheck="false" aria-label="File path to test against the guard">
+            <button type="submit">add</button>
+          </div>
+        </form>
+        <p class="guard__hint">or pick one:</p>
+        <div class="guard__chips">
+          <button type="button" data-path="src/checkout/cart.ts">src/checkout/cart.ts</button>
+          <button type="button" data-path="lib/query_operations.ts">lib/query_operations.ts</button>
+          <button type="button" data-path="test/cart.test.js">test/cart.test.js</button>
+          <button type="button" data-path="package-lock.json">package-lock.json</button>
+          <button type="button" data-path="node_modules/fake-lib/index.js">node_modules/fake-lib/index.js</button>
+          <button type="button" data-path=".github/workflows/ci.yml">.github/workflows/ci.yml</button>
+          <button type="button" data-path="__mocks__/api.js">__mocks__/api.js</button>
+          <button type="button" data-path="src/utils.spec.tsx">src/utils.spec.tsx</button>
+        </div>
+      </div>
+
+      <div class="guard__out">
+        <div class="scr__bar">
+          <span class="scr__tag">git</span>
+          <span class="scr__path">working tree</span>
+          <span class="scr__state" id="guardCount">0 files</span>
+        </div>
+        <ul class="guard__list" id="guardList"></ul>
+        <p class="guard__empty" id="guardEmpty">Nothing staged yet.</p>
+        <div class="guard__verdict" id="guardVerdict" data-verdict="idle">
+          <span class="guard__verdict-k">verdict</span>
+          <span class="guard__verdict-v" id="guardVerdictText">waiting for a diff</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="guard__src" data-reveal>
+      Five rules, checked in order — <code>node_modules/</code> ·
+      <code>*.test.* &nbsp;*.spec.*</code> · <code>test/ tests/ __tests__/ __mocks__/</code> ·
+      <code>.github/</code> · <code>package-lock.json&nbsp;·&nbsp;pnpm-lock.yaml&nbsp;·&nbsp;yarn.lock</code>
+      — and covered by an offline self-test that runs on every push and needs no API key.
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════  05 · PROOF  ═══════════════════════ -->
+<section class="proof" id="proof">
+  <div class="shell">
+    <div class="sechead" data-reveal>
+      <span class="sechead__idx">05</span>
+      <span class="sechead__rule"></span>
+      <span class="sechead__label">Evidence, not adjectives</span>
+    </div>
+
+    <h2 class="proof__h" data-reveal>It has done this once,<br>with nobody watching.</h2>
+
+    <a class="proofcard proofcard--lead" href="https://github.com/patchery-dev/Patchery/pull/2" data-reveal>
+      <div class="proofcard__meta">
+        <span class="tag tag--auto">fully automated</span>
+        <span class="proofcard__repo">patchery-dev/Patchery #2</span>
+      </div>
+      <h3>fix(deps): migrate fake-lib call sites</h3>
+      <p>
+        <code>fake-lib</code> went 1.x → 2.0.0 and made the second argument of
+        <code>formatPrice</code> required. The action ran the tests (failed), read the
+        changelog, changed one line in one file, checked the diff against the guard, ran the
+        tests again (passed), and opened this pull request. No human touched it until review.
+      </p>
+      <ul class="proofcard__stats">
+        <li><span>files</span><b>1</b></li>
+        <li><span>diff</span><b><i class="t-ok">+1</i> <i class="t-fail">&minus;1</i></b></li>
+        <li><span>tests</span><b><i class="t-fail">fail</i> → <i class="t-ok">pass</i></b></li>
+        <li><span>turns</span><b>11</b></li>
+        <li><span>cost</span><b>$0.1213</b></li>
+      </ul>
+      <span class="proofcard__go">Open on GitHub <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg></span>
+    </a>
+
+    <div class="proof__sep" data-reveal>
+      <span class="sechead__rule"></span>
+      <p>And the same job by hand, on projects we don&rsquo;t own — the exact work this action automates. <b>No agent involved in these two.</b></p>
+    </div>
+
+    <div class="proof__pair">
+      <a class="proofcard" href="https://github.com/ianarawjo/ChainForge/pull/416" data-reveal>
+        <div class="proofcard__meta">
+          <span class="tag">opened manually</span>
+          <span class="proofcard__repo">ianarawjo/ChainForge #416</span>
+        </div>
+        <h3>Migrate the OpenAI SDK from v3 to v4</h3>
+        <p>The repo still ran <code>openai@~3.3.0</code> on the deprecated
+        <code>Configuration</code> / <code>OpenAIApi</code> pattern. Three call sites moved to
+        the v4 client, with response unwrapping and <code>APIError</code> handling adjusted.</p>
+        <span class="proofcard__go">Open <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg></span>
+      </a>
+
+      <a class="proofcard" href="https://github.com/ToolJet/ToolJet/pull/17829" data-reveal>
+        <div class="proofcard__meta">
+          <span class="tag">opened manually</span>
+          <span class="proofcard__repo">ToolJet/ToolJet #17829</span>
+        </div>
+        <h3>Migrate Gemini to <code>@google/genai</code></h3>
+        <p>The Gemini plugin depended on <code>@google/generative-ai</code>, end-of-life since
+        30 November 2025. Client construction and both query paths moved to the unified SDK.</p>
+        <span class="proofcard__go">Open <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg></span>
+      </a>
+    </div>
+
+    <p class="proof__caveat" data-reveal>
+      All three are open. None has been merged. We will change this sentence the day that changes.
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════  06 · INSTALL  ═══════════════════════ -->
+<section class="install" id="install">
+  <div class="shell">
+    <div class="sechead" data-reveal>
+      <span class="sechead__idx">06</span>
+      <span class="sechead__rule"></span>
+      <span class="sechead__label">Install</span>
+    </div>
+
+    <div class="install__grid">
+      <div class="install__side">
+        <h2 data-reveal>One file in,<br>one workflow out.</h2>
+        <ol class="steps" data-reveal>
+          <li><b>01</b><span>Add <code>ANTHROPIC_AUTH_TOKEN</code> under Settings → Secrets and variables → Actions.</span></li>
+          <li><b>02</b><span>Save this as <code>.github/workflows/self-maintain.yml</code>.</span></li>
+          <li><b>03</b><span>Actions → self-maintain → Run workflow. You choose the package.</span></li>
+        </ol>
+        <p class="muted" data-reveal>
+          No scheduler, no background scanning, no repo-wide crawl in v0 — you point it at one
+          package at a time, on purpose.
+        </p>
+        <div data-reveal><a class="btn btn--ghost magnetic" href="https://github.com/patchery-dev/Patchery#setup"><span>Full setup guide</span></a></div>
+      </div>
+
+      <div class="install__code" data-reveal>
+        <div class="scr__bar">
+          <span class="scr__tag">yaml</span>
+          <span class="scr__path">.github/workflows/self-maintain.yml</span>
+          <button class="copy" id="copyBtn" type="button">copy</button>
+        </div>
+        <pre class="term term--yaml"><code><i class="y-k">name</i>: self-maintain
+
+<i class="y-k">on</i>:
+  <i class="y-k">workflow_dispatch</i>:
+    <i class="y-k">inputs</i>:
+      <i class="y-k">package</i>:      { <i class="y-k">required</i>: <i class="y-v">true</i> }
+      <i class="y-k">target-dir</i>:   { <i class="y-k">default</i>: <i class="y-s">"."</i> }
+      <i class="y-k">test-command</i>: { <i class="y-k">default</i>: <i class="y-s">"npm test"</i> }
+
+<i class="y-k">permissions</i>:
+  <i class="y-k">contents</i>: write
+  <i class="y-k">pull-requests</i>: write
+
+<i class="y-k">jobs</i>:
+  <i class="y-k">fix</i>:
+    <i class="y-k">runs-on</i>: ubuntu-latest
+    <i class="y-k">steps</i>:
+      - <i class="y-k">uses</i>: actions/checkout@v4
+
+      - <i class="y-k">run</i>: npm ci
+        <i class="y-k">working-directory</i>: <i class="y-e">${{ inputs.target-dir }}</i>
+
+      - <i class="y-k">id</i>: sma
+        <i class="y-k">uses</i>: <i class="y-a">patchery-dev/Patchery@v0</i>
+        <i class="y-k">with</i>:
+          <i class="y-k">package</i>:              <i class="y-e">${{ inputs.package }}</i>
+          <i class="y-k">target-dir</i>:           <i class="y-e">${{ inputs.target-dir }}</i>
+          <i class="y-k">test-command</i>:         <i class="y-e">${{ inputs.test-command }}</i>
+          <i class="y-k">anthropic-auth-token</i>: <i class="y-e">${{ secrets.ANTHROPIC_AUTH_TOKEN }}</i>
+
+      - <i class="y-k">if</i>: <i class="y-e">steps.sma.outputs.changed == 'true'</i>
+        <i class="y-k">uses</i>: peter-evans/create-pull-request@v7
+        <i class="y-k">with</i>:
+          <i class="y-k">branch</i>:    self-maintain/<i class="y-e">${{ inputs.package }}</i>
+          <i class="y-k">body-path</i>: <i class="y-e">${{ steps.sma.outputs.pr-body-file }}</i>
+          <i class="y-k">add-paths</i>: <i class="y-e">${{ steps.sma.outputs.files }}</i></code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════  07 · STATUS  ═══════════════════════ -->
+<section class="status" id="status">
+  <div class="shell">
+    <div class="sechead" data-reveal>
+      <span class="sechead__idx">07</span>
+      <span class="sechead__rule"></span>
+      <span class="sechead__label">Where this actually is</span>
+    </div>
+
+    <h2 class="status__h" data-reveal>We&rsquo;d rather you audit us<br>than trust us.</h2>
+
+    <div class="status__cols">
+      <div class="status__col" data-reveal>
+        <h3><i class="mark mark--yes"></i>True today</h3>
+        <ul class="ledger ledger--yes">
+          <li>A GitHub Action you can install right now, MIT licensed.</li>
+          <li>One live pull request opened end to end with no human in the loop.</li>
+          <li>The guard is pure, unit-tested, and runs offline on every push.</li>
+          <li>Secrets are redacted before anything reaches a log or a PR body.</li>
+          <li>Works on Node&nbsp;/&nbsp;npm projects; the test command is yours to set.</li>
+        </ul>
+      </div>
+      <div class="status__col" data-reveal>
+        <h3><i class="mark mark--no"></i>Not yet</h3>
+        <ul class="ledger ledger--no">
+          <li>No hosted service. You run it in your own Actions runner.</li>
+          <li>No paying customers, no user count, nothing to build a logo wall from.</li>
+          <li>No merged open-source pull request yet — three are open.</li>
+          <li>One package per run. Cascading breakages are not resolved.</li>
+          <li>Ecosystems beyond Node&nbsp;/&nbsp;npm are plausible but unverified.</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="status__foot" data-reveal>
+      Every number on this page comes from a run you can open and read. The agent sees your
+      source, so check your model provider&rsquo;s data policy before pointing it at a private
+      repository. <a class="ilink" href="https://github.com/patchery-dev/Patchery#limitations-stated-honestly">Limitations, stated honestly →</a>
+    </p>
+  </div>
+</section>
+
+</main>
+
+<!-- ═══════════════════════  08 · FOOTER  ═══════════════════════ -->
+<footer class="foot">
+  <div class="marquee" aria-hidden="true"><div class="marquee__row" id="marquee"></div></div>
+
+  <div class="shell foot__inner">
+    <div class="foot__brand">
+      <img src="assets/logo.png" width="36" height="36" alt="">
+      <div>
+        <b>Patchery</b>
+        <span>When a dependency breaks your code, Patchery fixes it and proves the fix.</span>
+      </div>
+    </div>
+
+    <nav class="foot__links" aria-label="Footer">
+      <a href="https://github.com/patchery-dev/Patchery">Repository</a>
+      <a href="https://github.com/patchery-dev/Patchery/pull/2">The PR</a>
+      <a href="https://github.com/patchery-dev/Patchery/blob/main/scripts/guard.mjs">guard.mjs</a>
+      <a href="https://github.com/patchery-dev/Patchery/blob/main/LICENSE">MIT License</a>
+    </nav>
+
+    <p class="foot__fine">
+      Patchery is early, and the code is public — read it before you trust it.<br>
+      No analytics, no cookies, nothing tracked on this page.
+    </p>
+  </div>
+</footer>
+
+<div class="cursor" id="cursor" aria-hidden="true"><i></i></div>
+<div class="grain" aria-hidden="true"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.14/dist/lenis.min.js"></script>
+<script src="assets/hero.js"></script>
+<script src="assets/site.js"></script>
 </body>
 </html>

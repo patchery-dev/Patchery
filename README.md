@@ -82,7 +82,7 @@ and which directory to fix.
 | `extra-instructions` | `""` | Extra instructions for the agent |
 | `require-failing-baseline` | `true` | Skip the agent entirely if tests already pass |
 | `dry-run` | `false` | Only measure the baseline test run |
-| `node-version` | `20` | Node version to install |
+| `node-version` | `22` | Node version your tests run on (Node 20 is end-of-life) |
 | `anthropic-auth-token` | *(required)* | Pass from secrets |
 | `anthropic-base-url` | `""` | Pass from secrets |
 | `anthropic-model` | `""` | Pass from secrets |

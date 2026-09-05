@@ -67,9 +67,12 @@ inputs:
     required: false
     default: "15"
   node-version:
-    description: "Node version to install."
+    description: >-
+      Node version used to run your tests. Defaults to the current LTS; Node 20
+      is end-of-life. Pin this if your project needs a specific version - the
+      version your tests run on decides whether a fix is judged correct.
     required: false
-    default: "20"
+    default: "22"
   anthropic-auth-token:
     description: "API key / token. Pass it from GitHub Secrets, never inline."
     required: true
