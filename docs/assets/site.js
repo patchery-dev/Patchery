@@ -60,20 +60,19 @@
 
   /* ══════════════════════════  smooth scroll  ══════════════════════════ */
 
-  var lenis = null;
-  if (window.Lenis && !reduced) {
-    lenis = new window.Lenis({ duration: 1.05, smoothWheel: true, touchMultiplier: 1.6 });
-    (function loop(t) { lenis.raf(t); requestAnimationFrame(loop); })(0);
+  /* No smooth-scroll library, deliberately.
 
-    $$('a[href^="#"]').forEach(function (a) {
-      a.addEventListener("click", function (e) {
-        var target = document.querySelector(a.getAttribute("href"));
-        if (!target) return;
-        e.preventDefault();
-        lenis.scrollTo(target, { offset: -70 });
-      });
-    });
-  }
+     A momentum-scroll library swallows the wheel event and then does the
+     scrolling itself on the animation frame loop. When that loop stalls, the
+     event has already been consumed and the replacement never happens: the
+     page simply stops scrolling. Trading the browser's own scrolling — which
+     cannot break, and which already honours the reader's operating-system
+     settings — for a slightly softer feel is a bad bargain on any page, and an
+     absurd one on a page whose entire argument is that things should be
+     verifiable rather than merely pleasant.
+
+     In-page links get smooth behaviour from CSS scroll-behavior instead, with
+     scroll-margin-top on the targets to clear the fixed header. */
 
   /* ══════════════════════  nav, folio, paper mode  ══════════════════════ */
 
@@ -109,7 +108,7 @@
       lastFolio = id;
       if (folioNow) folioNow.textContent = id;
       if (folioName) folioName.textContent = here.getAttribute("data-folio-name") || "";
-      if (animated && folio) M.animate(folio, { opacity: [0.35, 1] }, { duration: 0.45 });
+
     }
 
     // The inverted section needs the fixed chrome to invert with it.
@@ -118,90 +117,118 @@
     if (folio) folio.classList.toggle("on-paper", onPaper);
   }
 
-  if (animated) {
-    M.scroll(M.animate("#scrollbarFill", { scaleX: [0, 1] }, { ease: "linear" }));
-    M.scroll(chromeUpdate);
-  } else {
-    var fillEl = $("#scrollbarFill");
-    window.addEventListener("scroll", function () {
-      chromeUpdate();
-      if (!fillEl) return;
+  /* One scroll listener, coalesced to a frame, drives the header, the folio,
+     the progress bar and the pinned run. Scroll position is the single source
+     of truth: every one of these is a pure function of scrollY, so it cannot
+     drift out of sync or get stuck part-way the way a timed animation can. */
+  var fillEl = $("#scrollbarFill");
+  var lastRun = -1;
+
+  function onScroll() {
+    rescueVisible();
+    chromeUpdate();
+    if (fillEl) {
       var max = document.documentElement.scrollHeight - window.innerHeight;
-      fillEl.style.transform = "scaleX(" + (max > 0 ? window.scrollY / max : 0) + ")";
-    }, { passive: true });
+      fillEl.style.transform = "scaleX(" + (max > 0 ? window.scrollY / max : 0).toFixed(4) + ")";
+    }
+    pipeUpdate();
   }
 
+  /* Throttled on the clock, not on requestAnimationFrame.
+
+     rAF only fires when the browser is actually rendering. Coalescing scroll
+     work into it means that on a machine that has stopped painting — which is
+     precisely when things go wrong — the handler never runs at all, and the
+     page is left in whatever state it was in. A timestamp throttle keeps the
+     cost the same and has no such failure mode. Every function called here is
+     a pure function of scroll position, so running it late is harmless and
+     running it never is not an option. */
+  window.addEventListener("scroll", function () {
+    var now = performance.now();
+    if (now - lastRun < 8) return;
+    lastRun = now;
+    onScroll();
+  }, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+
   /* ══════════════════════════  reveals  ══════════════════════════ */
+
+  /* Reveals are a CSS transition switched on by a class, never a JavaScript
+     animation. This is not a style preference — it is the difference between a
+     page that always ends up readable and one that does not.
+
+     A JS-driven spring holds the element at opacity 0 and walks it to 1 frame
+     by frame. If the frame loop stalls even once — a background tab, a slow
+     device, a dropped frame — the element stays stuck at whatever opacity it
+     had reached, forever. That is exactly what was happening: content frozen
+     at 0.19 opacity, present in the DOM, invisible on screen, and never
+     recovering. A CSS transition runs on the compositor and finishes whether
+     or not the main thread is busy. */
+  var pending = [];
+  var rescueVisible = function () {};
 
   function watchReveals() {
     var items = $$("[data-reveal]").filter(function (el) { return !el.closest("#hero"); });
 
-    if (!animated) {
-      items.forEach(function (el) { el.classList.add("is-in"); });
+    var show = function (el) { el.classList.add("is-in"); };
+
+    if (!("IntersectionObserver" in window)) {
+      items.forEach(show);
     } else {
-      items.forEach(function (el) {
-        var stop = M.inView(el, function () {
-          M.animate(el, { opacity: 1, y: 0 }, ENTER);
-          if (stop) stop();
-        }, { amount: 0.15, margin: "0px 0px -10% 0px" });
-      });
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          show(e.target);
+          io.unobserve(e.target);
+        });
+      }, { rootMargin: "0px 0px -8% 0px", threshold: 0.04 });
+      items.forEach(function (el) { io.observe(el); });
     }
+
+    /* The observer is an optimisation, not the guarantee.
+
+       IntersectionObserver callbacks are delivered as part of the browser's
+       rendering steps. If rendering stalls — a busy machine, a background tab,
+       a compositor hiccup — the callbacks simply never arrive and every
+       element stays hidden with no way back. So the real mechanism is the
+       scroll handler below, which is plain arithmetic on getBoundingClientRect
+       and cannot be starved. Elements drop out of the list once revealed, so
+       this costs nothing after the first pass. */
+    pending = items.slice();
+    rescueVisible = function () {
+      if (!pending.length) return;
+      var still = [];
+      for (var i = 0; i < pending.length; i++) {
+        var el = pending[i], r = el.getBoundingClientRect();
+        if (r.top < window.innerHeight && r.bottom > 0) show(el);
+        else still.push(el);
+      }
+      pending = still;
+    };
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) rescueVisible();
+    });
+    window.addEventListener("pageshow", rescueVisible);
+    rescueVisible();
 
     // Headlines built from masked lines get their own staggered slide-up the
     // first time they come into view.
     $$(".thesis__h").forEach(function (h) {
-      var lines = $$(".line > span", h);
-      if (!animated) { h.classList.add("is-revealed"); return; }
-      M.animate(lines, { y: "110%" }, { duration: 0 });
-      var stop = M.inView(h, function () {
-        release(h, M.animate(lines, { y: ["110%", "0%"] },
-          Object.assign({ delay: M.stagger(0.075) }, LIFT)), lines);
-        if (stop) stop();
-      }, { amount: 0.4 });
-    });
-  }
-
-  /* A line mask has to clip the slide-up and then get out of the way, or it
-     eats every descender underneath it.
-
-     The inline transform is wiped at the same moment, on purpose: a headline
-     must never depend on an animation reaching its last frame. A backgrounded
-     tab throttles the frame loop, and a spring caught mid-flight would leave
-     the lines sitting on top of each other permanently. Clearing the property
-     hands the type back to the stylesheet, where it is correct by default. */
-  function release(el, anim, spans) {
-    if (!el) return;
-    var done = function () {
-      el.classList.add("is-revealed");
-      // Stop the animation before clearing, or its next frame simply writes
-      // the half-finished transform straight back in.
-      if (anim) {
-        try { if (anim.complete) anim.complete(); else if (anim.stop) anim.stop(); }
-        catch (err) { /* already finished */ }
-      }
-      (spans || []).forEach(function (sp) { sp.style.transform = ""; });
-    };
-    if (anim && anim.finished && anim.finished.then) anim.finished.then(done, done);
-    setTimeout(done, 1600);
-    document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) done();
+      if (!("IntersectionObserver" in window)) { h.classList.add("is-revealed"); return; }
+      var io = new IntersectionObserver(function (e) {
+        if (!e[0].isIntersecting) return;
+        h.classList.add("is-revealed");
+        io.disconnect();
+      }, { threshold: 0.25 });
+      io.observe(h);
+      setTimeout(function () { h.classList.add("is-revealed"); }, 3000);
     });
   }
 
   function revealHero() {
-    var lines = $$(".hero__title .line > span");
-    var rest = $$("#hero [data-reveal]");
-
     var title = $(".hero__title");
-    if (!animated) {
-      rest.forEach(function (el) { el.classList.add("is-in"); });
-      if (title) title.classList.add("is-revealed");
-      return;
-    }
-    release(title, M.animate(lines, { y: ["115%", "0%"] },
-      Object.assign({ delay: M.stagger(0.07) }, LIFT)), lines);
-    M.animate(rest, { opacity: [0, 1], y: [22, 0] },
-      Object.assign({ delay: M.stagger(0.08, { startDelay: 0.25 }) }, ENTER));
+    if (title) title.classList.add("is-revealed");
+    $$("#hero [data-reveal]").forEach(function (el) { el.classList.add("is-in"); });
   }
 
   /* ══════════════════════════  the pinned run  ══════════════════════════ */
@@ -212,19 +239,17 @@
   var STEPS = screens.length;
   var current = -1;
   var stacked = window.matchMedia("(max-width: 860px)");
-  var stopScroll = null;
 
   function setStep(n) {
     if (n === current) return;
-    var forward = n > current;
     current = n;
 
     screens.forEach(function (s, i) {
-      var on = i === n;
-      s.classList.toggle("is-on", on);
-      if (!animated) { s.style.opacity = on ? "1" : "0"; return; }
-      if (on) M.animate(s, { opacity: [0, 1], y: [forward ? 20 : -20, 0] }, ENTER);
-      else M.animate(s, { opacity: 0 }, { duration: 0.28 });
+      // Whether a step is on screen is a class, not an animation. Same reason
+      // as the reveals: a stalled frame loop must never be able to hide it.
+      s.style.opacity = ""; s.style.transform = "";
+      s.classList.toggle("is-on", i === n);
+      s.classList.toggle("is-back", i > n);
     });
     railItems.forEach(function (r, i) {
       r.classList.toggle("is-on", i === n);
@@ -233,32 +258,18 @@
     onStepEnter(n);
   }
 
-  function bindPipe() {
-    if (stopScroll) { stopScroll(); stopScroll = null; }
+  function pipeUpdate() {
     if (!track || stacked.matches) return;
-
-    var onProgress = function (progress) {
-      setStep(Math.min(STEPS - 1, Math.max(0, Math.floor(progress * STEPS))));
-    };
-
-    if (animated) {
-      stopScroll = M.scroll(onProgress, { target: track, offset: ["start start", "end end"] });
-    } else {
-      var handler = function () {
-        var r = track.getBoundingClientRect();
-        var span = r.height - window.innerHeight;
-        if (span > 0) onProgress(Math.min(1, Math.max(0, -r.top / span)));
-      };
-      window.addEventListener("scroll", handler, { passive: true });
-      stopScroll = function () { window.removeEventListener("scroll", handler); };
-      handler();
-    }
+    var r = track.getBoundingClientRect();
+    var span = r.height - window.innerHeight;
+    if (span <= 0) return;
+    var p = Math.min(1, Math.max(0, -r.top / span));
+    setStep(Math.min(STEPS - 1, Math.floor(p * STEPS)));
   }
 
   function handleLayout() {
     current = -1;
     if (stacked.matches) {
-      if (stopScroll) { stopScroll(); stopScroll = null; }
       screens.forEach(function (s, i) {
         s.classList.remove("is-on");
         s.style.opacity = ""; s.style.transform = "";
@@ -266,7 +277,7 @@
       });
       railItems.forEach(function (r) { r.classList.remove("is-on", "is-past"); });
     } else {
-      bindPipe();
+      pipeUpdate();
     }
   }
 
@@ -336,10 +347,7 @@
       var rw = $("#rewrite", scr);
       if (rw) runRewrite(rw);
     }
-    if (n === 4 && animated) {
-      M.animate($$(".diff i", scr), { opacity: [0, 1], x: [-10, 0] },
-        { delay: M.stagger(0.07, { startDelay: 0.2 }), duration: 0.45 });
-    }
+
   }
 
   /* ══════════════════════════  the guard  ══════════════════════════ */
@@ -414,12 +422,11 @@
     gVerdict.setAttribute("data-verdict", verdict);
     gText.textContent = text;
 
-    if (animated) {
-      var row = justAdded ? gList.lastElementChild : null;
-      if (row) M.animate(row, { opacity: [0, 1], y: [-8, 0] }, LIFT);
-      if (verdict === "fail" && verdict !== lastVerdict) {
-        M.animate(gVerdict, { x: [0, -8, 7, -4, 0] }, { duration: 0.44, ease: "easeOut" });
-      }
+    if (verdict === "fail" && verdict !== lastVerdict) {
+      // a CSS keyframe, so a stalled frame loop cannot leave it shunted sideways
+      gVerdict.classList.remove("is-shaken");
+      void gVerdict.offsetWidth;
+      gVerdict.classList.add("is-shaken");
     }
     lastVerdict = verdict;
   }
@@ -635,6 +642,5 @@
   /* ══════════════════════════  go  ══════════════════════════ */
 
   handleLayout();
-  chromeUpdate();
-  window.addEventListener("resize", function () { current = -1; bindPipe(); }, { passive: true });
+  onScroll();
 })();

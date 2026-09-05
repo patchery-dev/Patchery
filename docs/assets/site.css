@@ -57,8 +57,8 @@ html {
   scroll-behavior: smooth;
   overflow-x: clip;
 }
-html.lenis, html.lenis body { height: auto; }
-.lenis.lenis-smooth { scroll-behavior: auto !important; }
+/* Anchor links land below the fixed header rather than under it. */
+[id] { scroll-margin-top: 84px; }
 
 body {
   margin: 0;
@@ -192,6 +192,7 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
    the way a printed book carries one in its margin. */
 .folio {
   position: fixed; left: 0; top: 0; bottom: 0; width: 70px; z-index: 80;
+  transition: color .5s var(--ease), opacity .4s var(--ease);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 14px; pointer-events: none;
   color: var(--dim);
@@ -264,12 +265,20 @@ code { font-family: var(--mono); font-size: .875em; letter-spacing: -.01em; }
   text-transform: uppercase; color: var(--teal);
 }
 
-/* Masked line reveal. Growing the box to fit descenders collides with a
-   0.93 line-height, so instead the mask exists only while the slide-up is
-   running: the moment it lands, the clip is released. */
-.line { display: block; overflow: hidden; }
-.line > span { display: block; }
-.is-revealed .line { overflow: visible; }
+/* Headline lines rise into place on a transition, staggered by position.
+   No clip mask, and no JavaScript: whatever happens to the frame loop, the
+   end state is a plain CSS rule and the type ends up where it belongs. */
+.line { display: block; }
+.line > span {
+  display: block;
+  opacity: 0; transform: translateY(.42em);
+  transition: opacity .75s var(--ease), transform .95s var(--ease);
+}
+.is-revealed .line > span { opacity: 1; transform: none; }
+.is-revealed .line:nth-child(2) > span { transition-delay: .07s; }
+.is-revealed .line:nth-child(3) > span { transition-delay: .14s; }
+.is-revealed .line:nth-child(4) > span { transition-delay: .21s; }
+.no-motion .line > span { opacity: 1; transform: none; transition: none; }
 
 .mend { color: var(--teal); }
 
@@ -465,9 +474,13 @@ main, .foot { position: relative; z-index: 2; }
   position: absolute; inset: 0; margin: 0; min-height: 0;
   display: flex; flex-direction: column; gap: 16px;
   opacity: 0; visibility: hidden; pointer-events: none;
-  transition: visibility .4s;
+  transform: translateY(18px);
+  transition: opacity .42s var(--ease), transform .5s var(--ease), visibility .42s;
 }
-.scr.is-on { opacity: 1; visibility: visible; pointer-events: auto; }
+.scr.is-back { transform: translateY(-18px); }
+.scr.is-on {
+  opacity: 1; visibility: visible; pointer-events: auto; transform: none;
+}
 .pipe__screens .term  { flex: 1 1 auto; min-height: 0; }
 .pipe__screens .split { flex: 1 1 auto; min-height: 0; }
 .pipe__screens .scr__note { flex: 0 0 auto; }
@@ -547,6 +560,13 @@ main, .foot { position: relative; z-index: 2; }
 .scr.is-on .gl[data-gl="5"] { animation-delay: 1.2s; }
 @keyframes glin { to { opacity: 1; transform: none; } }
 .gl b { font-weight: 400; }
+
+.scr.is-on .diff i { animation: slidein .45s var(--ease) both; }
+.scr.is-on .diff i:nth-child(2) { animation-delay: .07s; }
+.scr.is-on .diff i:nth-child(3) { animation-delay: .14s; }
+.scr.is-on .diff i:nth-child(4) { animation-delay: .21s; }
+.scr.is-on .diff i:nth-child(5) { animation-delay: .28s; }
+@keyframes slidein { from { opacity: 0; transform: translateX(-10px); } }
 
 .scr__note {
   font-size: 13px; line-height: 1.62; color: var(--muted);
@@ -655,6 +675,16 @@ main, .foot { position: relative; z-index: 2; }
   border-bottom: 1px solid var(--line-soft);
 }
 .guard__list li:last-child .guard__row { border-bottom: 0; }
+.guard__list li:last-child .guard__row { animation: rowin .34s var(--ease) both; }
+@keyframes rowin { from { opacity: 0; transform: translateY(-8px); } }
+
+.guard__verdict.is-shaken { animation: shake .44s var(--ease-io); }
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  22% { transform: translateX(-8px); }
+  48% { transform: translateX(7px); }
+  74% { transform: translateX(-4px); }
+}
 .guard__row .g-sign { text-align: center; }
 .guard__row .g-path { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .guard__row .g-why { color: var(--muted); white-space: nowrap; font-size: 11.5px; }
