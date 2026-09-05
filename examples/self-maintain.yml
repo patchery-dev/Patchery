@@ -1,27 +1,27 @@
-# Bunu kendi reponuzda .github/workflows/self-maintain.yml olarak kaydedin.
+# Save this in your own repository as .github/workflows/self-maintain.yml
 #
-# Gerekli GitHub Secrets (Settings -> Secrets and variables -> Actions):
-#   ANTHROPIC_AUTH_TOKEN  (zorunlu)
-#   ANTHROPIC_BASE_URL    (opsiyonel — özel/uyumlu bir endpoint kullanıyorsanız)
-#   ANTHROPIC_MODEL       (opsiyonel)
+# Required GitHub Secrets (Settings -> Secrets and variables -> Actions):
+#   ANTHROPIC_AUTH_TOKEN  (required)
+#   ANTHROPIC_BASE_URL    (optional - only if you use a compatible custom endpoint)
+#   ANTHROPIC_MODEL       (optional)
 name: self-maintain
 
 on:
   workflow_dispatch:
     inputs:
       package:
-        description: "Kıran paketin adı (örn. openai)"
+        description: "Name of the package that broke (e.g. openai)"
         required: true
       target-dir:
-        description: "Düzeltilecek klasör (repo kökine göre)"
+        description: "Directory to fix, relative to the repository root"
         required: true
         default: "."
       test-command:
-        description: "Doğrulama komutu"
+        description: "Verification command"
         required: true
         default: "npm test"
       changelog:
-        description: "Changelog yolu/URL'i (boş = ajan kendi bulsun)"
+        description: "Changelog path or URL (empty = let the agent find it)"
         required: false
         default: ""
 
@@ -35,13 +35,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Projenizin bağımlılıkları kurulu olmalı ki ajan changelog'u okuyabilsin
-      # ve testler çalışsın. Kendi kurulum komutunuzla değiştirin.
-      - name: Bağımlılıkları kur
+      # Your dependencies must be installed so the agent can read the changelog
+      # and so the tests can run. Replace with your own install command.
+      - name: Install dependencies
         run: npm ci
         working-directory: ${{ inputs.target-dir }}
 
-      - name: Kırık bağımlılığı düzelt
+      - name: Fix the broken dependency
         id: sma
         uses: ugursku/self-maintaining-action@v0
         with:
@@ -53,12 +53,12 @@ jobs:
           anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
           anthropic-model: ${{ secrets.ANTHROPIC_MODEL }}
 
-      - name: PR aç
+      - name: Open a pull request
         if: steps.sma.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           branch: self-maintain/${{ inputs.package }}
-          title: "fix(deps): ${{ inputs.package }} kırıcı değişikliğini uygula"
+          title: "fix(deps): migrate ${{ inputs.package }} call sites"
           body-path: ${{ steps.sma.outputs.pr-body-file }}
           add-paths: ${{ steps.sma.outputs.files }}
           commit-message: "fix(deps): migrate ${{ inputs.package }} call sites"

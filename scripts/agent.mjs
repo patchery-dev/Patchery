@@ -1,23 +1,24 @@
 #!/usr/bin/env node
 /**
- * self-maintaining-action — agent orkestratörü
+ * self-maintaining-action - agent orchestrator
  *
- * Ne yapar (sırayla):
- *   1. Hedef projede testi çalıştırır  -> gerçekten kırık mı? (kırık değilse hiçbir şey yapmaz)
- *   2. AI ajanını (Claude Agent SDK) headless çalıştırır -> kırık API çağrılarını düzeltsin
- *   3. git ile NE değiştiğini bağımsız olarak okur -> yasaklı dosyalara dokunulmuşsa her şeyi geri alır
- *   4. Testi kendisi tekrar çalıştırır -> ajanın "geçti" demesine güvenmez
- *   5. Sonucu GITHUB_OUTPUT / GITHUB_STEP_SUMMARY ve pr-body.md olarak yazar
+ * What it does, in order:
+ *   1. Runs the project's tests   -> is it actually broken? If not, do nothing.
+ *   2. Runs the AI agent (Claude Agent SDK) -> migrate the broken call sites.
+ *   3. Reads what changed via git -> if a protected file was touched, revert everything.
+ *   4. Runs the tests again itself -> never trusts the agent's "tests pass" claim.
+ *   5. Writes results to GITHUB_OUTPUT / GITHUB_STEP_SUMMARY and a ready-made PR body.
  *
- * Ayar tamamen ortam değişkeni ile yapılır (action.yml bunları doldurur).
+ * Everything is configured through environment variables (action.yml fills them in).
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { protectedReason, parsePorcelain } from "./guard.mjs";
 
-// ---------------------------------------------------------------- ayarlar
+// ------------------------------------------------------------------ config
 
 const env = (name, fallback = "") => (process.env[name] ?? "").trim() || fallback;
 const bool = (name, fallback) => {
@@ -36,7 +37,7 @@ const EXTRA = env("SMA_EXTRA_INSTRUCTIONS");
 const REQUIRE_RED = bool("SMA_REQUIRE_FAILING_BASELINE", true);
 const DRY_RUN = bool("SMA_DRY_RUN", false);
 
-// ------------------------------------------------------- küçük yardımcılar
+// ----------------------------------------------------------------- helpers
 
 const log = (...a) => console.log(...a);
 const group = (title) => log("\n" + "=".repeat(8) + " " + title + " " + "=".repeat(8));
@@ -45,8 +46,8 @@ function writeOutputs(obj) {
   const file = process.env.GITHUB_OUTPUT;
   if (!file) return;
   const lines = Object.entries(obj).map(([k, v]) => {
-    const d = "__sma_" + k + "_" + Date.now() + "__";
-    return k + "<<" + d + "\n" + String(v) + "\n" + d;
+    const delimiter = "__sma_" + k + "_" + Date.now() + "__";
+    return k + "<<" + delimiter + "\n" + String(v) + "\n" + delimiter;
   });
   fs.appendFileSync(file, lines.join("\n") + "\n");
 }
@@ -57,9 +58,9 @@ function writeStepSummary(md) {
 }
 
 function fail(message) {
-  console.error("\n[HATA] " + message);
+  console.error("\n[ERROR] " + message);
   writeOutputs({ changed: "false", tests_passed: "false", summary: message });
-  writeStepSummary("### self-maintaining-action\n\n❌ " + message);
+  writeStepSummary("### self-maintaining-action\n\nFailed: " + message);
   process.exit(1);
 }
 
@@ -79,89 +80,74 @@ function runTests() {
   return { ok: r.status === 0, code: r.status, output: output.trim() };
 }
 
-/** Ajanın asla değiştirmemesi gereken yollar (güvenlik kuralı: testler dokunulmaz). */
-function protectedReason(relPath) {
-  const p = relPath.replace(/\\/g, "/");
-  if (/(^|\/)node_modules\//.test(p)) return "node_modules içinde";
-  if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(p)) return "test dosyası";
-  if (/(^|\/)(__tests__|__mocks__|tests?)\//.test(p)) return "test klasöründe";
-  if (/(^|\/)\.github\//.test(p)) return "CI yapılandırması";
-  if (/(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(p)) return "lock dosyası";
-  return null;
-}
-
-/** `git status --porcelain` -> değişen yolların kümesi (yeni + silinen dahil). */
+/** `git status --porcelain` -> the set of changed paths (new and deleted included). */
 function workingTreeFiles() {
-  const out = git(["status", "--porcelain", "-uall", "--no-renames"]);
-  if (!out) return new Set();
-  return new Set(
-    out
-      .split("\n")
-      .map((line) => line.slice(3).trim().replace(/^"|"$/g, ""))
-      .filter(Boolean)
-  );
+  return parsePorcelain(git(["status", "--porcelain", "-uall", "--no-renames"]));
 }
 
-// ------------------------------------------------------------------ akış
+// -------------------------------------------------------------------- flow
 
 if (!PACKAGE) {
-  fail("SMA_PACKAGE boş. Hangi paketin bozduğunu belirtmeden ajan çalıştırılmaz.");
+  fail("SMA_PACKAGE is empty. Refusing to run an agent without knowing which package broke.");
 }
 if (!fs.existsSync(TARGET_DIR)) {
-  fail("Hedef klasör yok: " + TARGET_DIR);
+  fail("Target directory does not exist: " + TARGET_DIR);
 }
 
-group("0. Ortam");
-const usingCustomEndpoint = !!env("ANTHROPIC_BASE_URL");
+group("0. Environment");
+// "Custom endpoint" means anything other than Anthropic's own host. Some
+// environments already set ANTHROPIC_BASE_URL to the official URL; that is not custom.
+const baseUrl = env("ANTHROPIC_BASE_URL");
+const usingCustomEndpoint = !!baseUrl && !/(^|\.)anthropic\.com/i.test(baseUrl);
 log("workspace    : " + WORKSPACE);
-log("hedef klasör : " + TARGET_DIR);
-log("paket        : " + PACKAGE);
-log("test komutu  : " + TEST_COMMAND);
-log("model        : " + env("ANTHROPIC_MODEL", "(varsayılan)"));
-log("endpoint     : " + (usingCustomEndpoint ? env("ANTHROPIC_BASE_URL") : "(Anthropic varsayılanı)"));
+log("target dir   : " + TARGET_DIR);
+log("package      : " + PACKAGE);
+log("test command : " + TEST_COMMAND);
+log("model        : " + env("ANTHROPIC_MODEL", "(default)"));
+log("endpoint     : " + (baseUrl || "(Anthropic default)") + (usingCustomEndpoint ? "  [custom]" : ""));
 
 if (!env("ANTHROPIC_AUTH_TOKEN") && !env("ANTHROPIC_API_KEY")) {
-  fail("Ne ANTHROPIC_AUTH_TOKEN ne ANTHROPIC_API_KEY ayarlı. GitHub Secrets'a eklemeyi unutmuş olabilirsiniz.");
+  fail("Neither ANTHROPIC_AUTH_TOKEN nor ANTHROPIC_API_KEY is set. Check your GitHub Secrets.");
 }
 
 let repoRoot;
 try {
   repoRoot = git(["rev-parse", "--show-toplevel"]);
 } catch {
-  fail("Bu klasör bir git deposu değil. Değişiklikleri güvenle doğrulayamam, duruyorum.");
+  fail("Not a git repository. Without git I cannot verify what the agent changed, so I stop here.");
 }
-log("git kökü     : " + repoRoot);
+log("git root     : " + repoRoot);
 
 const filesBefore = workingTreeFiles();
 if (filesBefore.size > 0) {
-  log("not: çalışma ağacı zaten kirli (" + filesBefore.size + " dosya) — bunlar ajanın işi sayılmayacak.");
+  log("note: working tree is already dirty (" + filesBefore.size + " files) - those are not counted as the agent's work.");
 }
 
-group("1. Önce testi çalıştır (gerçekten kırık mı?)");
+group("1. Run the tests first (is it really broken?)");
 const baseline = runTests();
-log(baseline.output.slice(-4000) || "(çıktı yok)");
-log("\n-> baseline: " + (baseline.ok ? "GEÇTİ" : "KALDI (exit " + baseline.code + ")"));
+log(baseline.output.slice(-4000) || "(no output)");
+log("\n-> baseline: " + (baseline.ok ? "PASS" : "FAIL (exit " + baseline.code + ")"));
 
 if (baseline.ok && REQUIRE_RED) {
-  const msg = "`" + TEST_COMMAND + "` zaten geçiyor — düzeltilecek bir şey yok. Ajan çalıştırılmadı.";
+  const msg = "`" + TEST_COMMAND + "` already passes - nothing to fix. The agent was not run.";
   log("\n" + msg);
-  writeStepSummary("### self-maintaining-action\n\n✅ " + msg);
+  writeStepSummary("### self-maintaining-action\n\n" + msg);
   writeOutputs({ changed: "false", tests_passed: "true", files: "", summary: msg });
   process.exit(0);
 }
 
 if (DRY_RUN) {
-  const msg = "SMA_DRY_RUN=true — ajan çalıştırılmadı, sadece baseline ölçüldü.";
+  const msg = "SMA_DRY_RUN=true - only the baseline was measured, the agent was not run.";
   log("\n" + msg);
   writeOutputs({ changed: "false", tests_passed: String(baseline.ok), files: "", summary: msg });
   process.exit(0);
 }
 
-group("2. Ajanı çalıştır");
+group("2. Run the agent");
 
 const changelogLine = CHANGELOG
   ? "Read the changelog / migration notes first: " + CHANGELOG
-  : "Find the package's changelog or migration notes first — usually node_modules/" +
+  : "Find the package's changelog or migration notes first - usually node_modules/" +
     PACKAGE +
     "/CHANGELOG.md or its README.";
 
@@ -180,7 +166,7 @@ const prompt = [
   '4. Run "' + TEST_COMMAND + '" to confirm the fix works.',
   "5. Report which file(s) you changed and why, and the final test output.",
   "",
-  "Hard rules — breaking any of these makes your whole run be discarded:",
+  "Hard rules - breaking any of these makes your whole run be discarded:",
   "- NEVER edit test files (*.test.*, *.spec.*, anything under test/, tests/, __tests__/).",
   "  The tests define correct behaviour. If a test fails, the source is wrong, not the test.",
   "- NEVER edit anything inside node_modules/.",
@@ -208,9 +194,9 @@ try {
       for (const block of message.message.content) {
         if (block.type === "text" && block.text.trim()) {
           agentText.push(block.text);
-          log("\n[ajan] " + block.text);
+          log("\n[agent] " + block.text);
         } else if (block.type === "tool_use") {
-          log("[araç] " + block.name + " " + JSON.stringify(block.input).slice(0, 180));
+          log("[tool] " + block.name + " " + JSON.stringify(block.input).slice(0, 180));
         }
       }
     } else if (message.type === "result") {
@@ -218,43 +204,50 @@ try {
     }
   }
 } catch (err) {
-  fail("Ajan çalışırken hata: " + (err?.message ?? err));
+  fail("The agent crashed: " + (err?.message ?? err));
 }
 
 if (!result) {
-  fail("Ajan sonuç mesajı döndürmedi (bağlantı/kimlik doğrulama sorunu olabilir).");
+  fail("The agent returned no result message (likely a connectivity or authentication problem).");
 }
 
 const modelsUsed = Object.keys(result.modelUsage ?? {});
 log(
-  "\n-> ajan bitti: " + result.subtype + " | tur: " + result.num_turns + " | maliyet: $" + (result.total_cost_usd ?? 0)
+  "\n-> agent finished: " +
+    result.subtype +
+    " | turns: " +
+    result.num_turns +
+    " | cost: $" +
+    (result.total_cost_usd ?? 0)
 );
-log("-> kullanılan model(ler): " + (modelsUsed.join(", ") || "(bilinmiyor)"));
+log("-> model(s) used: " + (modelsUsed.join(", ") || "(unknown)"));
 
-// Uyarı: özel endpoint istenmiş ama gerçekte bir Anthropic modeli raporlanmışsa,
-// sessizce yanlış altyapıya düşmüş olabiliriz (bu proje daha önce tam bunu yaşadı).
+// Warn when a custom endpoint was requested but an Anthropic model was reported:
+// that usually means the run silently fell back to the default provider.
 if (usingCustomEndpoint && modelsUsed.some((m) => /^claude-/.test(m))) {
   log(
-    '\n[UYARI] ANTHROPIC_BASE_URL özel bir adrese ayarlı ama kullanılan model "' +
+    '\n[WARNING] ANTHROPIC_BASE_URL points at a custom endpoint, but the model used looks like "' +
       modelsUsed.join(", ") +
-      '" gibi görünüyor. Sessizce Anthropic altyapısına düşmüş olabilir — model adını ve secret\'ları kontrol edin.'
+      '". The run may have silently fallen back to Anthropic - check the model name and secrets.'
   );
 }
 
 if (result.subtype !== "success") {
   fail(
-    "Ajan başarıyla bitiremedi: " + result.subtype + (result.errors ? " — " + result.errors.join("; ") : "")
+    "The agent did not finish successfully: " +
+      result.subtype +
+      (result.errors ? " - " + result.errors.join("; ") : "")
   );
 }
 
-group("3. Ne değişti? (git ile bağımsız kontrol)");
+group("3. What changed? (verified independently with git)");
 const filesAfter = workingTreeFiles();
 const changed = [...filesAfter].filter((f) => !filesBefore.has(f)).sort();
 
 if (changed.length === 0) {
-  const msg = "Ajan hiçbir dosyayı değiştirmedi. PR açılacak bir şey yok.";
+  const msg = "The agent changed no files. Nothing to open a PR for.";
   log(msg);
-  writeStepSummary("### self-maintaining-action\n\n⚠️ " + msg);
+  writeStepSummary("### self-maintaining-action\n\n" + msg);
   writeOutputs({ changed: "false", tests_passed: "false", files: "", summary: msg });
   process.exit(0);
 }
@@ -266,6 +259,7 @@ function revertAll() {
     try {
       git(["checkout", "--", f]);
     } catch {
+      // Untracked file: checkout cannot restore it, so remove it.
       try {
         fs.rmSync(path.join(repoRoot, f), { force: true });
       } catch {}
@@ -273,62 +267,62 @@ function revertAll() {
   }
 }
 
-const violations = changed.map((f) => [f, protectedReason(f)]).filter(([, r]) => r);
+const violations = changed.map((f) => [f, protectedReason(f)]).filter(([, reason]) => reason);
 if (violations.length > 0) {
-  log("\n[GÜVENLİK] Ajan dokunmaması gereken dosyalara dokundu:");
+  log("\n[SAFETY] The agent touched files it must never touch:");
   for (const [f, reason] of violations) log("  - " + f + " (" + reason + ")");
-  log("\nTüm değişiklikler geri alınıyor...");
+  log("\nReverting every change...");
   revertAll();
-  fail("Ajan korumalı dosyaları değiştirdi (testler/node_modules/CI). Değişiklikler geri alındı, PR açılmayacak.");
+  fail("The agent modified protected files (tests / node_modules / CI). Everything was reverted, no PR will be opened.");
 }
 
-group("4. Testi kendim tekrar çalıştır (ajanın sözüne güvenme)");
+group("4. Run the tests again myself (do not trust the agent's word)");
 const after = runTests();
-log(after.output.slice(-4000) || "(çıktı yok)");
-log("\n-> düzeltme sonrası: " + (after.ok ? "GEÇTİ" : "KALDI (exit " + after.code + ")"));
+log(after.output.slice(-4000) || "(no output)");
+log("\n-> after the fix: " + (after.ok ? "PASS" : "FAIL (exit " + after.code + ")"));
 
 if (!after.ok) {
-  log("\nTestler hâlâ geçmiyor. Değişiklikler geri alınıyor...");
+  log("\nTests still fail. Reverting every change...");
   revertAll();
-  fail("Düzeltme sonrası testler geçmedi. Geri alındı, PR açılmayacak.");
+  fail("Tests still fail after the fix. Everything was reverted, no PR will be opened.");
 }
 
-group("5. Özet");
+group("5. Summary");
 
 let diffstat = "";
 try {
   diffstat = git(["diff", "--stat", "--"].concat(changed));
 } catch {}
 
-const explanation = agentText.length ? agentText[agentText.length - 1].trim() : "(ajan özet yazmadı)";
+const explanation = agentText.length ? agentText[agentText.length - 1].trim() : "(the agent wrote no summary)";
 
 const prBody = [
-  "## Otomatik bağımlılık düzeltmesi: `" + PACKAGE + "`",
+  "## Automated dependency fix: `" + PACKAGE + "`",
   "",
-  "Bu PR'ı **self-maintaining-action** açtı. Bir AI ajanı `" + PACKAGE + "` paketinin kırıcı",
-  "değişikliğini okudu, çağrı yerlerini yeni API'ye taşıdı ve testleri çalıştırdı.",
+  "This PR was opened by **self-maintaining-action**. An AI agent read the breaking",
+  "change in `" + PACKAGE + "`, migrated the call sites to the new API, and ran the tests.",
   "",
-  "### Doğrulama",
+  "### Verification",
   "",
-  "| Adım | Sonuç |",
+  "| Step | Result |",
   "| --- | --- |",
-  "| Düzeltme öncesi `" + TEST_COMMAND + "` | ❌ kaldı (exit " + baseline.code + ") |",
-  "| Düzeltme sonrası `" + TEST_COMMAND + "` | ✅ geçti |",
-  "| Test dosyaları değişti mi | Hayır — CI tarafından zorunlu tutuluyor |",
+  "| `" + TEST_COMMAND + "` before the fix | failed (exit " + baseline.code + ") |",
+  "| `" + TEST_COMMAND + "` after the fix | passed |",
+  "| Were any test files modified | No - enforced by CI |",
   "",
-  "### Değişen dosyalar",
+  "### Changed files",
   "",
   changed.map((f) => "- `" + f + "`").join("\n"),
   "",
   diffstat ? "```\n" + diffstat + "\n```" : "",
   "",
-  "### Ajanın açıklaması",
+  "### What the agent said",
   "",
   explanation,
   "",
-  "### Test çıktısı (düzeltme sonrası)",
+  "### Test output after the fix",
   "",
-  "<details><summary>göster</summary>",
+  "<details><summary>show</summary>",
   "",
   "```",
   after.output.slice(-3000),
@@ -338,27 +332,27 @@ const prBody = [
   "",
   "---",
   "Model: `" +
-    (modelsUsed.join(", ") || "bilinmiyor") +
-    "` · tur: " +
+    (modelsUsed.join(", ") || "unknown") +
+    "` - turns: " +
     result.num_turns +
-    " · maliyet: $" +
+    " - cost: $" +
     (result.total_cost_usd ?? 0).toFixed(4),
   "",
-  "> İnsan gözden geçirmesi gerekir. Bu PR otomatik açıldı ama otomatik birleştirilmez.",
+  "> Needs human review. This PR was opened automatically, but it is never merged automatically.",
 ].join("\n");
 
-// Dikkat: pr-body.md'yi ASLA çalışma ağacına yazma — create-pull-request onu da
-// commit'e katar. Runner'ın geçici klasörü varsa oraya, yoksa repo dışına yaz.
+// Never write the PR body into the working tree: create-pull-request would
+// commit it. Prefer the runner's temp dir, otherwise just outside the repo.
 const prBodyDir = env("RUNNER_TEMP", path.join(repoRoot, ".."));
 const prBodyPath = path.join(prBodyDir, "sma-pr-body.md");
 fs.writeFileSync(prBodyPath, prBody, "utf8");
 
 writeStepSummary(
-  "### self-maintaining-action\n\n✅ `" +
+  "### self-maintaining-action\n\nFixed `" +
     PACKAGE +
-    "` düzeltildi, `" +
+    "`, `" +
     TEST_COMMAND +
-    "` geçiyor.\n\n" +
+    "` passes.\n\n" +
     changed.map((f) => "- `" + f + "`").join("\n")
 );
 writeOutputs({
@@ -366,9 +360,9 @@ writeOutputs({
   tests_passed: "true",
   files: changed.join("\n"),
   pr_body_file: prBodyPath,
-  summary: PACKAGE + " düzeltildi (" + changed.length + " dosya), testler geçiyor.",
+  summary: "Fixed " + PACKAGE + " (" + changed.length + " file(s)), tests pass.",
 });
 
-log("\nDeğişen dosyalar: " + changed.join(", "));
-log("PR gövdesi yazıldı: " + prBodyPath);
-log("\nBitti. ✅");
+log("\nChanged files: " + changed.join(", "));
+log("PR body written to: " + prBodyPath);
+log("\nDone.");

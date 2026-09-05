@@ -1,0 +1,33 @@
+# Cheap, model-free CI: proves the safety guard still works and the fixture is
+# still broken (a green fixture would make the demo meaningless).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax check
+        run: node --check scripts/agent.mjs
+
+      - name: Guard self-test
+        run: node scripts/selftest.mjs
+
+      - name: The fixture must still be broken
+        working-directory: test-fixture
+        run: |
+          if npm test; then
+            echo "The fixture passes, but it is supposed to be broken. Did a demo PR get merged?"
+            exit 1
+          fi
+          echo "Fixture is red, as expected."
