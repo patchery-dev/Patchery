@@ -17,6 +17,9 @@
 <meta property="og:description" content="When a dependency breaks your code, Patchery fixes it and proves the fix.">
 <meta property="og:url" content="https://github.com/patchery-dev/Patchery">
 <meta property="og:image" content="https://patchery-dev.github.io/Patchery/assets/og.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="Patchery — when a dependency breaks your code, Patchery fixes it and proves the fix.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://patchery-dev.github.io/Patchery/assets/og.png">
 <meta name="twitter:title" content="Patchery">
@@ -80,10 +83,6 @@
 
 <!-- ═══════════════════  01 · HERO  ═══════════════════ -->
 <section class="hero" id="hero" data-folio="01" data-folio-name="Patchery">
-  <div class="hero__stage">
-    <canvas class="hero__canvas" id="graph"></canvas>
-    <p class="hero__hint" id="heroHint" aria-hidden="true">drag to turn</p>
-  </div>
   <div class="hero__veil" aria-hidden="true"></div>
 
   <div class="hero__type">
@@ -138,28 +137,29 @@
     <div class="sechead" data-reveal>
       <span class="sechead__idx">02</span>
       <span class="sechead__rule"></span>
-      <span class="sechead__label">The whole idea, in two lines</span>
+      <span class="sechead__label">Why this is harder than it looks</span>
     </div>
 
     <h2 class="thesis__h">
-      <span class="line"><span>Writing the fix</span></span>
-      <span class="line"><span>is the easy part.</span></span>
-      <span class="line"><span class="mend">Proving it is</span></span>
-      <span class="line"><span class="mend">the product.</span></span>
+      <span class="line"><span>Tell an AI to</span></span>
+      <span class="line"><span>make the tests pass.</span></span>
+      <span class="line"><span>It might just</span></span>
+      <span class="line"><span class="fail">delete them.</span></span>
     </h2>
 
     <div class="thesis__grid">
       <div class="thesis__col" data-reveal>
-        <span class="spec__k">Why that is the hard part</span>
+        <span class="spec__k">This is not a hypothetical</span>
         <p>
-          Tell an AI to make your tests pass and it can pass them by deleting them. It can
-          soften a check, stub out the function, edit the very file that decides what
-          &ldquo;working&rdquo; means. Every honest version of this tool lives or dies on what
-          happens <em>after</em> the fix is written.
+          Deleting the test is the cheapest way to satisfy the instruction, so it is the one an
+          agent reaches for first. Failing that: soften the check, stub out the function, edit
+          the very file that decides what <em>working</em> means. Every one of those makes a
+          broken project look fixed.
         </p>
         <p>
-          So that is what we built first. Patchery never reads the AI&rsquo;s own account of what
-          it did. It looks at the files themselves, throws the whole attempt away if anything
+          Which means writing the fix was never the interesting problem. Everything that
+          happens <em>after</em> it is. Patchery never reads the AI&rsquo;s own account of what it
+          did — it looks at the files themselves, throws the whole attempt away if anything
           off-limits moved, and re-runs your tests itself.
         </p>
       </div>
@@ -339,7 +339,9 @@ checked, and untouched:
         <p data-reveal>
           The off-limits list is short: your tests, the file that pins your versions, your
           build settings, and the installed libraries themselves. Those are the four ways an
-          AI could make a broken project look fixed, so none of them may move.
+          AI could make a broken project look fixed, so none of them may move. Two more rules
+          sit alongside them — nothing may be deleted, and nothing outside the folder you
+          pointed it at may be touched at all.
         </p>
         <p class="guard__sub" data-reveal>
           The box below runs the real check — the same few lines that run inside
@@ -389,9 +391,10 @@ checked, and untouched:
     </div>
 
     <p class="guard__src" data-reveal>
-      Five rules, in the order they run — installed libraries, test files, test folders, build
-      settings, version-lock files. They are covered by a test that runs on every change to
-      Patchery itself: offline, in a second, with no AI and no API key involved.
+      Five rules on the off-limits list, in the order they run — installed libraries, test
+      files, test folders, build settings, version-lock files — plus a ban on deletions and on
+      anything outside the folder you pointed it at. All of it is covered by a test that runs
+      on every change to Patchery itself: offline, in a second, with no AI and no key.
     </p>
   </div>
 </section>
@@ -587,6 +590,30 @@ checked, and untouched:
       </div>
     </div>
 
+    <div class="audit" id="audit" data-reveal>
+      <div class="audit__head">
+        <div>
+          <span class="spec__k">Live, in your browser, right now</span>
+          <h3>So here is the page checking itself.</h3>
+          <p>
+            Everything below is written as something that can <em>fail</em>. They run against
+            the real files and the real GitHub API, not against a recording. If one of them
+            ever turns red on this page, the page is wrong — and it will be the first to say so.
+          </p>
+        </div>
+        <button class="audit__run" id="auditRun" type="button">run</button>
+      </div>
+
+      <div class="audit__panel">
+        <div class="scr__bar">
+          <span class="scr__tag">patchery</span>
+          <span class="scr__path">audit --self</span>
+        </div>
+        <ul class="audit__list" id="auditList"></ul>
+        <div class="audit__sum" id="auditSummary"></div>
+      </div>
+    </div>
+
     <p class="status__foot" data-reveal>
       Every number on this page comes from a run you can open and read for yourself. And one
       thing worth saying plainly: the AI reads your code. Check what your model provider does
@@ -628,10 +655,9 @@ checked, and untouched:
 <div class="cursor" id="cursor" aria-hidden="true"><i></i></div>
 <div class="grain" aria-hidden="true"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/motion@12.23.12/dist/motion.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.14/dist/lenis.min.js"></script>
-<script src="assets/hero.js"></script>
 <script src="assets/site.js"></script>
+<script src="assets/audit.js"></script>
 </body>
 </html>
