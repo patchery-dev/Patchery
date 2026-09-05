@@ -221,7 +221,7 @@ log(
     result.subtype +
     " | turns: " +
     result.num_turns +
-    " | cost: $" +
+    " | cost (Anthropic-pricing estimate): $" +
     (result.total_cost_usd ?? 0)
 );
 log("-> model(s) used: " + (modelsUsed.join(", ") || "(unknown)"));
@@ -339,7 +339,7 @@ const prBody = [
     (modelsUsed.join(", ") || "unknown") +
     "` - turns: " +
     result.num_turns +
-    " - cost: $" +
+    " - cost estimate (Anthropic pricing; actual cost may differ if a different provider was used): $" +
     (result.total_cost_usd ?? 0).toFixed(4),
   "",
   "> Needs human review. This PR was opened automatically, but it is never merged automatically.",
