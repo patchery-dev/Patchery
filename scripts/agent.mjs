@@ -64,8 +64,12 @@ function fail(message) {
   process.exit(1);
 }
 
-function git(args, cwd = WORKSPACE) {
-  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+function git(args, { trim = true } = {}) {
+  const out = execFileSync("git", args, { cwd: WORKSPACE, encoding: "utf8" });
+  // Porcelain output must NOT be trimmed: its first column is a status field
+  // that is often a leading space (" M path"). Trimming eats it, and then the
+  // fixed-width parse silently chops the first character off the path.
+  return trim ? out.trim() : out.replace(/\r?\n+$/, "");
 }
 
 function runTests() {
@@ -82,7 +86,7 @@ function runTests() {
 
 /** `git status --porcelain` -> the set of changed paths (new and deleted included). */
 function workingTreeFiles() {
-  return parsePorcelain(git(["status", "--porcelain", "-uall", "--no-renames"]));
+  return parsePorcelain(git(["status", "--porcelain", "-uall", "--no-renames"], { trim: false }));
 }
 
 // -------------------------------------------------------------------- flow

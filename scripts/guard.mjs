@@ -21,6 +21,14 @@ export function protectedReason(relPath) {
 
 /**
  * Turns `git status --porcelain -uall --no-renames` output into a set of paths.
+ *
+ * The status field is two characters wide and either half can be a space
+ * (" M path" for an unstaged edit, "M  path" for a staged one, "?? path" for an
+ * untracked file). A fixed `slice(3)` therefore chops a character off the path
+ * of any line whose leading space was lost — which is exactly what happened when
+ * the caller trimmed the whole output. Matching the status field explicitly
+ * makes this correct either way.
+ *
  * @param {string} porcelain
  * @returns {Set<string>}
  */
@@ -29,7 +37,11 @@ export function parsePorcelain(porcelain) {
   return new Set(
     porcelain
       .split("\n")
-      .map((line) => line.slice(3).trim().replace(/^"|"$/g, ""))
+      .map((line) => {
+        const m = line.match(/^([ MADRCU?!]{1,2}) (.*)$/);
+        const p = (m ? m[2] : line).trim();
+        return p.replace(/^"|"$/g, "");
+      })
       .filter(Boolean)
   );
 }

@@ -61,5 +61,24 @@ check("quoted path with a space is unquoted", () => {
   const s = parsePorcelain(' M "src/my file.js"');
   assert.deepStrictEqual([...s], ["src/my file.js"]);
 });
+// Regression: real git output starts with a space for an unstaged edit. An
+// earlier version trimmed the whole output first, so the fixed-width parse ate
+// the first character of the path and reported "est-fixture/app.js".
+check("unstaged edit keeps its first character", () => {
+  const s = parsePorcelain(" M test-fixture/app.js");
+  assert.deepStrictEqual([...s], ["test-fixture/app.js"]);
+});
+check("staged edit (two-column status) parses", () => {
+  const s = parsePorcelain("M  test-fixture/app.js");
+  assert.deepStrictEqual([...s], ["test-fixture/app.js"]);
+});
+check("survives a caller that trimmed the leading space", () => {
+  const s = parsePorcelain("M test-fixture/app.js");
+  assert.deepStrictEqual([...s], ["test-fixture/app.js"]);
+});
+check("multi-line output where only line 1 lost its space", () => {
+  const s = parsePorcelain("M test-fixture/app.js\n?? new.js\n D gone.js");
+  assert.deepStrictEqual([...s].sort(), ["gone.js", "new.js", "test-fixture/app.js"]);
+});
 
 console.log("\n" + pass + " checks passed.\n");
