@@ -1,4 +1,8 @@
-# Patchery
+<p align="center">
+  <img src="assets/logo.png" width="64" height="64" alt="Patchery logo">
+</p>
+
+<h1 align="center">Patchery</h1>
 
 **When a dependency breaks your code, Patchery fixes it and proves the fix.**
 
