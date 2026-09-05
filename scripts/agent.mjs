@@ -155,11 +155,26 @@ const changelogLine = CHANGELOG
     PACKAGE +
     "/CHANGELOG.md or its README.";
 
+// When the baseline already passes (only reachable with SMA_REQUIRE_FAILING_BASELINE=false),
+// this is a proactive migration, not a break-fix. Telling the agent "this no longer works"
+// when it demonstrably does causes it to burn its whole turn budget trying to reconcile a
+// false premise with what it actually observes, instead of just doing the migration.
+const situationLines = baseline.ok
+  ? [
+      'The package "' + PACKAGE + '" has a documented migration path away from the API this',
+      "project currently uses. The project's tests currently pass - this is a proactive",
+      "modernization, not a bug fix. Do not spend turns trying to prove something is broken;",
+      "it may not be. Trust the changelog, make the migration, and confirm tests still pass.",
+    ]
+  : [
+      'The package "' + PACKAGE + '" introduced a breaking change in this project, and the',
+      "project's own source no longer works against it.",
+    ];
+
 const prompt = [
   "You are an automated dependency-upgrade agent running inside CI.",
   "",
-  'The package "' + PACKAGE + '" introduced a breaking change in this project, and the',
-  "project's own source no longer works against it.",
+  ...situationLines,
   "",
   changelogLine,
   "",
@@ -303,14 +318,17 @@ const explanation = agentText.length ? agentText[agentText.length - 1].trim() : 
 const prBody = [
   "## Automated dependency fix: `" + PACKAGE + "`",
   "",
-  "This PR was opened by **self-maintaining-action**. An AI agent read the breaking",
-  "change in `" + PACKAGE + "`, migrated the call sites to the new API, and ran the tests.",
+  "This PR was opened by **[Patchery](https://github.com/patchery-dev/Patchery)**. An AI agent read the",
+  (baseline.ok ? "migration notes" : "breaking change") + " for `" + PACKAGE + "`, migrated the call sites" +
+    " to the new API, and ran the tests.",
   "",
   "### Verification",
   "",
   "| Step | Result |",
   "| --- | --- |",
-  "| `" + TEST_COMMAND + "` before the fix | failed (exit " + baseline.code + ") |",
+  "| `" + TEST_COMMAND + "` before the fix | " +
+    (baseline.ok ? "passed (proactive migration, not a bug fix)" : "failed (exit " + baseline.code + ")") +
+    " |",
   "| `" + TEST_COMMAND + "` after the fix | passed |",
   "| Were any test files modified | No - enforced by CI |",
   "",
@@ -343,6 +361,8 @@ const prBody = [
     (result.total_cost_usd ?? 0).toFixed(4),
   "",
   "> Needs human review. This PR was opened automatically, but it is never merged automatically.",
+  "",
+  "Generated with [Patchery](https://github.com/patchery-dev/Patchery) — catches breaking changes, migrates call sites, and verifies against your tests.",
 ].join("\n");
 
 // Never write the PR body into the working tree: create-pull-request would
