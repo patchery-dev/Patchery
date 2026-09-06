@@ -1743,9 +1743,18 @@ export function detectExtraChecks(packageJsonText, raw = "auto") {
   } catch {
     return [];
   }
-  return KNOWN_CHECK_SCRIPTS.filter((name) => typeof scripts[name] === "string" && scripts[name].trim()).map(
-    (name) => ({ name, command: "npm run " + name })
-  );
+  return KNOWN_CHECK_SCRIPTS.filter((name) => {
+    const body = typeof scripts[name] === "string" ? scripts[name].trim() : "";
+    if (!body) return false;
+    // A check that rewrites the code is not a check. `lint: "eslint . --fix"` is a
+    // common way to write it, and running it during verification would edit the
+    // very diff under judgement: the lint's changes would arrive in the pull
+    // request as the agent's work, and a lint failure would fix itself into a
+    // pass. Skipped rather than run, because a check we cannot trust is worse
+    // than one we do not have.
+    if (/(^|\s)(--fix|--write|--update|-u)(\s|$)/.test(body)) return false;
+    return true;
+  }).map((name) => ({ name, command: "npm run " + name }));
 }
 
 /**

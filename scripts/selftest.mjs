@@ -2377,4 +2377,53 @@ check("allowed paths cannot be escaped with ..", () => {
   assert.strictEqual(outOfScopeReason("shared/x.js", "src", ["shared"]), null);
 });
 
+
+// A check that rewrites the code is not a check. `lint: "eslint . --fix"` is an
+// ordinary way to write it, and running it during verification would edit the
+// diff under judgement - the lint's own changes arriving in the pull request as
+// the agent's work, and a lint failure fixing itself into a pass.
+check("detectExtraChecks skips a check that rewrites files", () => {
+  for (const body of ["eslint . --fix", "prettier --write .", "jest -u", "eslint . --fix --cache"]) {
+    const found = detectExtraChecks(JSON.stringify({ scripts: { lint: body } }));
+    assert.deepStrictEqual(found, [], body);
+  }
+});
+
+check("detectExtraChecks still finds the read-only ones", () => {
+  const found = detectExtraChecks(JSON.stringify({ scripts: { typecheck: "tsc --noEmit", lint: "eslint ." } }));
+  assert.deepStrictEqual(
+    found.map((c) => c.name),
+    ["typecheck", "lint"]
+  );
+});
+
+// A flag that merely contains the letters must not disable a good check.
+check("detectExtraChecks is not fooled by a lookalike flag", () => {
+  const found = detectExtraChecks(JSON.stringify({ scripts: { lint: "eslint . --fix-type problem --max-warnings 0" } }));
+  assert.deepStrictEqual(found.map((c) => c.name), ["lint"]);
+});
+
+// Every way of neutering the judge, taken from what an agent could plausibly try.
+check("scriptsTamperReason catches every way of softening the test command", () => {
+  const before = JSON.stringify({ scripts: { test: "jest", lint: "eslint ." } });
+  const attacks = [
+    { test: "echo ok", lint: "eslint ." },
+    { test: "jest --passWithNoTests", lint: "eslint ." },
+    { test: "jest || true", lint: "eslint ." },
+    { test: "jest; exit 0", lint: "eslint ." },
+    { test: "jest --testPathIgnorePatterns=broken", lint: "eslint ." },
+    { lint: "eslint ." },
+    { test: "jest", lint: "eslint . || true" },
+    { test: "jest", lint: "eslint .", posttest: "echo done" },
+  ];
+  for (const scripts of attacks) {
+    assert.ok(scriptsTamperReason(before, JSON.stringify({ scripts })), JSON.stringify(scripts));
+  }
+});
+
+check("scriptsTamperReason stays quiet when the scripts are untouched", () => {
+  const same = JSON.stringify({ scripts: { test: "jest", lint: "eslint ." } });
+  assert.strictEqual(scriptsTamperReason(same, same), null);
+});
+
 console.log("\n" + pass + " checks passed.\n");
