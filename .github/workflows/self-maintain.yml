@@ -48,6 +48,11 @@ jobs:
           test-command: ${{ inputs.test-command }}
           changelog: ${{ inputs.changelog }}
           dry-run: ${{ inputs.dry-run }}
+          # This repo reviews with GLM, which was measured spending all 12 turns
+          # investigating and never answering - on every run, then falling back to
+          # the no-tools pass anyway. Skipping straight to that pass saves the
+          # wasted call; the verdict caps at `concerns`, which it already did.
+          verify-tools: "off"
           anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
           anthropic-model: ${{ secrets.ANTHROPIC_MODEL }}
@@ -67,7 +72,11 @@ jobs:
             fix(deps): migrate ${{ inputs.package }} call sites
 
             ${{ steps.sma.outputs.summary }}
+          # The review outcome as a label, so a refuted-but-still-opened PR is
+          # visible in the list rather than only inside the body. In `warn` mode
+          # the PR opens either way; the label is what tells them apart.
           labels: |
             dependencies
             automated
+            ${{ steps.sma.outputs.review-label }}
           delete-branch: true

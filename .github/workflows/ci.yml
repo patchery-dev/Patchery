@@ -23,6 +23,12 @@ jobs:
       - name: Guard self-test
         run: node scripts/selftest.mjs
 
+      # Everything the calibration harness does except the model call. A measuring
+      # tool nobody runs quietly stops working, and then the day someone reaches
+      # for it to settle verify-min-confidence, it is broken.
+      - name: The calibration harness must still run
+        run: node scripts/calibrate.mjs --dry-run
+
       - name: The fixture must still be broken
         working-directory: test-fixture
         run: |

@@ -690,6 +690,139 @@ export function normalizeVerifyMode(raw) {
 }
 
 /**
+ * Normalise the verify-tools input.
+ *
+ * Same rule as verify-mode: an unrecognised value is an error, not a guess. This
+ * one decides whether a reviewer gets to open the repository at all, which is the
+ * difference between a verdict it can defend and one it cannot.
+ *
+ * @param {string} raw
+ * @returns {{tools: "auto"|"on"|"off", error: string|null}}
+ */
+export function normalizeVerifyTools(raw) {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (v === "" || v === "auto") return { tools: "auto", error: null };
+  if (["off", "false", "none", "no", "0"].includes(v)) return { tools: "off", error: null };
+  if (["on", "true", "yes", "1"].includes(v)) return { tools: "on", error: null };
+  return {
+    tools: "auto",
+    error: 'verify-tools must be one of auto, on, off - got "' + String(raw).trim() + '"',
+  };
+}
+
+/**
+ * Should this review pass be given Read/Grep/Glob, and is a no-tools retry allowed?
+ *
+ * Reading the repository is the reviewer's highest-value move: grepping for call
+ * sites the migration missed is the one check the mechanical guard cannot do. But
+ * a model that investigates until its turns run out answers nothing at all.
+ * Measured on GLM: 12 turns, 12 tool calls, no verdict, every run, and the same
+ * review with no tools converged in 4. `auto` pays that discovery cost once and
+ * then remembers - a run that reviews twice (a repair turn) must not pay twice.
+ * `off` is for when you already know your reviewer model behaves that way; it is
+ * the cheaper answer and it is capped at `concerns`, because a reviewer that never
+ * opened the repository cannot check a single one of its own claims.
+ *
+ * @param {{setting: string, toolsBurnedOut: boolean}} a
+ * @returns {{useTools: boolean, allowFallback: boolean, note: string|null}}
+ */
+export function reviewPassPlan({ setting = "auto", toolsBurnedOut = false } = {}) {
+  if (setting === "off") {
+    return {
+      useTools: false,
+      allowFallback: false,
+      note: "verify-tools: off - reviewing from the evidence alone, so the verdict caps at concerns",
+    };
+  }
+  if (setting === "on") {
+    // No fallback on purpose: someone who asked for tools wants a burnout reported
+    // as "the review could not run", not quietly swapped for a weaker answer.
+    return { useTools: true, allowFallback: false, note: null };
+  }
+  if (toolsBurnedOut) {
+    return {
+      useTools: false,
+      allowFallback: false,
+      note: "skipping tools - an earlier pass in this run spent every turn investigating and never answered",
+    };
+  }
+  return { useTools: true, allowFallback: true, note: null };
+}
+
+/**
+ * What a confidence threshold actually buys, measured over labelled samples.
+ *
+ * `verify-min-confidence` does exactly one thing: below it, a verdict is recorded
+ * as a concern instead of acted on. So over a corpus of diffs whose correctness is
+ * already known, every threshold has precisely three effects, and this counts them:
+ *
+ *   helped      a WRONG approval (bad diff, "not refuted") gets flagged  - the point
+ *   falseAlarm  a RIGHT approval (good diff, "not refuted") gets flagged - the cost
+ *   defused     a RIGHT refutation (bad diff, "refuted") stops blocking  - the cost
+ *
+ * `insufficient_evidence` is already a concern, so the threshold cannot move it and
+ * it is not counted in either column.
+ *
+ * The recommendation is argmax(helped - falseAlarm - defused), ties broken towards
+ * the lowest threshold, because the null hypothesis is "intervene less". A net of 0
+ * at every threshold is a real and useful answer: it means the reviewer's confidence
+ * number carries no signal on this corpus and the threshold should be 0.
+ *
+ * @param {Array<{label: "good"|"bad", verdict: string, confidence: number}>} samples
+ * @returns {object}
+ */
+export function confidenceThresholdReport(samples = [], { step = 5 } = {}) {
+  const clean = (samples || []).filter(
+    (s) => s && (s.label === "good" || s.label === "bad") && Number.isFinite(Number(s.confidence))
+  );
+  const rows = [];
+  for (let t = 0; t <= 100; t += Math.max(1, step)) {
+    let helped = 0;
+    let falseAlarms = 0;
+    let defused = 0;
+    for (const s of clean) {
+      if (Number(s.confidence) >= t) continue;
+      if (s.verdict === "refuted") {
+        if (s.label === "bad") defused++;
+      } else if (s.verdict === "not_refuted") {
+        if (s.label === "bad") helped++;
+        else falseAlarms++;
+      }
+    }
+    rows.push({ threshold: t, helped, falseAlarms, defused, net: helped - falseAlarms - defused });
+  }
+  // Strictly greater, so the first (lowest) threshold wins a tie.
+  const best = rows.reduce((a, b) => (b.net > a.net ? b : a), rows[0]);
+
+  const spread = (label, verdict) => {
+    const values = clean
+      .filter((s) => s.label === label && (!verdict || s.verdict === verdict))
+      .map((s) => Number(s.confidence))
+      .sort((a, b) => a - b);
+    if (!values.length) return null;
+    return {
+      n: values.length,
+      min: values[0],
+      median: values[Math.floor((values.length - 1) / 2)],
+      max: values[values.length - 1],
+    };
+  };
+
+  return {
+    samples: clean.length,
+    rows,
+    recommended: best ? best.threshold : 0,
+    net: best ? best.net : 0,
+    // How often the reviewer was simply right, before any threshold is applied.
+    caught: clean.filter((s) => s.label === "bad" && s.verdict === "refuted").length,
+    missed: clean.filter((s) => s.label === "bad" && s.verdict === "not_refuted").length,
+    cleared: clean.filter((s) => s.label === "good" && s.verdict === "not_refuted").length,
+    doubted: clean.filter((s) => s.label === "good" && s.verdict !== "not_refuted").length,
+    confidence: { good: spread("good"), bad: spread("bad") },
+  };
+}
+
+/**
  * Is this run worth paying a reviewer for?
  *
  * Deliberately NO minimum-size skip: a two-line `?? 0` suppression is at once the
@@ -1002,7 +1135,7 @@ export function reviewOutcome({
   minConfidence = 60,
   mode = "warn",
 } = {}) {
-  const base = { rank: 0, blocking: false, placement: "none" };
+  const base = { rank: 0, blocking: false, placement: "none", confidence: null };
   if (skipReason) {
     return {
       ...base,
@@ -1056,6 +1189,9 @@ export function reviewOutcome({
   return {
     status,
     rank,
+    // Surfaced so real runs can be recorded and the threshold above calibrated
+    // against them, instead of staying the guess it starts life as.
+    confidence: review.confidence,
     blocking: mode === "block" && rank === 2,
     label,
     placement: rank === 0 ? "after-verification" : "top",

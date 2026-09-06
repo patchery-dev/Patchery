@@ -6,7 +6,10 @@
   "description": "Patchery — when a dependency breaks your code, Patchery fixes it and proves the fix.",
   "scripts": {
     "check": "node --check scripts/agent.mjs",
-    "test:fixture": "cd test-fixture && npm test"
+    "selftest": "node scripts/selftest.mjs",
+    "test:fixture": "cd test-fixture && npm test",
+    "calibrate": "node scripts/calibrate.mjs",
+    "calibrate:dry": "node scripts/calibrate.mjs --dry-run"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.77"

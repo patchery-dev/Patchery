@@ -79,5 +79,14 @@ jobs:
           body-path: ${{ steps.sma.outputs.pr-body-file }}
           add-paths: ${{ steps.sma.outputs.files }}
           commit-message: "fix(deps): migrate ${{ inputs.package }} call sites"
-          labels: dependencies, automated
+          # The last label is the independent review's verdict: patchery:reviewed,
+          # patchery:needs-attention, patchery:refuted or patchery:unreviewed. By
+          # default a refuted fix still opens a PR - this is what makes that visible
+          # in the pull request list instead of only inside the body. GitHub creates
+          # the label on first use; give the three of them colours once and the list
+          # sorts itself.
+          labels: |
+            dependencies
+            automated
+            ${{ steps.sma.outputs.review-label }}
           delete-branch: true

@@ -2,3 +2,7 @@
 pr-body.md
 sma-pr-body.md
 .DS_Store
+
+# Calibration output. Real numbers from a real run belong in a commit message or
+# the README, deliberately, not dropped in by whoever last ran the script.
+/calibration/results.json

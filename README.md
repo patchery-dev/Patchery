@@ -102,6 +102,48 @@ back with no evidence. When it does fire, the guard, your tests and the review a
 again over the result, so the verdict in the pull request describes the diff in the pull
 request.
 
+**Letting it read the repository costs money on some models.** Grepping for call sites
+the migration missed is the reviewer's highest-value move and the one check the
+mechanical guard cannot do — so `verify-tools` defaults to `auto`, which hands it
+`Read`, `Grep` and `Glob`. But a model that investigates until its turns run out
+answers nothing at all, which is worse than a shallower answer. Measured on GLM: 12
+turns, 12 tool calls, no verdict, on every run, then a second no-tools call that
+converged in 4. `auto` now pays that discovery cost at most once per run instead of
+once per review, and `verify-tools: off` skips it entirely — the right setting once
+you have measured your reviewer model, at the cost of capping the verdict at
+`concerns`, because a reviewer that never opened the repository cannot check a single
+one of its own claims. `verify-tools: on` insists on tools and reports a burnout as
+*the review could not run*, rather than quietly substituting the weaker answer.
+
+**`verify-min-confidence` is a guess, and it is labelled as one.** It ships at 60.
+Nobody measured 60. That input does exactly one thing — below it, a verdict is
+recorded as a concern instead of acted on — which means over a set of changes whose
+correctness is already known, every possible threshold has exactly three effects, and
+they can be counted:
+
+| | |
+| --- | --- |
+| **helped** | a *wrong* approval gets flagged — the entire point of the input |
+| **false alarm** | a *right* approval gets flagged — noise on a correct fix |
+| **defused** | a *right* refutation stops blocking — in `block` mode, a bad fix goes through |
+
+`node scripts/calibrate.mjs` runs the real reviewer — same prompt, same schema, same
+evidence builder — over [`calibration/`](calibration/): 23 changes to the fixture, 11
+correct migrations and 12 subtly wrong ones. **Every case passes the tests.** That is
+the design: a wrong migration that fails the tests is already caught by the test
+re-run, for free, before a reviewer is paid, so it tells you nothing about a
+confidence threshold. The population the threshold is applied to is exactly this one.
+The script prints what each threshold from 0 to 100 would have done, and recommends
+`argmax(helped − falseAlarm − defused)` with ties going to the lowest, because the
+default should be to intervene less. A net of 0 everywhere is a real answer: it means
+the number carries no signal and the honest setting is 0.
+
+The counting is a pure function, unit-tested offline; `--dry-run` exercises the whole
+harness without calling a model, and CI runs it on every push so the tool cannot rot
+between uses. **What has not happened is the run itself** — that needs a key and a
+budget, and until someone does it, 60 stays a round number. The `review-confidence`
+output exists so your own runs accumulate the same data.
+
 **What it is not.** With `verify-model` empty it shares the fixer's weights, so what
 you get is different context, no rationale, no write access and an opposite success
 condition — not true independence. It will not catch a change that is wrong in a way
@@ -231,15 +273,13 @@ and which directory to fix.
 | `allowed-paths` | `""` | Paths outside `target-dir` the run may still change, one per line |
 | `allow-deletions` | `false` | Allow the run to delete tracked files |
 | `verify-mode` | `warn` | Independent review: `warn` records the verdict, `block` withholds a refuted PR, `off` skips it |
-| `verify-base-url` | `""` | Endpoint for the reviewer, if it should run on a different provider entirely |
-| `verify-auth-token` | `""` | Token for that endpoint |
-| `verify-repair` | `false` | Hand an actionable concern back to the fixer for one more turn. Off on purpose — see above |
-| `verify-repair-turns` | `8` | Turn limit for that repair turn |
 | `verify-model` | `""` | Model for the reviewer; empty means the same one, in a separate call |
 | `verify-base-url` | `""` | Send the review to a different provider entirely (a second party sees the diff) |
 | `verify-auth-token` | `""` | Credential for that provider; redacted like every other key |
-| `verify-repair` | `false` | Give an actionable concern back to the fixer for one more turn |
-| `verify-min-confidence` | `60` | Below this, a verdict is recorded as a concern rather than acted on |
+| `verify-tools` | `auto` | Whether the reviewer may read the repository. `off` skips a tool pass your model never converges in — see below |
+| `verify-repair` | `false` | Hand an actionable concern back to the fixer for one more turn. Off on purpose — see above |
+| `verify-repair-turns` | `8` | Turn limit for that repair turn |
+| `verify-min-confidence` | `60` | Below this, a verdict is recorded as a concern rather than acted on. **A round number nobody has measured** — see below |
 | `verify-max-turns` | `12` | Turn limit for the reviewer |
 | `verify-max-diff-bytes` | `60000` | Skip the review above this diff size |
 | `max-turns` | `25` | Agent turn limit — your cost brake |
@@ -266,7 +306,8 @@ and which directory to fix.
 | `pr-body-file` | Path to the generated PR body (ready for `body-path`) |
 | `summary` | One-line summary |
 | `review-status` | `not-reviewed`, `unavailable`, `not-refuted`, `concerns` or `refuted` |
-| `review-label` | Suggested PR label, e.g. `patchery:reviewed` |
+| `review-label` | Suggested PR label: `patchery:reviewed`, `patchery:needs-attention`, `patchery:refuted` or `patchery:unreviewed`. Feed it straight into `create-pull-request`'s `labels` — the example workflow does |
+| `review-confidence` | The reviewer's own confidence, 0–100, or empty when no review produced one |
 
 ---
 

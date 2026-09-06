@@ -137,10 +137,28 @@ inputs:
       from logs, the step summary and the pull request body like every other key.
     required: false
     default: ""
+  verify-tools:
+    description: >-
+      Whether the reviewer may open the repository (Read, Grep, Glob - never Bash,
+      never the network). `auto` gives it tools, and if the model spends every turn
+      investigating without ever answering, asks again without them and remembers
+      that for the rest of the run. `off` skips straight to the no-tools review:
+      cheaper, and the right setting for a model measured to behave that way - GLM
+      does, every run - at the cost of capping the verdict at `concerns`, because a
+      reviewer that never opened the repository cannot check its own claims. `on`
+      insists on tools and reports a burnout as "the review could not run" rather
+      than quietly substituting the weaker answer.
+    required: false
+    default: "auto"
   verify-min-confidence:
     description: >-
       Below this confidence the reviewer's verdict is recorded as a concern rather
       than acted on - in both directions. The same bar to condemn as to bless.
+      The default is a placeholder, not a measurement: nobody has calibrated it.
+      `scripts/calibrate.mjs` runs the real reviewer over a corpus of diffs whose
+      correctness is already known and reports what each threshold would actually
+      buy you; the `review-confidence` output records the same number from your own
+      runs. Until one of those says otherwise, treat 60 as a round number.
     required: false
     default: "60"
   verify-repair:
@@ -226,6 +244,12 @@ outputs:
   review-label:
     description: "Suggested PR label for the review outcome, e.g. patchery:reviewed."
     value: ${{ steps.run.outputs.review_label }}
+  review-confidence:
+    description: >-
+      The reviewer's own confidence, 0-100, or empty when no review produced one.
+      Published so verify-min-confidence can be calibrated against real runs instead
+      of staying a round number - log it, and the distribution is the calibration.
+    value: ${{ steps.run.outputs.review_confidence }}
 
 runs:
   using: "composite"
@@ -264,6 +288,7 @@ runs:
         SMA_STALL_NO_EDIT_TURNS: ${{ inputs.stall-no-edit-turns }}
         SMA_EXTRA_CHECKS: ${{ inputs.extra-checks }}
         SMA_VERIFY_MODE: ${{ inputs.verify-mode }}
+        SMA_VERIFY_TOOLS: ${{ inputs.verify-tools }}
         SMA_VERIFY_MODEL: ${{ inputs.verify-model }}
         SMA_VERIFY_BASE_URL: ${{ inputs.verify-base-url }}
         SMA_VERIFY_AUTH_TOKEN: ${{ inputs.verify-auth-token }}

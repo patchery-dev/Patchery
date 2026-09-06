@@ -8,6 +8,11 @@
  */
 
 import assert from "node:assert";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   protectedReason,
   parsePorcelain,
@@ -24,6 +29,9 @@ import {
   bashLooksMutating,
   stallVerdict,
   normalizeVerifyMode,
+  normalizeVerifyTools,
+  reviewPassPlan,
+  confidenceThresholdReport,
   shouldReview,
   truncateEvidence,
   buildReviewEvidence,
@@ -38,6 +46,8 @@ import {
   extraCheckRegressions,
   buildDiagnosis,
 } from "./guard.mjs";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 let pass = 0;
 const check = (name, fn) => {
@@ -1145,5 +1155,164 @@ check("an ordinary config file is still fair game", () => {
   assert.strictEqual(protectedReason("vite.config.js"), null);
   assert.strictEqual(protectedReason("webpack.config.js"), null);
 });
+
+console.log("\nnormalizeVerifyTools - a typo must not silently pick a behaviour");
+check("empty and auto both mean auto", () => {
+  assert.strictEqual(normalizeVerifyTools("").tools, "auto");
+  assert.strictEqual(normalizeVerifyTools("  AUTO ").tools, "auto");
+});
+check("the usual spellings of off and on are understood", () => {
+  for (const v of ["off", "false", "no", "0", "NONE"]) {
+    assert.strictEqual(normalizeVerifyTools(v).tools, "off", v);
+  }
+  for (const v of ["on", "true", "yes", "1"]) {
+    assert.strictEqual(normalizeVerifyTools(v).tools, "on", v);
+  }
+});
+check("anything else is an error, not a guess", () => {
+  const r = normalizeVerifyTools("maybe");
+  assert.ok(r.error);
+  assert.match(r.error, /verify-tools/);
+});
+
+console.log("\nreviewPassPlan - paying to discover the same thing twice");
+check("auto gives the reviewer tools and keeps the fallback", () => {
+  const p = reviewPassPlan({ setting: "auto" });
+  assert.strictEqual(p.useTools, true);
+  assert.strictEqual(p.allowFallback, true);
+});
+// The point of the whole change: a run that reviews twice (verify-repair) used to
+// spend the full turn budget re-learning that this model never converges with tools.
+check("auto remembers a burnout for the rest of the run", () => {
+  const p = reviewPassPlan({ setting: "auto", toolsBurnedOut: true });
+  assert.strictEqual(p.useTools, false);
+  assert.strictEqual(p.allowFallback, false);
+  assert.match(p.note, /earlier pass/);
+});
+check("off skips the tool pass outright", () => {
+  const p = reviewPassPlan({ setting: "off" });
+  assert.strictEqual(p.useTools, false);
+  assert.strictEqual(p.allowFallback, false);
+  assert.match(p.note, /caps at concerns/);
+});
+// Someone who insisted on tools wants "the review could not run", not a quieter
+// answer substituted for the one they asked for.
+check("on insists, and does not fall back", () => {
+  const p = reviewPassPlan({ setting: "on" });
+  assert.strictEqual(p.useTools, true);
+  assert.strictEqual(p.allowFallback, false);
+});
+check("on does not change its mind after a burnout either", () =>
+  assert.strictEqual(reviewPassPlan({ setting: "on", toolsBurnedOut: true }).useTools, true)
+);
+
+console.log("\nconfidenceThresholdReport - what the threshold actually buys");
+const sample = (label, verdict, confidence) => ({ label, verdict, confidence });
+check("a threshold of 0 does nothing at all", () => {
+  const r = confidenceThresholdReport([
+    sample("good", "not_refuted", 10),
+    sample("bad", "refuted", 10),
+  ]);
+  const row = r.rows.find((x) => x.threshold === 0);
+  assert.deepStrictEqual([row.helped, row.falseAlarms, row.defused, row.net], [0, 0, 0, 0]);
+});
+check("flagging a low-confidence approval of a bad diff is the benefit", () => {
+  const r = confidenceThresholdReport([sample("bad", "not_refuted", 30)]);
+  assert.strictEqual(r.rows.find((x) => x.threshold === 50).helped, 1);
+  assert.strictEqual(r.recommended, 35);
+});
+check("flagging a low-confidence approval of a good diff is the cost", () => {
+  const r = confidenceThresholdReport([sample("good", "not_refuted", 30)]);
+  assert.strictEqual(r.rows.find((x) => x.threshold === 50).falseAlarms, 1);
+  // Nothing to gain anywhere, so it recommends never intervening.
+  assert.strictEqual(r.recommended, 0);
+});
+// The direction people forget: the threshold does not only soften approvals. It
+// softens refutations too, and in block mode that is a bad fix going through.
+check("defusing a correct refutation is also counted as a cost", () => {
+  const r = confidenceThresholdReport([sample("bad", "refuted", 30)]);
+  assert.strictEqual(r.rows.find((x) => x.threshold === 50).defused, 1);
+  assert.strictEqual(r.recommended, 0);
+});
+check("insufficient_evidence is untouched - it is already a concern", () => {
+  const r = confidenceThresholdReport([
+    sample("good", "insufficient_evidence", 5),
+    sample("bad", "insufficient_evidence", 5),
+  ]);
+  assert.ok(r.rows.every((x) => x.helped === 0 && x.falseAlarms === 0 && x.defused === 0));
+});
+check("ties go to the lowest threshold, because the default is to intervene less", () => {
+  const r = confidenceThresholdReport([sample("bad", "not_refuted", 10), sample("good", "not_refuted", 10)]);
+  assert.strictEqual(r.recommended, 0);
+  assert.strictEqual(r.net, 0);
+});
+check("it reports how right the reviewer was before any threshold", () => {
+  const r = confidenceThresholdReport([
+    sample("bad", "refuted", 90),
+    sample("bad", "not_refuted", 90),
+    sample("good", "not_refuted", 90),
+    sample("good", "refuted", 90),
+  ]);
+  assert.deepStrictEqual([r.caught, r.missed, r.cleared, r.doubted], [1, 1, 1, 1]);
+});
+check("garbage samples are dropped rather than counted", () => {
+  const r = confidenceThresholdReport([
+    sample("good", "not_refuted", 50),
+    sample("unknown", "not_refuted", 50),
+    sample("bad", "not_refuted", NaN),
+    null,
+  ]);
+  assert.strictEqual(r.samples, 1);
+});
+check("no samples at all does not throw", () => {
+  const r = confidenceThresholdReport([]);
+  assert.strictEqual(r.samples, 0);
+  assert.strictEqual(r.recommended, 0);
+});
+
+// -------------------------------------------------------- calibration corpus
+//
+// The corpus is only worth anything if every case in it passes the tests: a wrong
+// migration that fails is caught by the test re-run for free, before a reviewer is
+// paid, so it says nothing about a confidence threshold. This runs the fixture's
+// own test against every case, in a temp copy, and is why the claim in corpus.json
+// is a checked fact rather than a comment.
+console.log("\ncalibration corpus - every case must pass the tests");
+{
+  const corpusDir = path.join(root, "calibration");
+  const corpus = JSON.parse(fs.readFileSync(path.join(corpusDir, "corpus.json"), "utf8"));
+
+  check("the corpus is big enough to say anything, and balanced", () => {
+    assert.ok(corpus.cases.length >= 20, "want 20+ cases, have " + corpus.cases.length);
+    const good = corpus.cases.filter((c) => c.label === "good").length;
+    const bad = corpus.cases.filter((c) => c.label === "bad").length;
+    assert.ok(good >= 8 && bad >= 8, good + " good / " + bad + " bad");
+  });
+  check("every case is labelled, unique, and says why", () => {
+    const seen = new Set();
+    for (const c of corpus.cases) {
+      assert.ok(["good", "bad"].includes(c.label), c.file + " has label " + c.label);
+      assert.ok(c.why && c.why.length > 20, c.file + " needs a real justification");
+      assert.ok(!seen.has(c.file), "duplicate case " + c.file);
+      seen.add(c.file);
+    }
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "patchery-corpus-"));
+  try {
+    for (const name of ["app.test.js", "package.json", "node_modules"]) {
+      fs.cpSync(path.join(root, "test-fixture", name), path.join(tmp, name), { recursive: true });
+    }
+    for (const c of corpus.cases) {
+      check(c.file + " passes the fixture's tests", () => {
+        fs.copyFileSync(path.join(corpusDir, "cases", c.file), path.join(tmp, "app.js"));
+        const r = spawnSync(process.execPath, ["app.test.js"], { cwd: tmp, encoding: "utf8" });
+        assert.strictEqual(r.status, 0, c.file + " must pass:\n" + (r.stdout ?? "") + (r.stderr ?? ""));
+      });
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
 
 console.log("\n" + pass + " checks passed.\n");

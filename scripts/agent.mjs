@@ -30,6 +30,8 @@ import {
   createStallDetector,
   baselinePassedMessage,
   normalizeVerifyMode,
+  normalizeVerifyTools,
+  reviewPassPlan,
   shouldReview,
   buildReviewEvidence,
   parseReview,
@@ -89,6 +91,12 @@ const STALL_NO_EDIT_TURNS = Number.isFinite(rawNoEdit) && rawNoEdit >= 2 ? Math.
 // a tool whose adoption depends on believing it does something.
 const verifyMode = normalizeVerifyMode(env("SMA_VERIFY_MODE"));
 const VERIFY_MODE = verifyMode.mode;
+// Whether the reviewer may open the repository. `auto` tries, and falls back to a
+// no-tools pass if the model spends every turn investigating and never answers -
+// then remembers that for the rest of the run, so a second review does not pay the
+// same discovery cost twice. Set it explicitly once you know your reviewer model.
+const verifyTools = normalizeVerifyTools(env("SMA_VERIFY_TOOLS"));
+const VERIFY_TOOLS = verifyTools.tools;
 const VERIFY_MODEL = env("SMA_VERIFY_MODEL");
 // A different provider is the strongest independence lever there is: two models from
 // the same family share training data and idioms, and a model is least likely to flag
@@ -151,6 +159,19 @@ function writeOutputs(obj) {
     return k + "<<" + delimiter + "\n" + clean(String(v)) + "\n" + delimiter;
   });
   fs.appendFileSync(file, lines.join("\n") + "\n");
+}
+
+/**
+ * The reviewer's own confidence, as an output, or "" when no review produced one.
+ *
+ * Published for one reason: `verify-min-confidence` ships as a round number nobody
+ * has measured, and it can only stop being a guess if the numbers real runs produce
+ * are visible somewhere. Empty rather than 0 when there is no review - 0 is a
+ * confidence, and a workflow comparing against it must not be handed a fake one.
+ */
+function reviewConfidenceOutput() {
+  const c = reviewOutcomeResult?.confidence;
+  return Number.isFinite(c) ? String(c) : "";
 }
 
 function writeStepSummary(md) {
@@ -257,6 +278,11 @@ if (!PACKAGE) {
 if (!fs.existsSync(TARGET_DIR)) {
   fail("Target directory does not exist: " + TARGET_DIR);
 }
+// Both normalisers report a typo rather than guessing, for the same reason: someone
+// who wrote `verify-mode: blcok` believes they are gated and is not. Refusing to
+// start is the only answer that cannot leave them believing it.
+if (verifyMode.error) fail(verifyMode.error);
+if (verifyTools.error) fail(verifyTools.error);
 
 group("0. Environment");
 // "Custom endpoint" means anything other than Anthropic's own host. Some
@@ -822,6 +848,9 @@ group("5. Independent review (a second agent, with no way to change anything)");
 let reviewOutcomeResult = null;
 let review = null;
 let reviewMeta = { model: "", differentModel: false, costUsd: 0, permissionDenials: 0 };
+// Set once a tool-enabled pass has proved this model will not converge with tools.
+// Scoped to the run, because there is nowhere to remember it between runs.
+let toolsBurnedOut = false;
 
 /**
  * One complete review pass over whatever is currently in the working tree.
@@ -941,8 +970,10 @@ async function runReviewPass(entries) {
     let callError = null;
     let reviewResult = null;
     let reviewText = [];
+    const plan = reviewPassPlan({ setting: VERIFY_TOOLS, toolsBurnedOut });
+    if (plan.note) log("review: " + plan.note);
     // Whether the reviewer could actually open the repository to check its claims.
-    let sawRepository = true;
+    let sawRepository = plan.useTools;
 
     async function runReviewer(options, promptText) {
       const text = [];
@@ -960,20 +991,24 @@ async function runReviewPass(entries) {
       return { res, text };
     }
 
+    const noTools = { ...reviewOpts, tools: [], allowedTools: [] };
     try {
-      ({ res: reviewResult, text: reviewText } = await runReviewer(reviewOpts, evidence.text));
+      ({ res: reviewResult, text: reviewText } = plan.useTools
+        ? await runReviewer(reviewOpts, evidence.text)
+        : await runReviewer(noTools, evidence.text + REVIEW_NO_TOOLS_NOTE));
       // Reading the repository is the reviewer's highest-value move - grepping for
       // call sites the migration missed is the one check the mechanical guard cannot
       // do. But a model that investigates until its turns run out answers nothing at
       // all, which is worse than a shallower answer. Measured on GLM: 12 turns, 12
       // tool calls, no verdict; the same review with no tools converged in 4.
       // So: try it with eyes, and if it never lands, ask again without them.
-      if (reviewResult?.subtype === "error_max_turns") {
+      if (plan.allowFallback && reviewResult?.subtype === "error_max_turns") {
         log("the reviewer used every turn investigating and never answered - asking again without tools.");
-        const { res, text } = await runReviewer(
-          { ...reviewOpts, tools: [], allowedTools: [] },
-          evidence.text + REVIEW_NO_TOOLS_NOTE
-        );
+        // Remembered for the rest of the run. A run that reviews twice - the repair
+        // path does - would otherwise burn the full turn budget discovering the same
+        // thing a second time, which is the whole of the waste this measures.
+        toolsBurnedOut = true;
+        const { res, text } = await runReviewer(noTools, evidence.text + REVIEW_NO_TOOLS_NOTE);
         if (res?.subtype === "success") {
           reviewResult = res;
           reviewText = text;
@@ -1153,6 +1188,7 @@ if (reviewOutcomeResult.blocking) {
       tests_passed: "true",
       review_status: reviewOutcomeResult.status,
       review_label: reviewOutcomeResult.label,
+      review_confidence: reviewConfidenceOutput(),
       // Empty when the save failed: a workflow that uploads this must not be handed
       // the path of a file that is not there.
       review_patch_file: patchSaved ? patchPath : "",
@@ -1250,6 +1286,7 @@ writeOutputs({
   outcome: "fixed",
   review_status: reviewOutcomeResult.status,
   review_label: reviewOutcomeResult.label,
+  review_confidence: reviewConfidenceOutput(),
   changed: "true",
   tests_passed: "true",
   files: changed.join("\n"),
