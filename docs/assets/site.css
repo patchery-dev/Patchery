@@ -193,7 +193,7 @@ section:first-of-type { border-top: 0; }
 
 .out { display: grid; gap: 1px; background: var(--rule-soft); border: 1px solid var(--rule-soft); }
 @media (min-width: 720px)  { .out { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1000px) { .out { grid-template-columns: repeat(5, 1fr); } }
+@media (min-width: 1000px) { .out { grid-template-columns: repeat(3, 1fr); } }
 .out li { background: var(--bg); padding: 20px 18px 22px; }
 .out dfn {
   display: block; font: 500 12.5px/1 var(--mono); letter-spacing: .08em;

@@ -29,7 +29,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/site.css?v=4">
+<link rel="stylesheet" href="assets/site.css?v=5">
 </head>
 
 <body id="top">
@@ -124,7 +124,7 @@
     <p class="lede gate__lede">
       Any capable model can produce a patch that looks right. The question is what happens when it
       is wrong — and the answer most tools give is: it opens the pull request anyway. Patchery ends
-      a run in one of five states, and it would rather end in the second one than guess.
+      a run in one of six states, and it would rather end in the second one than guess.
     </p>
 
     <ul class="out">
@@ -138,7 +138,14 @@
       </li>
       <li>
         <dfn>NO-CHANGE</dfn>
-        <p>The agent finished its turn without touching anything worth sending.</p>
+        <p>It finished its turn and had nothing worth sending.</p>
+      </li>
+      <li>
+        <dfn>EXHAUSTED</dfn>
+        <p>
+          The turn budget ran out mid-investigation. It counts against the score: a run that does
+          not finish has not helped anyone.
+        </p>
       </li>
       <li data-tone="bad">
         <dfn>WRONG</dfn>
