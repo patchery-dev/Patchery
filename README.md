@@ -47,14 +47,16 @@ it.
 
 **An independent reviewer.** A second model, on a different provider, is given
 the diff and asked to refute it. It does not see the first model's reasoning, so
-it cannot inherit its mistakes.
+it cannot inherit its mistakes. Its verdict is attached to the pull request
+whether it agrees or not — and with `verify-mode: block` it stops the pull
+request from opening at all.
 
-**A refusal.** If the fix cannot be proved, nothing is shipped. You get the
-diagnosis instead: what broke, why the obvious fix does not apply, and which
-decision would unblock it.
+The first three are gates: fail any of them and the attempt is discarded whole.
+What you get instead is the diagnosis — what broke, why the obvious fix does not
+apply, and which decision would unblock it.
 
-That last one is the point. A tool that is right most of the time and silent
-about the rest is worth more than one that is confident every time.
+That last part is the point. A tool that is right most of the time and says so
+plainly when it is not is worth more than one that is confident every time.
 
 ## Setup
 
