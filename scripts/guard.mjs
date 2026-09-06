@@ -12,7 +12,13 @@
  * @returns {string|null} reason the path is off limits, or null if it is fair game
  */
 export function protectedReason(relPath) {
-  const p = String(relPath).replace(/\\/g, "/");
+  // Lowercased before anything is matched. `Tests/a.Test.js` was passing every
+  // rule here, and on macOS or Windows it is the same file as `tests/a.test.js` -
+  // so the most important rule in the guard, never edit a test, had a spelling
+  // that turned it off. On Linux the two paths can genuinely differ, and refusing
+  // both is the safe direction: declining to edit `Tests/foo.Test.js` costs
+  // nothing, and allowing it costs the whole guarantee.
+  const p = String(relPath).replace(/\\/g, "/").toLowerCase();
   if (/(^|\/)node_modules\//.test(p)) return "inside node_modules";
   if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(p)) return "test file";
   if (/(^|\/)(__tests__|__mocks__|tests?)\//.test(p)) return "inside a test directory";
@@ -25,7 +31,8 @@ export function protectedReason(relPath) {
     /(^|\/)(jest|vitest|playwright|cypress|karma)\.(config|conf)\.[cm]?[jt]s$/.test(p) ||
     /(^|\/)\.mocharc\.[^/]+$/.test(p) ||
     /(^|\/)(jest|vitest)\.setup\.[cm]?[jt]s$/.test(p) ||
-    /(^|\/)setupTests\.[cm]?[jt]sx?$/.test(p)
+    // Lowercase, because `p` is. The file is conventionally `setupTests.js`.
+    /(^|\/)setuptests\.[cm]?[jt]sx?$/.test(p)
   ) {
     return "test harness configuration";
   }
@@ -131,11 +138,37 @@ export function parsePorcelainEntries(porcelain) {
 }
 
 /** Normalise a path for comparison: forward slashes, no leading "./", no trailing "/". */
+/**
+ * A path reduced to what it actually points at.
+ *
+ * `..` segments are resolved rather than left in place. Without that,
+ * `src/../../etc/passwd` starts with `src/` and therefore counted as inside the
+ * target directory, while pointing two levels above the repository. Git does not
+ * produce such a path today, which is exactly the kind of reasoning that stops
+ * being true without anyone noticing - the guard should not depend on its caller
+ * being careful.
+ *
+ * A leading `..` that cannot be resolved is kept, so the result stays visibly
+ * outside anything and `isInside` refuses it.
+ */
 function normalisePath(p) {
-  return String(p ?? "")
+  const flat = String(p ?? "")
     .replace(/\\/g, "/")
-    .replace(/^\.\//, "")
+    .replace(/\/+/g, "/")
     .replace(/\/+$/, "");
+  const out = [];
+  for (const part of flat.split("/")) {
+    if (part === "" && out.length > 0) continue;
+    if (part === ".") continue;
+    if (part === "..") {
+      // Only collapse against a real segment; never against a leading "..".
+      if (out.length > 0 && out[out.length - 1] !== "..") out.pop();
+      else out.push("..");
+      continue;
+    }
+    out.push(part);
+  }
+  return out.join("/");
 }
 
 /**

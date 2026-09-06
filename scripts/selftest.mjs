@@ -2332,4 +2332,49 @@ check("failureSignature still separates genuinely different failures", () => {
   assert.notDeepStrictEqual(a, b);
 });
 
+
+// The most important rule in the guard is "never edit a test", and it had a
+// spelling that turned it off. On macOS and Windows these are the same file as
+// their lowercase form; on Linux they can differ, and refusing both is the safe
+// direction - declining to edit `Tests/foo.Test.js` costs nothing.
+check("protectedReason is not fooled by capitalisation", () => {
+  for (const f of ["TEST/A.TEST.JS", "Tests/foo.Test.js", "src/__TESTS__/a.js", "A.SPEC.TS"]) {
+    assert.ok(protectedReason(f), f + " should be protected");
+  }
+});
+
+check("protectedReason still recognises the harness config in any case", () => {
+  for (const f of ["src/setupTests.ts", "src/SetupTests.ts", "Jest.Config.js", "vitest.config.ts"]) {
+    assert.ok(protectedReason(f), f + " should be protected");
+  }
+});
+
+// Capitalisation must not start protecting ordinary source.
+check("protectedReason leaves ordinary source alone whatever its case", () => {
+  for (const f of ["src/a.js", "Src/Components/Button.tsx", "lib/Latest.js", "src/contest.js"]) {
+    assert.strictEqual(protectedReason(f), null, f);
+  }
+});
+
+// `src/../../etc/passwd` starts with `src/`, so a prefix check called it inside
+// the target directory while it pointed two levels above the repository. Git does
+// not produce such a path today - which is exactly the reasoning that stops being
+// true without anyone noticing.
+check("outOfScopeReason resolves .. before deciding", () => {
+  assert.ok(outOfScopeReason("src/../../etc/passwd", "src", []));
+  assert.ok(outOfScopeReason("src/../lib/a.js", "src", []));
+});
+
+check("outOfScopeReason still allows .. that stays inside", () => {
+  assert.strictEqual(outOfScopeReason("src/a/../b.js", "src", []), null);
+  assert.strictEqual(outOfScopeReason("./src/a.js", "src", []), null);
+  assert.strictEqual(outOfScopeReason("src//a.js", "src", []), null);
+});
+
+// An allowed path must not become a way back in either.
+check("allowed paths cannot be escaped with ..", () => {
+  assert.ok(outOfScopeReason("shared/../../secrets.env", "src", ["shared"]));
+  assert.strictEqual(outOfScopeReason("shared/x.js", "src", ["shared"]), null);
+});
+
 console.log("\n" + pass + " checks passed.\n");
