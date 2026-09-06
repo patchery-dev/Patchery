@@ -72,9 +72,14 @@ jobs:
           DEFAULT_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           DEFAULT_AUTH: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           DEFAULT_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
-          ALT_BASE_URL: ${{ secrets.ALT_BASE_URL }}
+          # Read from both stores. A model name is not a credential, and putting it
+          # in Secrets actively hurt: GitHub masks secret values everywhere, so the
+          # "Measured on: <model>" line - the one check that proves which model
+          # actually answered - printed as "***". Put ALT_MODEL in Variables. The
+          # secrets fallback stays so an existing setup keeps working.
+          ALT_BASE_URL: ${{ vars.ALT_BASE_URL || secrets.ALT_BASE_URL }}
           ALT_AUTH: ${{ secrets.ALT_AUTH_TOKEN }}
-          ALT_MODEL: ${{ secrets.ALT_MODEL }}
+          ALT_MODEL: ${{ vars.ALT_MODEL || secrets.ALT_MODEL }}
           PROVIDER: ${{ inputs.provider }}
           # Through the environment, never interpolated into the script. A `${{ }}`
           # holding a dispatch input is pasted in as shell source before bash sees
@@ -88,11 +93,21 @@ jobs:
         run: |
           set -o pipefail
           if [ "$PROVIDER" = "alt" ]; then
-            # Fail here rather than letting it run into an authentication error
-            # thirty seconds and one confusing stack trace later.
-            if [ -z "$ALT_AUTH" ]; then
-              echo "provider: alt selected but ALT_AUTH_TOKEN is not set." >&2
-              echo "Add ALT_BASE_URL, ALT_AUTH_TOKEN and ALT_MODEL as repository secrets." >&2
+            # Fail here rather than running into an authentication error thirty
+            # seconds and one confusing stack trace later. Named one by one: the
+            # first version of this said only "ALT_AUTH_TOKEN is not set" and sent
+            # it to stderr, which `tee` does not capture, so the job summary was
+            # blank and the message reached nobody.
+            missing=""
+            [ -n "$ALT_AUTH" ] || missing="$missing ALT_AUTH_TOKEN(secret)"
+            [ -n "$ALT_BASE_URL" ] || missing="$missing ALT_BASE_URL(variable-or-secret)"
+            [ -n "$ALT_MODEL$MODEL_OVERRIDE" ] || missing="$missing ALT_MODEL(variable)"
+            if [ -n "$missing" ]; then
+              echo "provider: alt selected, but missing:$missing"
+              echo "Settings -> Secrets and variables -> Actions. The token belongs under"
+              echo "Secrets; the base URL and model belong under Variables, because GitHub"
+              echo "masks every secret value and a masked model name defeats the check that"
+              echo "proves which model answered."
               exit 1
             fi
             export ANTHROPIC_BASE_URL="$ALT_BASE_URL"
@@ -117,7 +132,10 @@ jobs:
           # failing test as the last command of an AND-list ends the whole step.
           if [ "$TOOLS" = "true" ]; then args+=(--tools); fi
           if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
-          node scripts/calibrate.mjs "${args[@]}" | tee calibration/run.log
+          # 2>&1: a failure writes to stderr, `tee` only captures stdout, and the
+          # summary step then renders a blank report over a red job. Run #4 failed
+          # exactly that way and said nothing about why.
+          node scripts/calibrate.mjs "${args[@]}" 2>&1 | tee calibration/run.log
 
       # The numbers, readable without downloading anything. GitHub masks registered
       # secrets in this summary the same way it does in the log.
