@@ -132,7 +132,9 @@
         var text = shown.textContent.replace(/\s+/g, " ");
         var pageTurns = (text.match(/AI turns used\s*(\d+)/i) || [])[1];
         var pageCost = (text.match(/\$([\d.]+)/) || [])[1];
-        var pageModel = (text.match(/model\s+(\S+)/i) || [])[1];
+        // textContent runs the label straight into the value ("modelglm-5.3"),
+        // so the separator here has to be optional.
+        var pageModel = (text.match(/model\s*([a-z0-9][a-z0-9._-]*)/i) || [])[1];
         if (!pageTurns || !pageCost || !pageModel) {
           return { skip: "could not read the figures off this page" };
         }
