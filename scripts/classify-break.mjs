@@ -57,10 +57,14 @@ const KINDS = [
       "its public behaviour. Two: adjust the build or test configuration so the dependency is " +
       "transformed for this project. " +
       "If neither applies - a synchronous public API that cannot become async, and no build step to " +
-      "adjust - then this break cannot be fixed at the call site, and the honest answer is to say so " +
-      "and stop. Do NOT copy the dependency's source into this project, do not re-implement it, and do " +
-      "not pin the old version. Those hide a decision that belongs to whoever maintains this repository: " +
-      "raise the runtime, or change the dependency.",
+      "adjust - then this break cannot be fixed at the call site. Stop editing, and write the " +
+      "recommendation instead: name which call sites are affected, why an async conversion would change " +
+      "the project's public behaviour, and which of the two decisions would unblock it - raising the " +
+      "project's minimum runtime, or replacing the dependency - with what you checked to be sure. " +
+      "That report is the deliverable; it is not a failure to produce it. " +
+      "Do NOT copy the dependency's source into this project, do not re-implement it, and do not pin " +
+      "the old version. Those three are the same evasion in different clothes, and each hides a " +
+      "decision that belongs to whoever maintains this repository.",
   },
   {
     kind: "exports-blocked",
@@ -88,8 +92,10 @@ const KINDS = [
     strategy:
       "This is not a code break, and no edit to any call site changes which Node the project runs on. " +
       "Do not work around it - a polyfill, a vendored copy or a pinned old version all disguise the same " +
-      "unmade decision. Report which version the package requires, which one the project declares, and " +
-      "stop. Raising the minimum runtime is the maintainers' call, because it breaks their own users.",
+      "unmade decision. Stop editing and write the recommendation: which version the package requires, " +
+      "which one this project declares, where that declaration lives, and what else would have to move " +
+      "with it. Raising the minimum runtime breaks the project's own users, so it is the maintainers' " +
+      "call - but they should get the finished analysis, not a shrug.",
   },
   {
     kind: "not-a-function",

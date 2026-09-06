@@ -2021,4 +2021,22 @@ check("the briefing says the classification can be overruled by the code", () =>
   assert.match(b, /believe the code/);
 });
 
+
+// "Stop" must never mean "go quiet". A run that cannot edit its way out still
+// owes the maintainer the analysis it paid for - which of their decisions would
+// unblock the upgrade, and what was checked to be sure.
+check("an out-of-scope strategy still demands a recommendation", () => {
+  for (const src of ["Error [ERR_REQUIRE_ESM]: require() of ES Module x", "npm warn EBADENGINE Unsupported engine"]) {
+    const c = classifyFailure(src);
+    assert.match(c.strategy, /write the recommendation/);
+    assert.match(c.strategy, /which/);
+  }
+});
+
+check("the escape hatches are named and refused", () => {
+  const c = classifyFailure("Error [ERR_REQUIRE_ESM]: require() of ES Module x");
+  assert.match(c.strategy, /do not re-implement it/);
+  assert.match(c.strategy, /not pin/);
+});
+
 console.log("\n" + pass + " checks passed.\n");
