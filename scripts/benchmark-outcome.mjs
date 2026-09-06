@@ -195,6 +195,10 @@ if (isMain) {
     package: a.package,
     version: a.version,
     installed: a.installed || "",
+    // A benchmark number is model-dependent. A table that does not say which
+    // model produced it cannot be reproduced or compared, and invites the
+    // reader to assume the best one.
+    model: a.model || "",
     outcome,
     detail,
     before,

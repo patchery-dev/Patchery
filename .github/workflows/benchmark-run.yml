@@ -37,6 +37,10 @@ on:
         description: "Node version (auto = ask the repository)"
         required: false
         default: "auto"
+      model:
+        description: "Model for the fixer (empty = the repository default)"
+        required: false
+        default: ""
   workflow_call:
     inputs:
       repo: { type: string, required: true }
@@ -46,6 +50,7 @@ on:
       test-command: { type: string, required: false, default: "npm test" }
       target-dir: { type: string, required: false, default: "." }
       node-version: { type: string, required: false, default: "auto" }
+      model: { type: string, required: false, default: "" }
     secrets:
       ANTHROPIC_AUTH_TOKEN: { required: true }
       ANTHROPIC_BASE_URL: { required: false }
@@ -258,7 +263,7 @@ jobs:
           verify-model: deepseek-v4-flash
           anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
-          anthropic-model: ${{ secrets.ANTHROPIC_MODEL }}
+          anthropic-model: ${{ inputs.model != '' && inputs.model || secrets.ANTHROPIC_MODEL }}
 
       # The action reports its own tests-passed. This asks the harder question:
       # are the SAME tests passing. A fix that makes the suite green by removing
@@ -294,6 +299,7 @@ jobs:
             --package '${{ inputs.package }}' \
             --version '${{ inputs.breaking-version }}' \
             --installed '${{ steps.bump.outputs.installed }}' \
+            --model '${{ inputs.model }}' \
             --out /tmp/benchmark.json | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Keep everything this run produced

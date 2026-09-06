@@ -23,6 +23,10 @@ on:
         description: "Stop after this many cases (0 = no limit)"
         required: false
         default: "0"
+      model:
+        description: "Model for the fixer, e.g. glm-5.3-flash (empty = the repository default)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -81,6 +85,7 @@ jobs:
       test-command: ${{ matrix.case['test-command'] }}
       target-dir: ${{ matrix.case['target-dir'] }}
       node-version: ${{ matrix.case['node-version'] }}
+      model: ${{ inputs.model }}
 
   report:
     needs: [plan, run]
@@ -116,7 +121,10 @@ jobs:
             // kept out of the denominator - a setup failure is not a loss.
             const judged = rows.length - n('BLOCKED');
             const out = [];
+            const models = [...new Set(rows.map((r) => r.model).filter(Boolean))];
             out.push('## ' + n('FIXED') + ' fixed of ' + judged + ' cases it was able to attempt');
+            out.push('');
+            out.push(models.length ? 'Fixer: ' + models.join(', ') : 'Fixer: the repository default');
             out.push('');
             out.push('| | |');
             out.push('|---|---|');
