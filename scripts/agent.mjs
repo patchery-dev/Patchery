@@ -41,6 +41,8 @@ import {
   scriptsTamperReason,
   actionableConcerns,
   buildRepairPrompt,
+  detectExtraChecks,
+  extraCheckRegressions,
 } from "./guard.mjs";
 
 // ------------------------------------------------------------------ config
@@ -114,6 +116,12 @@ const VERIFY_MIN_CONFIDENCE = Math.max(0, Math.min(100, Number(env("SMA_VERIFY_M
 // Read-only. No Bash: it is both code execution and a write vector (sed -i, a
 // redirect). No WebFetch: no egress channel with the customer's diff in context.
 const REVIEW_TOOLS = ["Read", "Grep", "Glob"];
+
+// A project that type-checks or lints is telling you what it considers correct, and a
+// migration that satisfies the tests while breaking tsc is not finished. Measured
+// against the baseline, never against "is it clean": plenty of real repositories have
+// a lint error sitting in main already, and refusing to fix those would be useless.
+const EXTRA_CHECKS_INPUT = env("SMA_EXTRA_CHECKS", "auto");
 
 // ----------------------------------------------------------------- helpers
 
@@ -190,6 +198,30 @@ function runTests() {
   });
   const output = (r.stdout ?? "") + (r.stderr ?? "");
   return { ok: r.status === 0, code: r.status, output: output.trim() };
+}
+
+/** Run one extra check (a lint or a type-check) and report only whether it passed. */
+function runCheck(command) {
+  const r = spawnSync(command, {
+    cwd: TARGET_DIR,
+    shell: true,
+    encoding: "utf8",
+    env: { ...process.env, CI: "true" },
+    timeout: 15 * 60 * 1000,
+  });
+  return { ok: r.status === 0, output: ((r.stdout ?? "") + (r.stderr ?? "")).trim() };
+}
+
+/** Run every configured extra check and return [{name, ok}]. */
+function runExtraChecks(checks, label) {
+  if (!checks.length) return [];
+  const results = [];
+  for (const c of checks) {
+    const r = runCheck(c.command);
+    log("   " + label + " " + c.name + ": " + (r.ok ? "PASS" : "FAIL"));
+    results.push({ name: c.name, ok: r.ok, output: r.output });
+  }
+  return results;
 }
 
 /** `git status --porcelain` -> changed entries, status included (new and deleted too). */
@@ -343,6 +375,15 @@ if (DRY_RUN) {
   });
 }
 
+// Measured before the agent touches anything, because the only question worth
+// asking afterwards is "did this change break it", not "is this project clean".
+const extraChecks = detectExtraChecks(packageJsonBefore, EXTRA_CHECKS_INPUT);
+let checksBefore = [];
+if (extraChecks.length) {
+  log("\nExtra checks this project declares: " + extraChecks.map((c) => c.name).join(", "));
+  checksBefore = runExtraChecks(extraChecks, "baseline");
+}
+
 group("2. Run the agent");
 
 const changelogLine = CHANGELOG
@@ -378,6 +419,11 @@ const prompt = [
   "1. Read the changelog and understand exactly what changed in the API.",
   "2. Find every place in this project's OWN source files that uses the affected API.",
   "3. Update those call sites to match the new API. Keep the change as small as possible.",
+  "   Where the new API needs a value the old one did not - a currency, a locale, a",
+  "   region, a model name - look for one this project already uses (config files,",
+  "   environment variables, nearby call sites, the tests) before choosing one. An",
+  "   invented default that happens to satisfy the tests is the most common way one of",
+  "   these migrations is quietly wrong.",
   '4. Run "' + TEST_COMMAND + '" to confirm the fix works.',
   "5. Report which file(s) you changed and why, and the final test output.",
   "",
@@ -689,6 +735,37 @@ if (!after.ok) {
   fail("Tests still fail after the fix. Everything was reverted, no PR will be opened.");
 }
 
+/**
+ * Re-run the project's own extra checks and refuse anything this change broke.
+ * Returns the checks that were already failing before, which are worth reporting
+ * and are nobody's fault here.
+ */
+function enforceExtraChecks(label) {
+  if (!extraChecks.length) return [];
+  log("\nRe-running the extra checks " + label + "...");
+  const checksAfter = runExtraChecks(extraChecks, "after");
+  const { broken, alreadyFailing } = extraCheckRegressions(checksBefore, checksAfter);
+  if (broken.length) {
+    log("\n[SAFETY] this change broke: " + broken.join(", "));
+    revertAll();
+    fail(
+      "`" + broken.join("`, `") + "` passed before this change and fails after it. The tests " +
+        "are not the only thing this project uses to say what correct means, so nothing was " +
+        "delivered and everything was reverted. Set `extra-checks: off` to ignore them, or " +
+        "name the exact commands you want checked."
+    );
+  }
+  if (alreadyFailing.length) {
+    log(
+      "note: " + alreadyFailing.join(", ") + " was already failing before this run - " +
+        "reported, not blamed on this change."
+    );
+  }
+  return alreadyFailing;
+}
+
+const alreadyFailingChecks = enforceExtraChecks("against the baseline");
+
 group("5. Independent review (a second agent, with no way to change anything)");
 
 // Everything that produces no PR exits above this point, so a run that delivers
@@ -985,6 +1062,8 @@ if (VERIFY_REPAIR && review) {
       log("-> still green after the repair.");
       changedEntries = afterRepair;
       changed = afterRepair.map((e) => e.path);
+      // The repair can break a type-check exactly as easily as the first turn can.
+      enforceExtraChecks("after the repair");
 
       // Re-review, so the verdict in the pull request is about the diff in it.
       group("5d. Review the repaired change");
@@ -1059,6 +1138,13 @@ const prBody = [
   "| `" + TEST_COMMAND + "` after the fix | passed |",
   "| Were any test files modified | No - enforced by CI |",
   "| Independent review (second agent, no write access) | " + reviewOutcomeResult.tableCell + " |",
+  extraChecks.length
+    ? "| " + extraChecks.map((c) => "`" + c.name + "`").join(", ") +
+      " (this project's own checks) | still passing" +
+      (alreadyFailingChecks.length
+        ? "; " + alreadyFailingChecks.join(", ") + " was already failing before this change"
+        : "") + " |"
+    : "",
   "",
   // A refutation or a concern belongs above the evidence, not buried under it.
   reviewOutcomeResult.placement === "top" ? reviewSection : "",

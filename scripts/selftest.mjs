@@ -34,6 +34,8 @@ import {
   scriptsTamperReason,
   actionableConcerns,
   buildRepairPrompt,
+  detectExtraChecks,
+  extraCheckRegressions,
 } from "./guard.mjs";
 
 let pass = 0;
@@ -952,6 +954,65 @@ check("an already-unreadable package.json is not blamed on this run", () =>
 check("a project with no scripts field either side is fine", () =>
   assert.strictEqual(scriptsTamperReason('{"name":"x"}', '{"name":"x","version":"2"}'), null)
 );
+
+console.log("\ndetectExtraChecks - only what the project itself declares");
+const pkgWithChecks = JSON.stringify({
+  scripts: { test: "vitest", lint: "eslint .", typecheck: "tsc --noEmit", build: "tsup" },
+});
+check("auto picks up lint and typecheck, and nothing else", () => {
+  const got = detectExtraChecks(pkgWithChecks, "auto").map((c) => c.name).sort();
+  assert.deepStrictEqual(got, ["lint", "typecheck"]);
+});
+check("build is not a correctness check", () =>
+  assert.ok(!detectExtraChecks(pkgWithChecks, "auto").some((c) => c.name === "build"))
+);
+check("off means off", () => assert.deepStrictEqual(detectExtraChecks(pkgWithChecks, "off"), []));
+check("an explicit list is used verbatim", () =>
+  assert.deepStrictEqual(detectExtraChecks(pkgWithChecks, "npm run foo\nnpm run bar").map((c) => c.command), [
+    "npm run foo",
+    "npm run bar",
+  ])
+);
+check("a project with no such scripts gets none", () =>
+  assert.deepStrictEqual(detectExtraChecks(JSON.stringify({ scripts: { test: "vitest" } }), "auto"), [])
+);
+check("no package.json at all does not throw", () => {
+  assert.deepStrictEqual(detectExtraChecks(null, "auto"), []);
+  assert.deepStrictEqual(detectExtraChecks("{ broken", "auto"), []);
+});
+
+console.log("\nextraCheckRegressions - baseline-relative, never 'is it clean'");
+// The whole design. Real repositories have lint errors sitting in main; refusing to
+// fix those would be useless, and the migration did not cause them.
+check("a check that was already failing is reported, not blamed", () => {
+  const r = extraCheckRegressions([{ name: "lint", ok: false }], [{ name: "lint", ok: false }]);
+  assert.deepStrictEqual(r.broken, []);
+  assert.deepStrictEqual(r.alreadyFailing, ["lint"]);
+});
+check("a check this change broke IS a regression", () => {
+  const r = extraCheckRegressions([{ name: "typecheck", ok: true }], [{ name: "typecheck", ok: false }]);
+  assert.deepStrictEqual(r.broken, ["typecheck"]);
+});
+check("a check that stayed green is silent", () => {
+  const r = extraCheckRegressions([{ name: "lint", ok: true }], [{ name: "lint", ok: true }]);
+  assert.deepStrictEqual(r, { broken: [], alreadyFailing: [] });
+});
+check("fixing an already-broken check is not a regression", () => {
+  const r = extraCheckRegressions([{ name: "lint", ok: false }], [{ name: "lint", ok: true }]);
+  assert.deepStrictEqual(r, { broken: [], alreadyFailing: [] });
+});
+check("a check never measured before says nothing", () => {
+  const r = extraCheckRegressions([], [{ name: "lint", ok: false }]);
+  assert.deepStrictEqual(r, { broken: [], alreadyFailing: [] });
+});
+check("broken and already-failing are reported separately in one run", () => {
+  const r = extraCheckRegressions(
+    [{ name: "lint", ok: true }, { name: "typecheck", ok: false }],
+    [{ name: "lint", ok: false }, { name: "typecheck", ok: false }]
+  );
+  assert.deepStrictEqual(r.broken, ["lint"]);
+  assert.deepStrictEqual(r.alreadyFailing, ["typecheck"]);
+});
 
 console.log("\nactionableConcerns - only what the fixer can actually act on");
 const suspicious = { incomplete_migration: { result: "suspicious", reasoning: "two more call sites" } };

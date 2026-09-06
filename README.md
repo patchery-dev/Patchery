@@ -227,6 +227,7 @@ and which directory to fix.
 | `target-dir` | `.` | Project directory to fix |
 | `test-command` | `npm test` | Verification command (runs before and after) |
 | `changelog` | `""` | Changelog path or URL; empty means the agent looks for it |
+| `extra-checks` | `auto` | Also run the project's own lint/type-check and refuse a change that breaks one |
 | `allowed-paths` | `""` | Paths outside `target-dir` the run may still change, one per line |
 | `allow-deletions` | `false` | Allow the run to delete tracked files |
 | `verify-mode` | `warn` | Independent review: `warn` records the verdict, `block` withholds a refuted PR, `off` skips it |
@@ -235,6 +236,9 @@ and which directory to fix.
 | `verify-repair` | `false` | Hand an actionable concern back to the fixer for one more turn. Off on purpose — see above |
 | `verify-repair-turns` | `8` | Turn limit for that repair turn |
 | `verify-model` | `""` | Model for the reviewer; empty means the same one, in a separate call |
+| `verify-base-url` | `""` | Send the review to a different provider entirely (a second party sees the diff) |
+| `verify-auth-token` | `""` | Credential for that provider; redacted like every other key |
+| `verify-repair` | `false` | Give an actionable concern back to the fixer for one more turn |
 | `verify-min-confidence` | `60` | Below this, a verdict is recorded as a concern rather than acted on |
 | `verify-max-turns` | `12` | Turn limit for the reviewer |
 | `verify-max-diff-bytes` | `60000` | Skip the review above this diff size |

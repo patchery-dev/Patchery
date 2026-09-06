@@ -1226,3 +1226,70 @@ export function buildRepairPrompt({ packageName = "", testCommand = "", concerns
     "what you deliberately left alone.",
   ].join("\n");
 }
+
+/** Script names that mean "check this code without running it". */
+const KNOWN_CHECK_SCRIPTS = ["typecheck", "type-check", "tsc", "lint"];
+
+/**
+ * Which extra checks should run alongside the tests?
+ *
+ * A project that type-checks or lints is telling you what it considers correct,
+ * and a migration that satisfies the tests while breaking `tsc` is not finished.
+ * But guessing commands across ecosystems is fragile, so this only picks up
+ * scripts the project itself declares.
+ *
+ * @param {string|null} packageJsonText
+ * @param {string} raw the `extra-checks` input: "auto", "off", or an explicit list
+ * @returns {Array<{name: string, command: string}>}
+ */
+export function detectExtraChecks(packageJsonText, raw = "auto") {
+  const mode = String(raw ?? "").trim().toLowerCase();
+  if (mode === "off" || mode === "none" || mode === "false") return [];
+
+  if (mode !== "" && mode !== "auto") {
+    return parsePathList(raw).map((command) => ({ name: command, command }));
+  }
+
+  let scripts = {};
+  try {
+    const parsed = JSON.parse(String(packageJsonText ?? ""));
+    if (parsed && typeof parsed.scripts === "object" && parsed.scripts) scripts = parsed.scripts;
+  } catch {
+    return [];
+  }
+  return KNOWN_CHECK_SCRIPTS.filter((name) => typeof scripts[name] === "string" && scripts[name].trim()).map(
+    (name) => ({ name, command: "npm run " + name })
+  );
+}
+
+/**
+ * Which extra checks did this run break?
+ *
+ * Baseline-relative on purpose, and this is the whole design. Plenty of real
+ * repositories have a lint or a type error sitting in main already; a plain "is it
+ * clean now" test would refuse to fix any of them, which is both useless and
+ * insulting - the migration did not cause that. Only a check that passed BEFORE and
+ * fails AFTER says anything about this change.
+ *
+ * A check that was already failing is still worth reporting, and is returned
+ * separately so it can be mentioned without blocking anything.
+ *
+ * @param {Array<{name: string, ok: boolean}>} before
+ * @param {Array<{name: string, ok: boolean}>} after
+ * @returns {{broken: string[], alreadyFailing: string[]}}
+ */
+export function extraCheckRegressions(before = [], after = []) {
+  const was = new Map((before || []).map((c) => [c.name, !!c.ok]));
+  const broken = [];
+  const alreadyFailing = [];
+  for (const c of after || []) {
+    const passedBefore = was.get(c.name);
+    if (passedBefore === undefined) continue; // never measured before; say nothing
+    if (!passedBefore) {
+      if (!c.ok) alreadyFailing.push(c.name);
+      continue;
+    }
+    if (!c.ok) broken.push(c.name);
+  }
+  return { broken, alreadyFailing };
+}

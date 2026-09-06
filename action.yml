@@ -93,6 +93,17 @@ inputs:
       deliberately want to cap pure research.
     required: false
     default: "0"
+  extra-checks:
+    description: >-
+      Also run the project's own lint and type-check, and refuse a change that
+      breaks one. `auto` (the default) picks up whichever of `typecheck`,
+      `type-check`, `tsc` and `lint` your package.json declares; `off` skips this;
+      anything else is treated as an explicit list of commands, one per line.
+      Always measured against the baseline, never against "is it clean" - a check
+      that was already failing before the run is reported and never blamed on the
+      change.
+    required: false
+    default: "auto"
   verify-mode:
     description: >-
       Independent review of the fix by a second, read-only agent. `warn` (the
@@ -244,6 +255,7 @@ runs:
         SMA_STALL_REPEATS: ${{ inputs.stall-repeats }}
         SMA_STALL_STALE_TURNS: ${{ inputs.stall-stale-turns }}
         SMA_STALL_NO_EDIT_TURNS: ${{ inputs.stall-no-edit-turns }}
+        SMA_EXTRA_CHECKS: ${{ inputs.extra-checks }}
         SMA_VERIFY_MODE: ${{ inputs.verify-mode }}
         SMA_VERIFY_MODEL: ${{ inputs.verify-model }}
         SMA_VERIFY_BASE_URL: ${{ inputs.verify-base-url }}
