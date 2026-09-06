@@ -157,7 +157,11 @@ function stop(outcome, message, extra = {}) {
 }
 
 function git(args, { trim = true } = {}) {
-  const out = execFileSync("git", args, { cwd: WORKSPACE, encoding: "utf8" });
+  // execFileSync defaults to a 1 MB buffer and THROWS when output exceeds it. Every
+  // caller here reads a diff or a file list, and on a large migration a 1 MB diff is
+  // ordinary - the default turned "big change" into "command failed", which callers
+  // then quietly treated as "no change".
+  const out = execFileSync("git", args, { cwd: WORKSPACE, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   // Porcelain output must NOT be trimmed: its first column is a status field
   // that is often a leading space (" M path"). Trimming eats it, and then the
   // fixed-width parse silently chops the first character off the path.
@@ -682,11 +686,13 @@ let reviewMeta = { model: "", differentModel: false, costUsd: 0, permissionDenia
 
 {
   let diffText = "";
+  let diffError = null;
   try {
     diffText = changed.length ? git(["diff", "--unified=6", "--"].concat(changed)) : "";
-  } catch {
-    // execFileSync has a 1 MB default maxBuffer and throws on a pathological diff.
-    diffText = "";
+  } catch (err) {
+    // Must never become an empty diff: a reviewer handed nothing can still answer
+    // "not refuted" with high confidence, having seen not one line of the change.
+    diffError = "the diff could not be read: " + (err?.message ?? err);
   }
   // An untracked file has no diff; show it as all-additions so it is not invisible.
   for (const entry of changedEntries) {
@@ -699,14 +705,25 @@ let reviewMeta = { model: "", differentModel: false, costUsd: 0, permissionDenia
     } catch {}
   }
 
+  // A change exists but nothing came out of the diff: reviewing that would be
+  // reviewing a blank page and calling the result a verdict.
+  if (!diffError && changed.length > 0 && !diffText.trim()) {
+    diffError = "the diff came back empty even though " + changed.length + " file(s) changed";
+  }
+
   const gate = shouldReview({
     mode: VERIFY_MODE,
     changedCount: changed.length,
-    diffBytes: diffText.length,
+    // Bytes, not UTF-16 code units: a diff full of non-ASCII would otherwise slip
+    // past a byte-named threshold at up to three times the size it claims to allow.
+    diffBytes: Buffer.byteLength(diffText, "utf8"),
     maxDiffBytes: VERIFY_MAX_DIFF_BYTES,
   });
 
-  if (!gate.run) {
+  if (diffError) {
+    log("cannot review: " + diffError);
+    reviewOutcomeResult = reviewOutcome({ callError: diffError, mode: VERIFY_MODE });
+  } else if (!gate.run) {
     log("skipped: " + gate.skipReason);
     reviewOutcomeResult = reviewOutcome({ skipReason: gate.skipReason, mode: VERIFY_MODE });
   } else {
@@ -873,22 +890,36 @@ const reviewSection = renderReviewSection(reviewOutcomeResult, review, reviewMet
 // changed=false, so every already-published workflow gates on this with no YAML edit.
 if (reviewOutcomeResult.blocking) {
   const patchPath = path.join(env("RUNNER_TEMP", path.join(repoRoot, "..")), "sma-rejected.patch");
+  // This is the promise that makes blocking safe to turn on: a gate whose failure
+  // mode is destroying work gets switched off by the first person it burns. So the
+  // save is verified, and if it did not happen we say so instead of claiming it did
+  // - the revert below is about to delete the only copy either way.
+  let patchSaved = false;
   try {
     fs.writeFileSync(patchPath, git(["diff", "--"].concat(changed)), "utf8");
-  } catch {}
+    patchSaved = fs.statSync(patchPath).size > 0;
+  } catch (err) {
+    log("could not save the rejected change: " + (err?.message ?? err));
+  }
+  const patchNote = patchSaved
+    ? "The rejected change was saved to " + patchPath + " - recover it with `git apply`."
+    : "WARNING: the rejected change could NOT be saved to " + patchPath +
+      ", so it is lost with the revert below. Re-run with `verify-mode: warn` to get " +
+      "the change back as a pull request.";
   writeStepSummary("### Patchery\n\nBlocked by the independent review.\n\n" + reviewSection);
   revertAll();
   stop(
     "blocked-by-review",
     "The independent review refuted this fix, and verify-mode is `block`, so nothing was " +
-      "delivered. The rejected change was saved to " + patchPath + " - recover it with " +
-      "`git apply`. Set `verify-mode: warn` to get the pull request anyway and judge for " +
-      "yourself.\n\n" + reviewOutcomeResult.headline,
+      "delivered. " + patchNote + " Set `verify-mode: warn` to get the pull request anyway " +
+      "and judge for yourself.\n\n" + reviewOutcomeResult.headline,
     {
       tests_passed: "true",
       review_status: reviewOutcomeResult.status,
       review_label: reviewOutcomeResult.label,
-      review_patch_file: patchPath,
+      // Empty when the save failed: a workflow that uploads this must not be handed
+      // the path of a file that is not there.
+      review_patch_file: patchSaved ? patchPath : "",
     }
   );
 }

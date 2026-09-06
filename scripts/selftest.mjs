@@ -584,6 +584,37 @@ check("off skips", () => assert.strictEqual(shouldReview({ mode: "off", changedC
 check("nothing changed skips", () =>
   assert.strictEqual(shouldReview({ mode: "warn", changedCount: 0 }).run, false)
 );
+// The threshold is named in bytes, so it must be measured in bytes. UTF-16 length
+// undercounts multi-byte text by up to 3x, letting a diff far over the limit through.
+check("the size threshold counts bytes, not UTF-16 code units", () => {
+  const multiByte = "ş".repeat(40); // 40 code units, 80 bytes
+  assert.strictEqual(multiByte.length, 40);
+  assert.strictEqual(Buffer.byteLength(multiByte, "utf8"), 80);
+  assert.strictEqual(
+    shouldReview({ mode: "warn", changedCount: 1, diffBytes: multiByte.length, maxDiffBytes: 60 }).run,
+    true,
+    "counting code units lets it through - this is the bug"
+  );
+  assert.strictEqual(
+    shouldReview({
+      mode: "warn",
+      changedCount: 1,
+      diffBytes: Buffer.byteLength(multiByte, "utf8"),
+      maxDiffBytes: 60,
+    }).run,
+    false,
+    "counting bytes catches it"
+  );
+});
+// A diff over execFileSync's buffer used to throw and be swallowed into "", so the
+// reviewer was handed a blank page and could still answer "not refuted".
+check("a diff that could not be read is unavailable, never a clean review", () => {
+  const o = reviewOutcome({ callError: "the diff could not be read: maxBuffer exceeded" });
+  assert.strictEqual(o.status, "unavailable");
+  assert.strictEqual(o.rank, 0);
+  assert.strictEqual(o.blocking, false);
+  assert.match(o.tableCell, /could not run/);
+});
 check("an enormous diff skips, and says how big", () => {
   const r = shouldReview({ mode: "warn", changedCount: 1, diffBytes: 99, maxDiffBytes: 10 });
   assert.strictEqual(r.run, false);
