@@ -2215,4 +2215,77 @@ check("a refusal is still REFUSED, not EXHAUSTED", () => {
   assert.strictEqual(r.outcome, "REFUSED");
 });
 
+
+// Edge cases in the binding detector, found by probing it rather than by reading
+// it. It feeds the check that asks whether a "migration" quietly stopped using
+// the package, so a blind spot here is a removal that ships.
+
+// Commenting an import out is the most ordinary way to stop using something, and
+// the text left behind still said `require('pkg')`.
+check("packageBindings ignores a commented-out import", () => {
+  const r = packageBindings("// const x = require('pkg')\nlocalGo()", "pkg");
+  assert.strictEqual(r.count, 0);
+  assert.deepStrictEqual(r.bindings, []);
+});
+
+check("packageBindings ignores a block-commented import", () => {
+  const r = packageBindings("/*\nimport x from 'pkg'\n*/\nlocalGo()", "pkg");
+  assert.strictEqual(r.count, 0);
+});
+
+// A `//` in the middle of a line is far more often a URL than a comment, and
+// eating the rest of that line would hide real code - a worse failure than the
+// one the comment-stripping fixes.
+check("packageBindings does not mistake a URL for a comment", () => {
+  const r = packageBindings("const u = 'https://x.dev'; const x = require('pkg'); x.go()", "pkg");
+  assert.strictEqual(r.count, 1);
+  assert.deepStrictEqual(r.bindings, ["x"]);
+});
+
+// `import 'pkg'` binds nothing, so it counted as nothing - and a polyfill or a
+// registration import could be deleted with no reason raised.
+check("packageBindings counts a side-effect import as a use", () => {
+  const r = packageBindings("import 'pkg'\ndoWork()", "pkg");
+  assert.strictEqual(r.count, 1);
+  assert.deepStrictEqual(r.bindings, []);
+});
+
+check("dependencyMisuseReasons catches a deleted side-effect import", () => {
+  const out = dependencyMisuseReasons({
+    packageName: "pkg",
+    files: [{ relPath: "a.js", beforeText: "import 'pkg'\ndoWork()", afterText: "doWork()" }],
+  });
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].kind, "removal");
+});
+
+// The forms that must keep working, including the one an ESM migration produces.
+check("packageBindings still reads every ordinary import form", () => {
+  const cases = [
+    ["const x = require('pkg')\nx.go()", ["x"]],
+    ["import x from 'pkg'\nx.go()", ["x"]],
+    ["import { a, b as c } from 'pkg'\na();c()", ["a", "c"]],
+    ["import * as ns from 'pkg'\nns.go()", ["ns"]],
+    ["const m = await import('pkg')\nm.go()", []],
+    ["export * from 'pkg'", []],
+  ];
+  for (const [text, bindings] of cases) {
+    const r = packageBindings(text, "pkg");
+    assert.ok(r.count > 0, text);
+    assert.deepStrictEqual(r.bindings, bindings, text);
+  }
+});
+
+// A package whose name is a prefix of another must not answer for it.
+check("packageBindings does not match a longer package name", () => {
+  assert.strictEqual(packageBindings("const x = require('pkg-other')\nx.go()", "pkg").count, 0);
+});
+
+check("packageBindings reads scoped packages and their subpaths", () => {
+  assert.deepStrictEqual(packageBindings("import { Button } from '@mui/material'\nButton()", "@mui/material").bindings, [
+    "Button",
+  ]);
+  assert.strictEqual(packageBindings("import x from '@mui/material/Button'\nx()", "@mui/material").count, 1);
+});
+
 console.log("\n" + pass + " checks passed.\n");

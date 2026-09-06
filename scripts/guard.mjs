@@ -704,7 +704,26 @@ const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * @param {string} packageName
  * @returns {{count: number, bindings: string[], statements: string[]}}
  */
-export function packageBindings(text = "", packageName = "") {
+/**
+ * Commented-out code is not code.
+ *
+ * Commenting an import out is the most ordinary way to stop using a package, and
+ * it left the guard blind: the text still contained `require('pkg')`, so the
+ * change still looked like the package was in use.
+ *
+ * Only comments that own their line are removed, plus block comments. A `//`
+ * appearing mid-line is far more often the middle of a URL than the start of a
+ * comment, and eating the rest of that line would hide real code - a worse
+ * failure than the one being fixed.
+ */
+function withoutComments(text) {
+  return String(text)
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/^[ \t]*\/\/.*$/gm, "");
+}
+
+export function packageBindings(rawText = "", packageName = "") {
+  const text = withoutComments(rawText);
   if (!text || !packageName) return { count: 0, bindings: [], statements: [] };
   const spec = "['\"]" + escapeRegExp(packageName) + "(?:/[^'\"]*)?['\"]";
   const bindings = new Set();
@@ -727,7 +746,11 @@ export function packageBindings(text = "", packageName = "") {
     "g"
   );
   const esm = new RegExp("import\\s+([\\s\\S]*?)\\s+from\\s+" + spec, "g");
-  const bare = new RegExp("(?:require\\(\\s*|import\\(\\s*|from\\s+)" + spec, "g");
+  // `import 'pkg'` binds nothing and was therefore counted as nothing, so a file
+  // whose only use of the package was a side effect - a polyfill, a registration,
+  // a stylesheet - could have that line deleted with no reason raised at all.
+  // It is a use, and deleting it is a removal.
+  const bare = new RegExp("(?:require\\(\\s*|import\\(\\s*|import\\s+|from\\s+)" + spec, "g");
 
   for (const m of text.matchAll(cjs)) {
     addBinder(m[1]);
