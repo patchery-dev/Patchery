@@ -34,9 +34,9 @@ on:
         required: false
         default: "."
       node-version:
-        description: "Node version"
+        description: "Node version (auto = ask the repository)"
         required: false
-        default: "20"
+        default: "auto"
 
 permissions:
   contents: read
@@ -56,10 +56,38 @@ jobs:
           # history on a large repo is minutes of download for nothing.
           fetch-depth: 1
 
-      - name: Use Node ${{ inputs.node-version }}
+      # A candidate says which Node it needs, and it is not a detail. Pinning our
+      # own guess made `mozilla/treeherder` look already-broken: its suite calls
+      # Set.prototype.intersection, which exists from Node 22, and we gave it 20.
+      # That verdict was about our runner, not the repository - the worst kind of
+      # wrong answer, because it reads as a finding and quietly drops a good case.
+      - name: Decide which Node to use
+        id: node
+        run: |
+          WANT='${{ inputs.node-version }}'
+          if [ "$WANT" != "auto" ]; then
+            echo "asked for: $WANT"
+          elif [ -f case/.nvmrc ]; then
+            WANT=$(tr -d 'v \r\n' < case/.nvmrc)
+            echo ".nvmrc says: $WANT"
+          else
+            # engines.node is a range (">=22.0.0", "^20 || ^22"); the lowest major
+            # named in it is the one the author promises the code works on.
+            WANT=$(node -e "
+              try {
+                const e = require('./case/package.json').engines;
+                const m = String((e && e.node) || '').match(/[0-9]+/g);
+                process.stdout.write(m ? String(Math.min(...m.map(Number))) : '20');
+              } catch { process.stdout.write('20') }
+            ")
+            echo "engines.node says: $WANT"
+          fi
+          echo "version=$WANT" >> "$GITHUB_OUTPUT"
+
+      - name: Use Node ${{ steps.node.outputs.version }}
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ inputs.node-version }}
+          node-version: ${{ steps.node.outputs.version }}
 
       - name: Report what is being verified
         run: |
@@ -74,6 +102,7 @@ jobs:
             echo "| version to install | \`${{ inputs.breaking-version }}\` |"
             echo "| test command | \`${{ inputs.test-command }}\` |"
             echo "| directory | \`${{ inputs.target-dir }}\` |"
+            echo "| node | \`${{ steps.node.outputs.version }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Lockfile decides the tool. `npm ci` is refused when the lockfile and
@@ -152,11 +181,13 @@ jobs:
             if [ -z "$BEFORE" ]; then
               echo "**UNKNOWN** - the tests never ran. Install failed, or the run timed out."
               echo ""
-              echo "Not evidence against the case. Try another Node version, or a narrower \`target-dir\`."
+              echo "Not evidence against the case. Try a different Node version, or a narrower \`target-dir\`."
             elif [ "$BEFORE" != "0" ]; then
               echo "**NOT A CASE** - the tests were already failing at this commit (exit $BEFORE)."
               echo ""
               echo "Nothing can be proved from here: a suite that starts red cannot go from red to green because of us."
+              echo ""
+              echo "Read the log before dropping the candidate. A suite can start red because of the runner rather than the repository, and a Node too old for a language feature the tests use looks exactly like a broken commit."
             elif [ "$AFTER" = "0" ]; then
               echo "**NOT A CASE** - the tests still pass with \`${{ inputs.package }}@${{ inputs.breaking-version }}\` (exit 0)."
               echo ""
