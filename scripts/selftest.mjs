@@ -2186,4 +2186,33 @@ check("testScriptUsable does not reject on a coincidental substring", () => {
   assert.strictEqual(testScriptUsable("mocha test/dockerfile-parser.test.js").ok, true);
 });
 
+
+// "Ran out of turns" is not "had no idea". The first benchmark filed seven runs
+// as NO-CHANGE when every one of them was mid-investigation when the budget ended.
+check("outcome EXHAUSTED when the turn budget ran out", () => {
+  for (const said of ["inconclusive", "error_max_turns", "the agent used all 25 turns"]) {
+    const r = benchmarkOutcome({
+      baselineExit: "0", brokenExit: "1", changed: "false", actionOutcome: said,
+    });
+    assert.strictEqual(r.outcome, "EXHAUSTED", said);
+  }
+});
+
+check("outcome NO-CHANGE stays for a run that simply produced nothing", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", changed: "false", actionOutcome: "no-changes",
+  });
+  assert.strictEqual(r.outcome, "NO-CHANGE");
+});
+
+// A refusal is the product working and must not be reclassified as a budget
+// problem, whichever word the action happened to use.
+check("a refusal is still REFUSED, not EXHAUSTED", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", changed: "false",
+    actionOutcome: "refused: the reviewer refuted the fix",
+  });
+  assert.strictEqual(r.outcome, "REFUSED");
+});
+
 console.log("\n" + pass + " checks passed.\n");

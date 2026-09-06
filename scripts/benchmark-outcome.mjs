@@ -114,6 +114,26 @@ export function benchmarkOutcome({
         detail: "a fix was written and then withheld: " + (actionOutcome || review || "unproven"),
       };
     }
+    // "Ran out of turns" and "had nothing to offer" are not the same result, and
+    // the first benchmark reported seven of the second when all seven were the
+    // first. On winston the agent had reached the exact cause - v3 set
+    // `state.pipes` to the destination, v4 always keeps an array - and the budget
+    // ended mid-investigation. Filed as NO-CHANGE, that reads as a product with
+    // no answer; it was a product with no room.
+    //
+    // It stays in the denominator, because a customer whose run does not finish
+    // has not been helped. But it is named, because we set the budget and the
+    // difference tells us which of us to fix.
+    // The three phrasings the action actually emits for this, plus room for the
+    // obvious variants. Matching only one of them would leave the distinction
+    // technically present and practically absent.
+    const RAN_OUT = /max.?turns|exhaust|out of turns|used all \d+ turns|inconclusive/i;
+    if (RAN_OUT.test(actionOutcome)) {
+      return {
+        outcome: "EXHAUSTED",
+        detail: "the turn budget ran out before a fix was verified: " + actionOutcome,
+      };
+    }
     return {
       outcome: "NO-CHANGE",
       detail: actionOutcome ? "no fix produced: " + actionOutcome : "no fix produced",

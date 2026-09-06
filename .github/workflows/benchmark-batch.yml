@@ -118,7 +118,7 @@ jobs:
             };
             try { walk('results') } catch {}
 
-            const order = ['FIXED', 'REFUSED', 'NO-CHANGE', 'WRONG', 'BLOCKED'];
+            const order = ['FIXED', 'REFUSED', 'EXHAUSTED', 'NO-CHANGE', 'WRONG', 'BLOCKED'];
             rows.sort((a, b) => order.indexOf(a.outcome) - order.indexOf(b.outcome) || a.repo.localeCompare(b.repo));
             const n = (v) => rows.filter((r) => r.outcome === v).length;
 
@@ -135,6 +135,7 @@ jobs:
             out.push('|---|---|');
             out.push('| fixed | ' + n('FIXED') + ' |');
             out.push('| refused to ship an unproven fix | ' + n('REFUSED') + ' |');
+            out.push('| ran out of turns mid-investigation | ' + n('EXHAUSTED') + ' |');
             out.push('| produced nothing | ' + n('NO-CHANGE') + ' |');
             out.push('| **shipped something wrong** | **' + n('WRONG') + '** |');
             out.push('| blocked by our setup (not counted) | ' + n('BLOCKED') + ' |');
