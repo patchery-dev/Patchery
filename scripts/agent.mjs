@@ -54,10 +54,17 @@ const BASELINE_RETRIES = Math.max(0, Number(env("SMA_BASELINE_RETRIES", "2")) ||
 const ALLOWED_PATHS = parsePathList(env("SMA_ALLOWED_PATHS"));
 const ALLOW_DELETIONS = bool("SMA_ALLOW_DELETIONS", false);
 const STALL_REPEATS = Math.max(2, Number(env("SMA_STALL_REPEATS", "3")) || 3);
-// Deliberately generous: a careful agent legitimately spends 8-10 turns reading
-// the changelog, the call sites and the tests before it edits anything. Measured
-// on a real run - a threshold of 8 cut off an agent that was about to fix the bug.
-const STALL_NO_EDIT_TURNS = Math.max(2, Number(env("SMA_STALL_NO_EDIT_TURNS", "15")) || 15);
+// A turn that opens a file, runs a command or makes a search it has not made before
+// is progress, even before anything has been edited. Only repeating work already
+// done counts against this. Measured on three real runs against dwmkerr/terminal-ai:
+// every research turn was a different, meaningful step, and the old "no edit yet"
+// rule cut all three off in the turn before the edit.
+const STALL_STALE_TURNS = Math.max(2, Number(env("SMA_STALL_STALE_TURNS", "5")) || 5);
+// Legacy hard ceiling on research, off by default. NOTE: this must NOT be wrapped in
+// Math.max(2, ...) the way the others are - that would silently turn the "0" (off)
+// default into 2 and kill every run on its second turn.
+const rawNoEdit = Number(env("SMA_STALL_NO_EDIT_TURNS", "0"));
+const STALL_NO_EDIT_TURNS = Number.isFinite(rawNoEdit) && rawNoEdit >= 2 ? Math.floor(rawNoEdit) : 0;
 
 // ----------------------------------------------------------------- helpers
 
@@ -320,7 +327,9 @@ let result = null;
 let stalledReason = null;
 const stallDetector = createStallDetector({
   repeats: STALL_REPEATS,
+  staleTurns: STALL_STALE_TURNS,
   noEditTurns: STALL_NO_EDIT_TURNS,
+  root: TARGET_DIR.replace(/\\/g, "/"),
 });
 
 try {
@@ -348,6 +357,9 @@ try {
       // Stop a run that is going in circles instead of letting it eat the whole
       // turn budget. Breaking the loop ends the iteration and shuts the agent down.
       stalledReason = stallDetector.observeTurn(toolUses);
+      // Naming what was new this turn is the observability whose absence made the
+      // false-positive stall take three paid runs to diagnose. It costs nothing.
+      for (const key of stallDetector.inspect().lastNew) log("  [new] " + key);
       if (stalledReason) {
         log("\n[STALLED] " + stalledReason + " - stopping early.");
         break;
@@ -368,12 +380,18 @@ if (stalledReason) {
     log("Discarding " + partial.length + " unverified change(s): " + partial.join(", "));
     revertPaths(partial);
   }
+  // The counters matter to whoever reads this: "it looped" and "it explored and I
+  // cut it off" are different problems with different fixes, and the message alone
+  // does not tell them apart.
+  const s = stallDetector.inspect();
   stop(
     "inconclusive",
     "Inconclusive, needs human review: " +
       stalledReason +
       ". Patchery stopped early rather than spending the rest of its turn budget, and " +
-      "reverted the unverified changes. Nothing was delivered.",
+      "reverted the unverified changes. Nothing was delivered. (" +
+      s.toolTurns + " tool turns, " + s.discovered + " distinct things discovered, " +
+      s.edits + " edit(s).)",
     { tests_passed: "false" }
   );
 }

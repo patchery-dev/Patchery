@@ -75,13 +75,24 @@ inputs:
       it is going in circles and would otherwise burn the whole turn budget.
     required: false
     default: "3"
+  stall-stale-turns:
+    description: >-
+      Stop early if this many turns in a row find nothing new - every file already
+      read, every command already run, every search already made. This is the real
+      "going in circles" signal. Opening a file it has never opened, running a new
+      command or making a new search is progress and resets it, even when the agent
+      has not edited anything yet.
+    required: false
+    default: "5"
   stall-no-edit-turns:
     description: >-
-      Stop early if this many turns in a row use tools but change nothing.
-      Kept generous on purpose: reading the changelog and the call sites before
-      editing is normal, and cutting that short throws away a good run.
+      Legacy ceiling: stop after this many turns in a row that use tools but change
+      nothing, EVEN IF every one of them found something new. Off by default - it
+      stops careful agents that are making real progress, which is what
+      stall-stale-turns replaced. max-turns is your cost brake. Set this only if you
+      deliberately want to cap pure research.
     required: false
-    default: "15"
+    default: "0"
   node-version:
     description: >-
       Node version used to run your tests. Defaults to the current LTS; Node 20
@@ -156,6 +167,7 @@ runs:
         SMA_ALLOW_DELETIONS: ${{ inputs.allow-deletions }}
         SMA_BASELINE_RETRIES: ${{ inputs.baseline-retries }}
         SMA_STALL_REPEATS: ${{ inputs.stall-repeats }}
+        SMA_STALL_STALE_TURNS: ${{ inputs.stall-stale-turns }}
         SMA_STALL_NO_EDIT_TURNS: ${{ inputs.stall-no-edit-turns }}
         ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-auth-token }}
         ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}

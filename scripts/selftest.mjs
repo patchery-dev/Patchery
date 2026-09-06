@@ -19,6 +19,10 @@ import {
   redactSecrets,
   createStallDetector,
   baselinePassedMessage,
+  toolEvidence,
+  canonicalCommand,
+  bashLooksMutating,
+  stallVerdict,
 } from "./guard.mjs";
 
 let pass = 0;
@@ -284,6 +288,220 @@ check("a text-only turn is not evidence of a stall", () => {
   assert.strictEqual(d.observeTurn([]), null);
   assert.strictEqual(d.observeTurn([]), null);
   assert.strictEqual(d.observeTurn([]), null);
+});
+
+// --------------------------------------------------------------------------
+// Stall detection: is the agent looping, or is it working?
+// --------------------------------------------------------------------------
+
+const read = (f, o) => ({ name: "Read", input: o == null ? { file_path: f } : { file_path: f, offset: o } });
+const grep = (p, path) => ({ name: "Grep", input: { pattern: p, path } });
+const bash = (c) => ({ name: "Bash", input: { command: c } });
+const edit = (f, s) => ({ name: "Edit", input: { file_path: f, old_string: s ?? "a", new_string: "b" } });
+
+console.log("\ncanonicalCommand / bashLooksMutating");
+check("whitespace, trailing semicolon and a leading cd all collapse", () => {
+  assert.strictEqual(canonicalCommand("npm  test "), "npm test");
+  assert.strictEqual(canonicalCommand("npm test;"), "npm test");
+  assert.strictEqual(canonicalCommand("cd /w && npm test"), "npm test");
+});
+check("different commands stay different", () =>
+  assert.notStrictEqual(canonicalCommand("grep -r foo"), canonicalCommand("grep -rn foo"))
+);
+check("sed -i is a mutation", () => assert.ok(bashLooksMutating("sed -i s/a/b/ src/x.js")));
+check("a redirect into a file is a mutation", () => assert.ok(bashLooksMutating("echo hi > src/x.js")));
+check("a redirect to /dev/null is not", () => assert.ok(!bashLooksMutating("echo hi > /dev/null")));
+check("reading is not a mutation", () => {
+  assert.ok(!bashLooksMutating("grep -i foo src"));
+  assert.ok(!bashLooksMutating("npm test"));
+});
+
+console.log("\ntoolEvidence - two calls that see the same thing get the same key");
+check("an absolute path and a relative one are one file", () =>
+  assert.deepStrictEqual(
+    toolEvidence(read("/w/src/a.js"), "/w").keys,
+    toolEvidence(read("src/a.js"), "/w").keys
+  )
+);
+check("windows backslashes normalise like everything else", () =>
+  assert.deepStrictEqual(toolEvidence(read("src\\a.js")).keys, toolEvidence(read("src/a.js")).keys)
+);
+check("a different offset is a different part of the file", () =>
+  assert.notDeepStrictEqual(toolEvidence(read("a.js", 0)).keys, toolEvidence(read("a.js", 200)).keys)
+);
+check("`cat a.js` and `Read a.js` are one discovery", () =>
+  assert.deepStrictEqual(toolEvidence(bash("cat src/a.js")).keys, toolEvidence(read("src/a.js")).keys)
+);
+check("`head -50 f` and `head -100 f` are one discovery", () =>
+  assert.deepStrictEqual(
+    toolEvidence(bash("head -50 CHANGELOG.md")).keys,
+    toolEvidence(bash("head -100 CHANGELOG.md")).keys
+  )
+);
+check("the same grep shown differently is the same question", () =>
+  assert.deepStrictEqual(
+    toolEvidence({ name: "Grep", input: { pattern: "x", path: "src", output_mode: "content" } }).keys,
+    toolEvidence({ name: "Grep", input: { pattern: "x", path: "src", output_mode: "files_with_matches" } }).keys
+  )
+);
+check("a different pattern is a different question", () =>
+  assert.notDeepStrictEqual(toolEvidence(grep("a", "src")).keys, toolEvidence(grep("b", "src")).keys)
+);
+check("an edit reports what it wrote", () => {
+  const e = toolEvidence(edit("src/a.js"));
+  assert.deepStrictEqual(e.writes, ["src/a.js"]);
+  assert.strictEqual(e.edits, true);
+});
+check("a mutating shell command counts as an edit", () =>
+  assert.strictEqual(toolEvidence(bash("sed -i s/a/b/ x.js")).edits, true)
+);
+check("payload key order does not manufacture novelty", () =>
+  assert.deepStrictEqual(
+    toolEvidence({ name: "Other", input: { a: 1, b: 2 } }).keys,
+    toolEvidence({ name: "Other", input: { b: 2, a: 1 } }).keys
+  )
+);
+
+console.log("\nstallVerdict - the regression: careful research is not a stall");
+// The real thing. Three runs against dwmkerr/terminal-ai (OpenAI Assistants ->
+// Responses) were each cut off in the turn before the edit by the old "N turns
+// without an edit" rule, having repeated nothing at all.
+const TERMINAL_AI_RUN = [
+  [bash("cat node_modules/openai/CHANGELOG.md")],
+  [grep("beta\\.assistants", "src")],
+  [read("/w/src/ai/openai.ts")],
+  [read("/w/src/ai/conversation.ts")],
+  [read("/w/src/commands/chat.ts")],
+  [read("/w/src/ai/openai.test.ts")], // notices the tests pin the OLD shape
+  [bash("cat node_modules/openai/package.json")],
+  [bash("ls node_modules/openai/resources")],
+  [read("/w/node_modules/openai/resources/responses/responses.d.ts")],
+  [grep("previous_response_id", "node_modules/openai")],
+  [grep("conversations", "node_modules/openai")],
+  [read("/w/src/config.ts")],
+  [bash("npx tsc --noEmit")],
+  [bash("gh api repos/dwmkerr/terminal-ai/commits")],
+  [read("/w/src/ai/openai.ts", 120)], // the turn it was about to edit on
+];
+check("15 turns of genuine research are not a stall", () =>
+  assert.strictEqual(stallVerdict(TERMINAL_AI_RUN, { root: "/w" }), null)
+);
+check("the same research repeated IS a stall", () =>
+  assert.match(
+    String(stallVerdict(TERMINAL_AI_RUN.concat(TERMINAL_AI_RUN.slice(0, 8)), { root: "/w", repeats: 99 })),
+    /found nothing new|going over old ground/
+  )
+);
+
+console.log("\nstallVerdict - the failure it must still catch");
+// The incident the mechanism exists for: 25 turns, $0.88, nothing produced.
+check("re-reading the same files stalls, and sooner than the old rule did", () => {
+  const loop = [];
+  for (let i = 0; i < 25; i++) loop.push([read(["a.js", "b.js", "c.js"][i % 3])]);
+  const d = createStallDetector();
+  let stopTurn = null;
+  for (let i = 0; i < loop.length && !stopTurn; i++) if (d.observeTurn(loop[i])) stopTurn = i + 1;
+  assert.ok(stopTurn !== null && stopTurn <= 7, "stopped on turn " + stopTurn);
+});
+check("shuffled re-reads with no exact repeat still stall", () => {
+  const t = [];
+  for (let i = 0; i < 10; i++) t.push([read(["a.js", "b.js"][i % 2])]);
+  assert.match(String(stallVerdict(t, { repeats: 99 })), /found nothing new/);
+});
+check("a slow grind cannot escape by finding one new thing every fourth turn", () => {
+  const t = [];
+  for (let i = 0; i < 14; i++) t.push([read(i % 4 === 0 ? "new" + i + ".js" : "a.js")]);
+  assert.match(String(stallVerdict(t, { repeats: 99 })), /going over old ground/);
+});
+check("a new file resets the counter", () => {
+  const t = [[read("a.js")], [read("a.js")], [read("a.js")], [read("b.js")], [read("a.js")], [read("a.js")]];
+  assert.strictEqual(stallVerdict(t, { repeats: 99, staleTurns: 3 }), null);
+});
+check("a new command counts as progress", () =>
+  assert.strictEqual(
+    stallVerdict([[bash("npm test")], [bash("npm test")], [bash("node -p 1")], [bash("npm test")]], {
+      repeats: 99,
+      staleTurns: 2,
+    }),
+    null
+  )
+);
+check("a new search counts as progress", () =>
+  assert.strictEqual(
+    stallVerdict([[grep("a", "src")], [grep("a", "src")], [grep("b", "src")], [grep("a", "src")]], {
+      repeats: 99,
+      staleTurns: 2,
+    }),
+    null
+  )
+);
+
+console.log("\nstallVerdict - an edit changes the world");
+// Live false positive before this change: the agent is told to run the tests after
+// editing, and the third identical `npm test` tripped the repeat rule.
+check("re-running the tests after an edit is not a repeat", () =>
+  assert.strictEqual(
+    stallVerdict(
+      [[bash("npm test")], [edit("a.js", "x")], [bash("npm test")], [edit("a.js", "y")], [bash("npm test")]],
+      {}
+    ),
+    null
+  )
+);
+check("an identical edit three times is still a repeat", () =>
+  assert.match(
+    String(stallVerdict([[edit("a.js", "x")], [edit("a.js", "x")], [edit("a.js", "x")]], {})),
+    /repeated 3 times/
+  )
+);
+check("two different hunks in one file are two discoveries", () =>
+  assert.strictEqual(stallVerdict([[edit("a.js", "x")], [edit("a.js", "y")]], {}), null)
+);
+check("re-reading the file it just edited is progress", () =>
+  assert.strictEqual(
+    stallVerdict([[read("a.js")], [edit("a.js")], [read("a.js")]], { repeats: 99, staleTurns: 2 }),
+    null
+  )
+);
+check("editing does not forget unrelated reads", () => {
+  const t = [
+    [read("a.js")], [read("b.js")], [edit("z.js")],
+    [read("a.js")], [read("b.js")], [read("a.js")], [read("b.js")],
+  ];
+  assert.match(String(stallVerdict(t, { repeats: 99, staleTurns: 4 })), /found nothing new/);
+});
+check("a mutating shell command also forgets stale commands", () =>
+  assert.strictEqual(
+    stallVerdict(
+      [[bash("npm test")], [bash("sed -i s/a/b/ x.js")], [bash("npm test")], [bash("npm test")]],
+      { repeats: 3 }
+    ),
+    null
+  )
+);
+
+console.log("\nstallVerdict - thresholds and purity");
+check("the legacy no-edit ceiling is off by default", () => {
+  const t = [];
+  for (let i = 0; i < 12; i++) t.push([read("f" + i + ".js")]);
+  assert.strictEqual(stallVerdict(t, {}), null);
+  assert.match(String(stallVerdict(t, { noEditTurns: 10 })), /turns in a row/);
+});
+check("the window never fires before it is full", () =>
+  assert.strictEqual(stallVerdict([[read("a.js")], [read("a.js")], [read("a.js")]], { repeats: 99, staleTurns: 4 }), null)
+);
+check("replaying the same transcript twice gives the same answer", () => {
+  assert.strictEqual(stallVerdict(TERMINAL_AI_RUN, { root: "/w" }), stallVerdict(TERMINAL_AI_RUN, { root: "/w" }));
+  assert.strictEqual(stallVerdict([]), null);
+});
+check("inspect() reports what happened", () => {
+  const d = createStallDetector();
+  d.observeTurn([read("a.js")]);
+  d.observeTurn([edit("a.js")]);
+  const s = d.inspect();
+  assert.strictEqual(s.toolTurns, 2);
+  assert.strictEqual(s.edits, 1);
+  assert.ok(s.discovered >= 1);
 });
 
 console.log("\nbaselinePassedMessage - a pass that was expected to be a failure");

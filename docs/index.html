@@ -710,9 +710,13 @@ checked, and untouched:
           maintainers had already decided against the change on purpose — so we left them the
           type-by-type mapping we had prepared as a comment, and no pull request. Checking
           whether a change is wanted before writing it is the cheapest step in the whole
-          process, and the one an automated system is most likely to skip. A fourth target was
-          tried the same day and also produced nothing; we did not keep a good enough record of
-          that one to write it up here, which is its own kind of answer.
+          process, and the one an automated system is most likely to skip. One more was dropped
+          before it ever became a run: a real break nobody had fixed, one open issue, no pull
+          request against it — and, in five hundred and fifty-nine files, not one real test.
+          Patchery decides whether a fix worked by running your tests. Where a project has none
+          there is nothing to measure against, so it has nothing to offer and walking away is
+          the correct answer. That is now twice on this page, and it is the most common thing
+          that stops it.
         </p>
       </div>
     </div>

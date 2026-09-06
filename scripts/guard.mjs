@@ -245,22 +245,183 @@ export function baselinePassedMessage({ testCommand, changelog, nodeVersion } = 
   );
 }
 
+/** JSON.stringify with object keys sorted, so payload key order cannot fake novelty. */
+function stableStringify(value) {
+  try {
+    return JSON.stringify(value, (_k, v) =>
+      v && typeof v === "object" && !Array.isArray(v)
+        ? Object.keys(v)
+            .sort()
+            .reduce((acc, k) => ((acc[k] = v[k]), acc), {})
+        : v
+    );
+  } catch {
+    return "<unserializable>";
+  }
+}
+
 /**
- * Watches the agent's tool calls and decides whether it has stopped making
- * progress. Without this, a confused agent burns its entire turn budget (and
- * your money) re-reading the same files — observed for real: 25 turns, $0.88,
- * zero output.
- *
- * Two independent signals, both deliberately simple so the behaviour stays
- * predictable:
- *   - the exact same tool call (same tool, same arguments) is made `repeats` times
- *   - `noEditTurns` turns in a row use tools but never edit anything
- *
- * @param {{repeats?: number, noEditTurns?: number}} [options]
+ * Normalise a path for use in an evidence key, stripping the target directory.
+ * The SDK reports absolute paths while a Grep argument is repo-relative; without
+ * this one file would become two keys and re-reading it would look like progress.
+ * The prefix compare is case-insensitive because Windows drive letters and casing
+ * must not split a key either.
  */
-export function createStallDetector({ repeats = 3, noEditTurns = 8 } = {}) {
+function normaliseKeyPath(p, root = "") {
+  let out = normalisePath(p);
+  const r = normalisePath(root);
+  if (r && out.toLowerCase().startsWith(r.toLowerCase() + "/")) out = out.slice(r.length + 1);
+  else if (r && out.toLowerCase() === r.toLowerCase()) out = "";
+  return out;
+}
+
+/**
+ * Canonical form of a shell command, for comparison only. Collapses whitespace,
+ * drops a trailing ";" and a leading "cd <dir> && " — where a command runs is not
+ * a discovery, what it runs is.
+ *
+ * Deliberately stops there. A normaliser aggressive enough to merge "ls -l" and
+ * "ls -la" would also merge two genuinely different greps.
+ *
+ * @param {string} command
+ * @returns {string}
+ */
+export function canonicalCommand(command) {
+  return String(command ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/;+$/, "")
+    .replace(/^cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/, "")
+    .trim();
+}
+
+/**
+ * Does this shell command write to the working tree? Narrow and explicit on
+ * purpose — a false positive here would let a real loop reset its own counter.
+ *
+ * @param {string} command
+ * @returns {boolean}
+ */
+export function bashLooksMutating(command) {
+  const c = String(command ?? "");
+  if (/\bsed\s+[^|;]*-i\b/.test(c)) return true;
+  if (/\bperl\s+[^|;]*-p?i\b/.test(c)) return true;
+  if (/(^|[;&|]\s*)(patch|tee)\b/.test(c)) return true;
+  // A redirect to anything but /dev/null writes a file.
+  if (/>>?\s*(?!\/dev\/null)\S/.test(c)) return true;
+  return false;
+}
+
+/** A bare read command (cat/head/tail/...) reduced to the file it reads, or null. */
+function bashReadTarget(command) {
+  const m = canonicalCommand(command).match(
+    /^(?:cat|head|tail|less|bat|type)((?:\s+-\w+(?:\s+\d+)?|\s+-\d+)*)\s+("[^"]+"|'[^']+'|[^\s|;&><]+)$/
+  );
+  if (!m) return null;
+  return m[2].replace(/^["']|["']$/g, "");
+}
+
+/**
+ * What did this tool call let the agent SEE, and did it change anything?
+ *
+ * `keys` are canonical identity strings: two calls that would return the same
+ * information produce the same key, and anything else produces a different one.
+ * Both the repeat rule and the novelty rule read these, so the whole file has one
+ * definition of "the same thing".
+ *
+ * `writes` are the paths this call changes. `edits` is true for the edit tools and
+ * for a mutating shell command — a `sed -i` is an edit even though no Edit tool ran.
+ *
+ * @param {{name: string, input: unknown}} call
+ * @param {string} [root] target directory, stripped from paths (case-insensitive)
+ * @returns {{keys: string[], writes: string[], edits: boolean}}
+ */
+export function toolEvidence(call, root = "") {
+  const name = String(call?.name ?? "");
+  const input = call?.input ?? {};
+  const p = (v) => normaliseKeyPath(v ?? "", root);
+
+  if (name === "Read") {
+    const key = "read:" + p(input.file_path);
+    // A different offset is a different part of the file, so a different discovery.
+    // `limit` is not: the same window read wider is the same question.
+    return { keys: [key + (input.offset == null ? "" : "@" + input.offset)], writes: [], edits: false };
+  }
+
+  if (name === "Edit" || name === "Write" || name === "MultiEdit" || name === "NotebookEdit") {
+    const file = p(input.file_path ?? input.notebook_path);
+    // The whole input, not just the path: two different hunks in one file are two
+    // discoveries, while the identical edit three times is still a repeat.
+    return { keys: ["write:" + file + "|" + stableStringify(input)], writes: [file], edits: true };
+  }
+
+  if (name === "Grep") {
+    // output_mode / -i / -n / -C / head_limit are dropped: the same search shown
+    // differently is not a new question.
+    return {
+      keys: [
+        "grep:" +
+          String(input.pattern ?? "") +
+          "|" + p(input.path) +
+          "|" + String(input.glob ?? "") +
+          "|" + String(input.type ?? ""),
+      ],
+      writes: [],
+      edits: false,
+    };
+  }
+
+  if (name === "Glob") {
+    return { keys: ["glob:" + String(input.pattern ?? "") + "|" + p(input.path)], writes: [], edits: false };
+  }
+
+  if (name === "Bash") {
+    const command = String(input.command ?? "");
+    const readTarget = bashReadTarget(command);
+    // `cat src/a.js` and `Read src/a.js` are one discovery, not two.
+    if (readTarget) return { keys: ["read:" + p(readTarget)], writes: [], edits: false };
+    return { keys: ["exec:" + canonicalCommand(command)], writes: [], edits: bashLooksMutating(command) };
+  }
+
+  return { keys: [name + ":" + stableStringify(input)], writes: [], edits: false };
+}
+
+/**
+ * Watches the agent's tool calls and decides whether it has stopped making progress.
+ *
+ * Without this a confused agent burns its whole turn budget re-reading the same
+ * files — observed for real: 25 turns, $0.88, nothing produced.
+ *
+ * The first version also had the opposite failure, which is why this one exists.
+ * It stopped on "N turns in a row without an edit", and three real runs against
+ * dwmkerr/terminal-ai (limits 15, 22 and 40) were each cut off in the turn before
+ * the edit, having repeated nothing: every turn read a different file, ran a
+ * different command, made a different search. "Has not edited yet" is not a stall
+ * signal. Repeating work already done is.
+ *
+ * Three signals, all reading one map of evidence keys:
+ *   - repeat:  the same key seen `repeats` times
+ *   - stale:   `staleTurns` turns in a row that discover nothing new
+ *   - window:  fewer than ceil(staleTurns/2) progress turns in the last staleTurns*2,
+ *              which catches the slow grind that resets the consecutive counter with
+ *              one genuine discovery every few turns
+ *
+ * A fourth, `noEditTurns`, is the old rule. Kept so an operator who wants a hard
+ * research cap can have one, but OFF by default — it is the rule that caused the
+ * failure above, and `max-turns` is already the cost brake.
+ *
+ * @param {{repeats?: number, staleTurns?: number, noEditTurns?: number, root?: string}} [options]
+ */
+export function createStallDetector({ repeats = 3, staleTurns = 5, noEditTurns = 0, root = "" } = {}) {
   const seen = new Map();
+  const window = [];
+  const windowSize = Math.max(2, staleTurns * 2);
+  const minProgressInWindow = Math.max(1, Math.ceil(staleTurns / 2));
+  let barren = 0;
   let turnsWithoutEdit = 0;
+  let toolTurns = 0;
+  let edits = 0;
+  let lastNew = [];
 
   return {
     /**
@@ -271,30 +432,93 @@ export function createStallDetector({ repeats = 3, noEditTurns = 8 } = {}) {
     observeTurn(toolUses) {
       const calls = Array.isArray(toolUses) ? toolUses : [];
       if (calls.length === 0) return null; // a text-only turn is not evidence either way
+      toolTurns++;
 
-      const edited = calls.some((c) => c.name === "Edit" || c.name === "Write");
-      turnsWithoutEdit = edited ? 0 : turnsWithoutEdit + 1;
+      const evidence = calls.map((c) => toolEvidence(c, root));
+      const edited = evidence.some((e) => e.edits);
 
-      for (const call of calls) {
-        let signature;
-        try {
-          signature = call.name + ":" + JSON.stringify(call.input);
-        } catch {
-          signature = call.name + ":<unserializable>";
+      let novel = false;
+      const fresh = [];
+      for (let i = 0; i < calls.length; i++) {
+        for (const key of evidence[i].keys) {
+          const prev = seen.get(key);
+          if (!prev) {
+            novel = true;
+            fresh.push(key);
+          }
+          const count = (prev?.count ?? 0) + 1;
+          seen.set(key, { count, tool: calls[i].name });
+          if (count >= repeats) {
+            return (
+              "the same " + calls[i].name + " call was repeated " + count + " times without making progress"
+            );
+          }
         }
-        const count = (seen.get(signature) ?? 0) + 1;
-        seen.set(signature, count);
-        if (count >= repeats) {
-          return (
-            "the same " + call.name + " call was repeated " + count + " times without making progress"
-          );
+      }
+      lastNew = fresh;
+
+      // An edit changes the world, so some evidence goes stale: a command re-run
+      // after an edit asks a genuinely new question, and so does re-reading the
+      // file just written. Without this, "edit, test, edit, test, edit, test" -
+      // exactly what the agent is told to do - trips the repeat rule.
+      if (edited) {
+        edits++;
+        for (const key of [...seen.keys()]) if (key.startsWith("exec:")) seen.delete(key);
+        for (const e of evidence) {
+          for (const written of e.writes) {
+            for (const key of [...seen.keys()]) {
+              if (key === "read:" + written || key.startsWith("read:" + written + "@")) seen.delete(key);
+            }
+          }
         }
       }
 
-      if (turnsWithoutEdit >= noEditTurns) {
+      turnsWithoutEdit = edited ? 0 : turnsWithoutEdit + 1;
+      const progress = edited || novel;
+      barren = progress ? 0 : barren + 1;
+      window.push(progress);
+      if (window.length > windowSize) window.shift();
+
+      if (barren >= staleTurns) {
+        return (
+          barren + " turns in a row found nothing new - every file, command and search had already been seen"
+        );
+      }
+      if (window.length === windowSize) {
+        const hits = window.filter(Boolean).length;
+        if (hits < minProgressInWindow) {
+          return (
+            "only " + hits + " of the last " + windowSize +
+            " turns found anything new - the agent is going over old ground"
+          );
+        }
+      }
+      if (noEditTurns > 0 && turnsWithoutEdit >= noEditTurns) {
         return turnsWithoutEdit + " turns in a row used tools but changed nothing";
       }
       return null;
     },
+    /** Counters for the log and the summary, so "it looped" reads differently from "I cut it off". */
+    inspect() {
+      return { toolTurns, edits, discovered: seen.size, barren, lastNew };
+    },
   };
+}
+
+/**
+ * The whole decision in one call: replay a transcript, return the reason it would
+ * have stopped, or null. This is what pins real runs down offline — a recorded run
+ * pastes in as a literal array and is re-judged for free, forever.
+ *
+ * @param {Array<Array<{name: string, input: unknown}>>} transcript one entry per assistant turn
+ * @param {object} [options] same options as createStallDetector
+ * @returns {string|null}
+ */
+export function stallVerdict(transcript, options = {}) {
+  const detector = createStallDetector(options);
+  for (const turn of transcript || []) {
+    const reason = detector.observeTurn(turn);
+    if (reason) return reason;
+  }
+  return null;
 }
