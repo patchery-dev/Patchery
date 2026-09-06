@@ -100,7 +100,10 @@ files, which are on every PR for you to check.
 
 ## What it has actually done
 
-One pull request, opened end to end with no human in the loop:
+One pull request, opened end to end with no human in the loop. The fixture is
+committed broken on purpose so the run can be repeated, and each run replaces the
+same branch, so the figures below are the latest of four successful runs rather
+than a one-off:
 
 **[patchery-dev/Patchery#2](https://github.com/patchery-dev/Patchery/pull/2)** — `fake-lib`
 went 1.x → 2.0.0 and made `formatPrice`'s second argument required. The action ran
@@ -110,7 +113,13 @@ The first human to see it was the reviewer.
 
 | files | lines | tests | turns | cost at list rates |
 | --- | --- | --- | --- | --- |
-| 1 | +1 −1 | failed → passed | 10 | $0.1958 |
+| 1 | +1 −1 | failed → passed | 9 | $0.2251 |
+
+A second agent then reviewed that diff without write access and without being shown
+the first agent's reasoning: **not refuted, confidence 72, $0.3298**. Proving the fix
+cost more than making it. Every figure here is read out of the pull request itself,
+and [patchery.dev](https://patchery.dev) re-checks them against it in your browser —
+because we quoted two of them wrong once and nothing caught it.
 
 And the same job by hand, on projects we don't own — no agent involved in either,
 they are here because doing the work manually is how we learned what the automated
@@ -125,6 +134,30 @@ All three are open. None has been merged. We will change this sentence the day t
 changes — and [patchery.dev](https://patchery.dev) checks it against the GitHub API
 every time someone loads the page, so if it ever stops being true the site says so
 before we do.
+
+---
+
+## What it could not do
+
+Pointed at four repositories we don't own, it has opened nothing. Every run below is
+real and was paid for.
+
+| Target | Turns | Wrote | What stopped it |
+| --- | --- | --- | --- |
+| `giancarloerra/SocratiCode` | 25 | nothing | Read every failing test, worked out they were all about the machine we ran on rather than the library it was sent to fix, and declined to invent a change |
+| `dwmkerr/terminal-ai` | 15, 22, 40 | nothing | A stateful-to-stateless API redesign, bigger than one run. Twice our own stall rule cut it off as it was about to start writing — that rule has since been replaced |
+| `gitroomhq/postiz-agent` | 0 | nothing | A real, reported break that had already healed on the newer Node we ran on, so the baseline passed and the agent never started |
+| `activepieces/activepieces` | 0 | nothing | Its package manager was missing, a partial install left shared dependencies unlinked, and the file we came to fix has no tests at all |
+
+A fifth, `evolution-foundation/evolution-api`, was dropped before a run: a real
+unfixed break with an open issue and no pull request against it — and not one real
+test file in 559.
+
+Not one of these is a wrong fix. In every one there was an obvious way to look
+productive: write something plausible, get the tests green, open the pull request.
+It never did. And the most common thing that stops it appears twice in that table —
+the project has no tests, so there is nothing to measure a fix against, and refusing
+is the correct answer.
 
 ---
 
@@ -242,7 +275,11 @@ node scripts/agent.mjs
 **True today**
 
 - Anyone can install it right now, and read every line of it. MIT licensed.
-- One pull request opened start to finish with no human in the loop.
+- One pull request opened start to finish with no human in the loop, four times over.
+- A second agent reviews every fix before it ships. It cannot write, and it is never
+  shown the first agent's reasoning.
+- Four repositories we don't own produced nothing — and nothing wrong. It has never
+  invented a fix.
 - The off-limits check is pure, unit-tested, and runs on every push with no AI.
 - Keys and passwords are redacted before anything reaches a log or a PR body.
 - Works on Node / npm projects. You decide what counts as a passing test.
@@ -253,6 +290,10 @@ node scripts/agent.mjs
 - No revenue, no users, no logo wall. Nobody is paying for this.
 - No open-source pull request accepted yet — two are waiting.
 - One package per run. It does not resolve cascading breakages.
+- The off-limits check reads *which* files moved, never what the change did to them.
+  Deleting a validation check inside a file the agent is entitled to edit walks past
+  it. The second agent reads the change, but that is judgement rather than a rule —
+  which is exactly what a deterministic guard exists to avoid having to trust.
 - Whether a break reproduces at all can depend on the runtime. Your `node-version`
   decides which Node the tests run on, and a break that is real on an older one can
   pass on a newer one — we hit exactly that, and the run said "nothing to fix". It
@@ -265,8 +306,10 @@ node scripts/agent.mjs
 - The agent sees your source code. Check what your model provider does with it
   before you point this at anything private.
 
-We would rather you audit this than trust it. Every number above comes from a run
-you can open and read.
+We would rather you audit this than trust it. Every number in the pull request table
+comes from a run you can open and read. The numbers in *What it could not do* do not —
+those runs happened on a laptop and left no public artifact, which is why they are
+written out in full rather than summarised.
 
 ## License
 
