@@ -1,0 +1,33 @@
+# Repositories to measure against. Chosen for being recognizable and genuinely
+# tested, not for having a migration in their history - see find-bumps.mjs for
+# why that constraint was dropped.
+#
+# A line is a GitHub owner/name. Comments and blank lines are ignored.
+
+# --- widely used libraries with real suites ---
+expressjs/express
+axios/axios
+fastify/fastify
+markedjs/marked
+chartjs/Chart.js
+pmndrs/zustand
+typeorm/typeorm
+socketio/socket.io
+moment/luxon
+immutable-js/immutable-js
+jsdom/jsdom
+sindresorhus/got
+node-fetch/node-fetch
+winstonjs/winston
+handlebars-lang/handlebars.js
+mozilla/nunjucks
+Automattic/mongoose
+sequelize/sequelize
+knex/knex
+bcoe/yargs
+
+# --- applications and tools ---
+mozilla/treeherder
+mozilla/addons-frontend
+pa11y/pa11y-ci
+cinar/indicatorts

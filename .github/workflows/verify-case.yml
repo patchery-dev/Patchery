@@ -8,6 +8,10 @@
 #
 # This runs the candidate's own test suite in a throwaway container. Nothing is
 # committed, nothing is pushed, no model is called.
+#
+# Callable two ways: by hand for one candidate, or by verify-batch.yml once per
+# row of benchmark/candidates.json. The measurement lives here only, so a fix to
+# it fixes every caller.
 name: Patchery (verify a benchmark case)
 
 on:
@@ -17,7 +21,7 @@ on:
         description: "Candidate repository, owner/name"
         required: true
       commit:
-        description: "Commit to pin to (the state BEFORE the migration)"
+        description: "Commit to pin to"
         required: true
       package:
         description: "Package whose upgrade is meant to break the tests"
@@ -37,6 +41,15 @@ on:
         description: "Node version (auto = ask the repository)"
         required: false
         default: "auto"
+  workflow_call:
+    inputs:
+      repo: { type: string, required: true }
+      commit: { type: string, required: true }
+      package: { type: string, required: true }
+      breaking-version: { type: string, required: true }
+      test-command: { type: string, required: false, default: "npm test" }
+      target-dir: { type: string, required: false, default: "." }
+      node-version: { type: string, required: false, default: "auto" }
 
 permissions:
   contents: read
@@ -46,6 +59,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      # One name per case, so a batch of fifty can upload fifty results without
+      # colliding and the report can be read without opening a single log.
+      - name: Name this case
+        id: slug
+        run: |
+          SLUG=$(printf '%s' '${{ inputs.repo }}-${{ inputs.package }}-v${{ inputs.breaking-version }}' | tr -c 'A-Za-z0-9._-' '-')
+          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+
       # Two of the values are typed by hand and both are long. A wrong one costs a
       # minute of git retries and then an "UNKNOWN - install failed" verdict that
       # names the wrong thing; the repository name in run 3 was short one letter and
@@ -63,14 +84,15 @@ jobs:
             echo "::error::${{ inputs.repo }} exists but has no commit ${{ inputs.commit }}."
             exit 1
           fi
+
       - name: Check out the candidate at the pinned commit
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo }}
           ref: ${{ inputs.commit }}
           path: case
-          # The migration commit and its neighbours are all we need; a full
-          # history on a large repo is minutes of download for nothing.
+          # The pinned commit is all we need; a full history on a large repo is
+          # minutes of download for nothing.
           fetch-depth: 1
 
       # A candidate says which Node it needs, and it is not a detail. Pinning our
@@ -114,14 +136,11 @@ jobs:
       - name: Report what is being verified
         run: |
           {
-            echo "## Verifying a benchmark case"
+            echo "## ${{ inputs.repo }} - ${{ inputs.package }} v${{ inputs.breaking-version }}"
             echo ""
             echo "| | |"
             echo "|---|---|"
-            echo "| repo | \`${{ inputs.repo }}\` |"
             echo "| pinned to | \`${{ inputs.commit }}\` |"
-            echo "| package | \`${{ inputs.package }}\` |"
-            echo "| version to install | \`${{ inputs.breaking-version }}\` |"
             echo "| test command | \`${{ inputs.test-command }}\` |"
             echo "| directory | \`${{ inputs.target-dir }}\` |"
             echo "| node | \`${{ steps.node.outputs.version }}\` |"
@@ -130,9 +149,14 @@ jobs:
       # Lockfile decides the tool. `npm ci` is refused when the lockfile and
       # package.json disagree, which is common on an old commit, so a plain
       # install is the fallback rather than a failure.
+      #
+      # continue-on-error throughout: in a batch, one candidate that will not
+      # install must not take the other forty-nine down with it. The verdict step
+      # reads the outcomes and says what actually happened.
       - name: Install dependencies
         id: install
         working-directory: case/${{ inputs.target-dir }}
+        continue-on-error: true
         run: |
           set -o pipefail
           if [ -f pnpm-lock.yaml ]; then
@@ -153,81 +177,97 @@ jobs:
       # show that an upgrade broke it, and cannot be used to show a fix worked.
       - name: Run the tests BEFORE the upgrade
         id: before
+        if: steps.install.outcome == 'success'
         working-directory: case/${{ inputs.target-dir }}
         timeout-minutes: 15
+        continue-on-error: true
         run: |
           set +e
           ${{ inputs.test-command }} > /tmp/before.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
-          tail -60 /tmp/before.log
+          tail -40 /tmp/before.log
 
       - name: Install the breaking version
         id: bump
         if: steps.before.outputs.exit == '0'
         working-directory: case/${{ inputs.target-dir }}
+        continue-on-error: true
         run: |
           set -o pipefail
           PM='${{ steps.install.outputs.pm }}'
           SPEC='${{ inputs.package }}@${{ inputs.breaking-version }}'
           if [ "$PM" = "pnpm" ]; then
-            pnpm add "$SPEC" 2>&1 | tail -30
+            pnpm add "$SPEC" 2>&1 | tail -20
           elif [ "$PM" = "yarn" ]; then
-            yarn add "$SPEC" 2>&1 | tail -30
+            yarn add "$SPEC" 2>&1 | tail -20
           else
-            npm install "$SPEC" 2>&1 | tail -30
+            npm install "$SPEC" 2>&1 | tail -20
           fi
           node -p "'installed: ' + require('${{ inputs.package }}/package.json').version" || true
 
       # Half two: the same suite, same machine, one thing changed.
       - name: Run the tests AFTER the upgrade
         id: after
-        if: steps.before.outputs.exit == '0'
+        if: steps.bump.outcome == 'success'
         working-directory: case/${{ inputs.target-dir }}
         timeout-minutes: 15
+        continue-on-error: true
         run: |
           set +e
           ${{ inputs.test-command }} > /tmp/after.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
-          tail -80 /tmp/after.log
+          tail -60 /tmp/after.log
 
-      # One line, so a candidate can be accepted or dropped without reading logs.
+      # One sentence, so a candidate can be accepted or dropped without opening a
+      # log, and one JSON file, so fifty of them can be read as a table.
       - name: Verdict
         if: always()
         run: |
           BEFORE='${{ steps.before.outputs.exit }}'
           AFTER='${{ steps.after.outputs.exit }}'
+          if [ '${{ steps.install.outcome }}' != 'success' ]; then
+            V=UNKNOWN
+            D="dependencies would not install - not evidence against the case"
+          elif [ -z "$BEFORE" ]; then
+            V=UNKNOWN
+            D="the tests never finished; the red step above says why"
+          elif [ "$BEFORE" != "0" ]; then
+            V=NOT-A-CASE
+            D="already failing at this commit (exit $BEFORE) - read the log, a Node too old for the suite looks the same"
+          elif [ '${{ steps.bump.outcome }}' != 'success' ]; then
+            V=UNKNOWN
+            D="green before, but ${{ inputs.package }}@${{ inputs.breaking-version }} would not install"
+          elif [ -z "$AFTER" ]; then
+            V=UNKNOWN
+            D="green before, but the second run did not finish"
+          elif [ "$AFTER" = "0" ]; then
+            V=NOT-A-CASE
+            D="still green with ${{ inputs.package }}@${{ inputs.breaking-version }} - the suite does not cover the changed calls"
+          else
+            V=VALID
+            D="green before, red after (exit $AFTER) - the break is real and this suite sees it"
+          fi
           {
             echo ""
-            echo "### Verdict"
+            echo "### $V"
             echo ""
-            if [ -z "$BEFORE" ]; then
-              echo "**UNKNOWN** - the tests never ran. Checkout or install failed, or the run timed out. The step that went red says which."
-              echo ""
-              echo "Not evidence against the case. Try a different Node version, or a narrower \`target-dir\`."
-            elif [ "$BEFORE" != "0" ]; then
-              echo "**NOT A CASE** - the tests were already failing at this commit (exit $BEFORE)."
-              echo ""
-              echo "Nothing can be proved from here: a suite that starts red cannot go from red to green because of us."
-              echo ""
-              echo "Read the log before dropping the candidate. A suite can start red because of the runner rather than the repository, and a Node too old for a language feature the tests use looks exactly like a broken commit."
-            elif [ "$AFTER" = "0" ]; then
-              echo "**NOT A CASE** - the tests still pass with \`${{ inputs.package }}@${{ inputs.breaking-version }}\` (exit 0)."
-              echo ""
-              echo "The upgrade did not break this suite. Either the tests do not cover the changed calls, or they were excluded from \`${{ inputs.test-command }}\`."
-            elif [ -z "$AFTER" ]; then
-              echo "**UNKNOWN** - green before, but the second run did not finish. Install of the new version failed, or it timed out."
-            else
-              echo "**VALID CASE** - green before, red after (exit $AFTER)."
-              echo ""
-              echo "The break is real and this suite sees it. Patchery can be pointed at it."
-            fi
+            echo "$D"
           } >> "$GITHUB_STEP_SUMMARY"
+          node -e "
+            const [repo, pkg, version, commit, verdict, detail] = process.argv.slice(1);
+            require('fs').writeFileSync('/tmp/result.json', JSON.stringify({
+              repo, package: pkg, version, commit, verdict, detail,
+              run: process.env.GITHUB_RUN_ID,
+            }));
+          " '${{ inputs.repo }}' '${{ inputs.package }}' '${{ inputs.breaking-version }}' '${{ inputs.commit }}' "$V" "$D"
 
       # The full logs, so a verdict can be argued with rather than trusted.
-      - name: Keep the test logs
+      - name: Keep the result and the logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-logs
-          path: /tmp/*.log
+          name: case-${{ steps.slug.outputs.slug }}
+          path: |
+            /tmp/result.json
+            /tmp/*.log
           if-no-files-found: ignore

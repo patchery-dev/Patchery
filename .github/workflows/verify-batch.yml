@@ -1,0 +1,141 @@
+# Runs verify-case over every row of benchmark/candidates.json at once.
+#
+# One candidate at a time was five runs an evening. The measurement is the same
+# either way, so this fans it out: one container per candidate, all of them at
+# once, and one table at the end saying which upgrades actually break which
+# repositories.
+#
+# The measurement itself is NOT duplicated here - this calls verify-case.yml, so
+# a fix to how a case is judged lands in both the single and the batch path.
+name: Patchery (verify a batch of cases)
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Only rows whose repo or package contains this text (empty = all)"
+        required: false
+        default: ""
+      limit:
+        description: "Stop after this many rows (0 = no limit)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+      count: ${{ steps.build.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the list of cases to run
+        id: build
+        run: |
+          node -e "
+            const rows = require('./benchmark/candidates.json');
+            const only = process.env.ONLY.trim().toLowerCase();
+            const limit = Number(process.env.LIMIT) || 0;
+            let picked = rows.filter(
+              (r) => !only || (r.repo + ' ' + r.package).toLowerCase().includes(only)
+            );
+            // GitHub refuses a matrix over 256 legs, and a truncation nobody
+            // announced would read as 'we measured everything'.
+            const cap = limit > 0 ? Math.min(limit, 256) : 256;
+            const dropped = picked.length - cap;
+            if (dropped > 0) console.log('::warning::' + dropped + ' row(s) not run - matrix capped at ' + cap);
+            picked = picked.slice(0, cap);
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'matrix=' + JSON.stringify(picked) + '\n');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'count=' + picked.length + '\n');
+            console.log(picked.length + ' case(s) queued');
+          "
+        env:
+          ONLY: ${{ inputs.only }}
+          LIMIT: ${{ inputs.limit }}
+
+      - name: Say what is about to run
+        run: |
+          echo "## Queued ${{ steps.build.outputs.count }} case(s)" >> "$GITHUB_STEP_SUMMARY"
+
+  verify:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    strategy:
+      # One candidate that will not install must not cancel the rest - a failed
+      # leg is a result here, not an accident.
+      fail-fast: false
+      # Kind to the runner pool and to npm; the whole batch still finishes in the
+      # time the slowest few take.
+      max-parallel: 8
+      matrix:
+        case: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/verify-case.yml
+    with:
+      repo: ${{ matrix.case.repo }}
+      commit: ${{ matrix.case.commit }}
+      package: ${{ matrix.case.package }}
+      breaking-version: ${{ matrix.case['breaking-version'] }}
+      test-command: ${{ matrix.case['test-command'] }}
+      target-dir: ${{ matrix.case['target-dir'] }}
+      node-version: ${{ matrix.case['node-version'] }}
+
+  report:
+    needs: [plan, verify]
+    # Always: a batch where half the legs failed is exactly when the table is
+    # worth reading.
+    if: always() && needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect every case's result
+        uses: actions/download-artifact@v4
+        with:
+          pattern: case-*
+          path: results
+
+      - name: One table
+        run: |
+          node -e "
+            const fs = require('fs'), path = require('path');
+            const found = [];
+            const walk = (dir) => {
+              for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const p = path.join(dir, e.name);
+                if (e.isDirectory()) walk(p);
+                else if (e.name === 'result.json') found.push(JSON.parse(fs.readFileSync(p, 'utf8')));
+              }
+            };
+            try { walk('results') } catch {}
+
+            const rank = { VALID: 0, UNKNOWN: 1, 'NOT-A-CASE': 2 };
+            found.sort((a, b) => (rank[a.verdict] ?? 3) - (rank[b.verdict] ?? 3) || a.repo.localeCompare(b.repo));
+
+            const n = (v) => found.filter((f) => f.verdict === v).length;
+            const out = [];
+            out.push('## ' + n('VALID') + ' valid case(s) of ' + found.length + ' tried');
+            out.push('');
+            out.push(n('NOT-A-CASE') + ' were not cases, ' + n('UNKNOWN') + ' could not be measured.');
+            out.push('');
+            out.push('| verdict | repo | upgrade | what happened |');
+            out.push('|---|---|---|---|');
+            for (const f of found) {
+              out.push(
+                '| ' + f.verdict + ' | ' + f.repo + ' | \`' + f.package + '@' + f.version + '\` | ' + f.detail + ' |'
+              );
+            }
+            // A leg that died before writing a result is invisible above, so say so
+            // rather than letting the totals imply full coverage.
+            const queued = Number(process.env.QUEUED);
+            if (found.length < queued) {
+              out.push('');
+              out.push('**' + (queued - found.length) + ' case(s) reported nothing** - those legs died before reaching a verdict.');
+            }
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\n') + '\n');
+            console.log(out.join('\n'));
+          "
+        env:
+          QUEUED: ${{ needs.plan.outputs.count }}
