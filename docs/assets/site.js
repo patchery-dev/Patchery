@@ -280,6 +280,18 @@
     if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(p)) return "test file";
     if (/(^|\/)(__tests__|__mocks__|tests?)\//.test(p)) return "inside a test directory";
     if (/(^|\/)\.github\//.test(p)) return "CI configuration";
+    // The test files themselves are protected, but the file that decides which tests
+    // run was not: excluding a spec in vitest.config.js turns the build green without
+    // touching a single test. Deterministic rule first; an agent reviewing the diff is
+    // a backstop, not the only line of defence.
+    if (
+      /(^|\/)(jest|vitest|playwright|cypress|karma)\.(config|conf)\.[cm]?[jt]s$/.test(p) ||
+      /(^|\/)\.mocharc\.[^/]+$/.test(p) ||
+      /(^|\/)(jest|vitest)\.setup\.[cm]?[jt]s$/.test(p) ||
+      /(^|\/)setupTests\.[cm]?[jt]sx?$/.test(p)
+    ) {
+      return "test harness configuration";
+    }
     if (/(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(p)) return "lockfile";
     return null;
   }
@@ -288,13 +300,46 @@
      what is running here really is what is in the repository. */
   window.PatcheryGuard = protectedReason;
 
+  /* ══════════════════  the run figures  ══════════════════
+
+     The demo fixture is committed broken so the run can be repeated, which
+     means its turn count and cost change every time somebody repeats it. The
+     numbers in the HTML are correct at the moment it was written and are what
+     a reader with no JavaScript sees; this re-reads them from the pull request
+     itself and corrects them if the demo has been run again since.
+
+     If the request fails, or GitHub rate-limits the browser, nothing happens
+     and the typed figures stand. Nothing on this page is hidden waiting for
+     this to succeed. */
+  (function () {
+    var slots = $$("[data-run]");
+    if (!slots.length || typeof fetch !== "function") return;
+
+    fetch("https://api.github.com/repos/patchery-dev/Patchery/pulls/2", {
+      headers: { Accept: "application/vnd.github+json" }
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (pr) {
+        if (!pr || !pr.body) return;
+        var turns = pr.body.match(/turns:\s*(\d+)/i);
+        var cost = pr.body.match(/turns:\s*\d+[^\n]*?\$([\d.]+)/i);
+        var next = { turns: turns && turns[1], cost: cost && ("$" + cost[1]) };
+        for (var i = 0; i < slots.length; i++) {
+          var want = next[slots[i].getAttribute("data-run")];
+          if (want && slots[i].textContent.trim() !== want) slots[i].textContent = want;
+        }
+      })
+      .catch(function () { /* the typed figures stand */ });
+  })();
+
   /* The same verdicts, said the way the rest of the page talks. */
   var PLAIN = {
     "inside node_modules":     "an installed library",
     "test file":               "one of your tests",
     "inside a test directory": "inside a test folder",
-    "CI configuration":        "your build settings",
-    "lockfile":                "the file that pins your versions"
+    "CI configuration":         "your build settings",
+    "test harness configuration": "the file that decides which tests run",
+    "lockfile":                 "the file that pins your versions"
   };
 
   var gForm = $("#guardForm"), gInput = $("#guardInput"), gList = $("#guardList");

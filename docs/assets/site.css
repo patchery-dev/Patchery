@@ -454,7 +454,7 @@ button { font: inherit; cursor: pointer; }
 /* ═══════════════════════════  03 · the run  ═══════════════════════════ */
 
 .pipe { position: relative; }
-.pipe__track { height: 300vh; }          /* five steps, ~480px of scroll each */
+.pipe__track { height: 360vh; }          /* six steps, ~480px of scroll each */
 .pipe__stage {
   position: sticky; top: 0; height: 100svh;
   display: flex; align-items: center; overflow: hidden;
@@ -500,7 +500,7 @@ button { font: inherit; cursor: pointer; }
 }
 .scr.is-back { clip-path: inset(100% 0 0 0); }
 .scr.is-on { visibility: visible; clip-path: inset(0 0 0 0); }
-.scr[data-scr="4"] { justify-content: center; }
+.scr[data-scr="5"] { justify-content: center; }
 
 /* The step numeral, bleeding off the right edge behind the evidence. */
 .scr::before {

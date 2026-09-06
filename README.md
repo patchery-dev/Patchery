@@ -44,6 +44,10 @@ Steps 3 and 4 are the point of this project.
 reverted and no PR is opened:
 
 - test files — `*.test.*`, `*.spec.*`, `test/`, `tests/`, `__tests__/`, `__mocks__/`
+- test harness configuration — `jest`/`vitest`/`playwright`/`cypress`/`karma` config,
+  `.mocharc.*`, `jest.setup.*`, `vitest.setup.*`, `setupTests.*`. Protecting the tests
+  is not enough on its own: excluding a spec in `vitest.config.js` turns the build
+  green without touching a single test.
 - `node_modules/`
 - `.github/`
 - lockfiles — `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`
