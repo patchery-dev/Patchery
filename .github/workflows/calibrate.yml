@@ -26,9 +26,17 @@ on:
         required: false
         default: ""
       model:
-        description: "Reviewer model; empty uses the ANTHROPIC_MODEL secret"
+        description: "Reviewer model; empty uses the selected provider's model secret"
         required: false
         default: ""
+      provider:
+        description: "Which endpoint to review through"
+        type: choice
+        required: false
+        default: default
+        options:
+          - default
+          - alt
 
 # Reads the repository and nothing else. This workflow opens no PR, writes no
 # branch, and touches no issue - it produces a number and an artifact.
@@ -52,30 +60,58 @@ jobs:
       - name: Run the calibration
         id: run
         env:
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          # A confidence threshold is a per-model number: what one model reports as
-          # 70 another reports as 45. Calibrating a model you are not running is a
-          # measurement of the wrong thing, so the model is selectable here without
-          # touching the shared secret every demo run also reads.
-          ANTHROPIC_MODEL: ${{ inputs.model != '' && inputs.model || secrets.ANTHROPIC_MODEL }}
-          # All four, exactly as action.yml does it. ANTHROPIC_MODEL on its own gets
-          # silently remapped to one of the DEFAULT_* tiers, and then the results
-          # file would name a model that never ran - the one failure this whole
-          # workflow exists to avoid.
-          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.model != '' && inputs.model || secrets.ANTHROPIC_MODEL }}
-          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.model != '' && inputs.model || secrets.ANTHROPIC_MODEL }}
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.model != '' && inputs.model || secrets.ANTHROPIC_MODEL }}
+          # Both providers arrive as plain env and the shell below picks one. The
+          # nested-expression alternative was unreadable, and this is the step that
+          # decides which company sees the diff - it should be legible.
+          #
+          # `alt` is a second endpoint for the independence question: two models from
+          # the same family share blind spots, so the strongest reviewer is one from
+          # a different provider entirely. Add ALT_BASE_URL / ALT_AUTH_TOKEN /
+          # ALT_MODEL as secrets to use it. Credentials are secrets, never inputs -
+          # a workflow_dispatch input is displayed unmasked in the run's own UI.
+          DEFAULT_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          DEFAULT_AUTH: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          DEFAULT_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          ALT_BASE_URL: ${{ secrets.ALT_BASE_URL }}
+          ALT_AUTH: ${{ secrets.ALT_AUTH_TOKEN }}
+          ALT_MODEL: ${{ secrets.ALT_MODEL }}
+          PROVIDER: ${{ inputs.provider }}
           # Through the environment, never interpolated into the script. A `${{ }}`
           # holding a dispatch input is pasted in as shell source before bash sees
           # it, so `--only "; curl evil"` would simply run. Only someone who can
           # already push here can dispatch this, but a repository whose whole
           # subject is "do not trust what came back" should not write that line.
+          MODEL_OVERRIDE: ${{ inputs.model }}
           TOOLS: ${{ inputs.tools }}
           MAX_TURNS: ${{ inputs.max-turns }}
           ONLY: ${{ inputs.only }}
         run: |
           set -o pipefail
+          if [ "$PROVIDER" = "alt" ]; then
+            # Fail here rather than letting it run into an authentication error
+            # thirty seconds and one confusing stack trace later.
+            if [ -z "$ALT_AUTH" ]; then
+              echo "provider: alt selected but ALT_AUTH_TOKEN is not set." >&2
+              echo "Add ALT_BASE_URL, ALT_AUTH_TOKEN and ALT_MODEL as repository secrets." >&2
+              exit 1
+            fi
+            export ANTHROPIC_BASE_URL="$ALT_BASE_URL"
+            export ANTHROPIC_AUTH_TOKEN="$ALT_AUTH"
+            MODEL="${MODEL_OVERRIDE:-$ALT_MODEL}"
+          else
+            export ANTHROPIC_BASE_URL="$DEFAULT_BASE_URL"
+            export ANTHROPIC_AUTH_TOKEN="$DEFAULT_AUTH"
+            MODEL="${MODEL_OVERRIDE:-$DEFAULT_MODEL}"
+          fi
+          # All four, exactly as action.yml does it. ANTHROPIC_MODEL on its own gets
+          # silently remapped to one of the DEFAULT_* tiers, and then the results
+          # file would name a model that never ran - the one failure this whole
+          # workflow exists to avoid.
+          export ANTHROPIC_MODEL="$MODEL"
+          export ANTHROPIC_DEFAULT_OPUS_MODEL="$MODEL"
+          export ANTHROPIC_DEFAULT_SONNET_MODEL="$MODEL"
+          export ANTHROPIC_DEFAULT_HAIKU_MODEL="$MODEL"
+          echo "provider=$PROVIDER model=$MODEL"
           args=(--max-turns "$MAX_TURNS" --out calibration/results.json)
           # `if`, not `[ ... ] && ...`: the runner's shell is `bash -e`, where a
           # failing test as the last command of an AND-list ends the whole step.
