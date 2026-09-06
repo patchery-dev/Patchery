@@ -95,7 +95,7 @@ function isPlaceholderTest(script = "") {
   return !script.trim() || /no test specified/i.test(script);
 }
 
-async function inspect(repoFullName, sha) {
+async function inspect(repoFullName, sha, { isTheFixCommit = true } = {}) {
   const out = { repo: repoFullName, sha, reject: null, test: "", stars: 0 };
   const repo = await api("https://api.github.com/repos/" + repoFullName);
   out.stars = repo.stargazers_count ?? 0;
@@ -108,23 +108,37 @@ async function inspect(repoFullName, sha) {
   out.pushed = (repo.pushed_at || "").slice(0, 10);
   if (repo.fork) return { ...out, reject: "fork" };
 
-  // The parent of the migration commit IS the case: the repository as it was the
-  // moment before someone fixed it.
+  // Which commit to pin to depends on what we were handed.
+  //
+  // A human's fix commit: the case is its PARENT - the repository as it was the
+  // moment before someone migrated. Its file list is the migration itself, so it
+  // answers "did this bump need call-site changes at all".
+  //
+  // A bot's bump PR: the base commit already IS that moment, and pinning to its
+  // parent would silently rewind the case one commit too far. Its file list belongs
+  // to whatever unrelated commit happened to be at the tip, and means nothing here -
+  // which is exactly the question this kind of case exists to ask, so we do not
+  // pretend to have an answer.
   const commit = await api("https://api.github.com/repos/" + repoFullName + "/commits/" + sha);
-  const parent = commit.parents?.[0]?.sha;
-  if (!parent) return { ...out, reject: "no parent commit (root commit)" };
-  out.before = parent;
   out.date = commit.commit?.author?.date?.slice(0, 10) || "";
-  out.files = (commit.files || []).map((f) => f.filename);
+  if (isTheFixCommit) {
+    const parent = commit.parents?.[0]?.sha;
+    if (!parent) return { ...out, reject: "no parent commit (root commit)" };
+    out.before = parent;
+    out.files = (commit.files || []).map((f) => f.filename);
+  } else {
+    out.before = sha;
+    out.files = null;
+  }
 
   let pkg;
   try {
     const file = await api(
-      "https://api.github.com/repos/" + repoFullName + "/contents/package.json?ref=" + parent
+      "https://api.github.com/repos/" + repoFullName + "/contents/package.json?ref=" + out.before
     );
     pkg = JSON.parse(Buffer.from(file.content, "base64").toString("utf8"));
   } catch {
-    return { ...out, reject: "no package.json at the parent commit" };
+    return { ...out, reject: "no package.json at the pinned commit" };
   }
 
   // Flagged, not rejected. The monorepo rule was written for "pick a target for an
@@ -210,7 +224,7 @@ if (DEPS) {
       seen.add(h.repo);
       try {
         const pr = await api("https://api.github.com/repos/" + h.repo + "/pulls/" + h.pr.split("/").pop());
-        const r = await inspect(h.repo, pr.base.sha);
+        const r = await inspect(h.repo, pr.base.sha, { isTheFixCommit: false });
         Object.assign(r, { pr: h.pr, bump: h.pkg + " v" + h.fromMajor + " -> v" + h.toMajor });
         (r.reject ? rejected : kept).push(r);
       } catch (err) {
@@ -273,8 +287,8 @@ for (const c of kept) {
   console.log("test command: npm test   ->  " + c.test);
   console.log("last push   : " + (c.pushed || "?"));
   if (c.note) console.log("note        : " + c.note);
-  console.log("files fixed : " + (c.files || []).slice(0, 6).join(", "));
-  console.log("still to check BY HAND: does `npm test` actually FAIL at the pinned commit?\n");
+  if (c.files) console.log("files fixed : " + c.files.slice(0, 6).join(", "));
+  console.log("TO CONFIRM: run the Patchery (verify a benchmark case) workflow with the values above.\n");
 }
 
 console.log("=== REJECTED (" + rejected.length + ") ===");

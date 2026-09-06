@@ -1,0 +1,180 @@
+# Checks whether a candidate benchmark case is real, without touching a laptop.
+#
+# A case is only useful to us if the story it tells is true: at this commit the
+# tests passed, and installing that version of that package is what turned them
+# red. Both halves have to be observed - a red CI badge on someone's PR proves
+# neither, because lint, a missing CI secret and an already-broken pipeline all
+# look the same from outside.
+#
+# This runs the candidate's own test suite in a throwaway container. Nothing is
+# committed, nothing is pushed, no model is called.
+name: Patchery (verify a benchmark case)
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Candidate repository, owner/name"
+        required: true
+      commit:
+        description: "Commit to pin to (the state BEFORE the migration)"
+        required: true
+      package:
+        description: "Package whose upgrade is meant to break the tests"
+        required: true
+      breaking-version:
+        description: "Version to install, e.g. 8 or 8.0.1"
+        required: true
+      test-command:
+        description: "How to run the tests"
+        required: false
+        default: "npm test"
+      target-dir:
+        description: "Directory to work in (for a monorepo, the sub-package)"
+        required: false
+        default: "."
+      node-version:
+        description: "Node version"
+        required: false
+        default: "20"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the candidate at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.commit }}
+          path: case
+          # The migration commit and its neighbours are all we need; a full
+          # history on a large repo is minutes of download for nothing.
+          fetch-depth: 1
+
+      - name: Use Node ${{ inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Report what is being verified
+        run: |
+          {
+            echo "## Verifying a benchmark case"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| repo | \`${{ inputs.repo }}\` |"
+            echo "| pinned to | \`${{ inputs.commit }}\` |"
+            echo "| package | \`${{ inputs.package }}\` |"
+            echo "| version to install | \`${{ inputs.breaking-version }}\` |"
+            echo "| test command | \`${{ inputs.test-command }}\` |"
+            echo "| directory | \`${{ inputs.target-dir }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Lockfile decides the tool. `npm ci` is refused when the lockfile and
+      # package.json disagree, which is common on an old commit, so a plain
+      # install is the fallback rather than a failure.
+      - name: Install dependencies
+        id: install
+        working-directory: case/${{ inputs.target-dir }}
+        run: |
+          set -o pipefail
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm install --frozen-lockfile 2>&1 | tail -40 || pnpm install --no-frozen-lockfile 2>&1 | tail -40
+            echo "pm=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f yarn.lock ]; then
+            corepack enable
+            yarn install --frozen-lockfile 2>&1 | tail -40 || yarn install 2>&1 | tail -40
+            echo "pm=yarn" >> "$GITHUB_OUTPUT"
+          else
+            npm ci 2>&1 | tail -40 || npm install 2>&1 | tail -40
+            echo "pm=npm" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Half one of the story: the tests are green here. If they are not, the
+      # case is dead on arrival - a suite that is already red cannot be used to
+      # show that an upgrade broke it, and cannot be used to show a fix worked.
+      - name: Run the tests BEFORE the upgrade
+        id: before
+        working-directory: case/${{ inputs.target-dir }}
+        timeout-minutes: 15
+        run: |
+          set +e
+          ${{ inputs.test-command }} > /tmp/before.log 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          tail -60 /tmp/before.log
+
+      - name: Install the breaking version
+        id: bump
+        if: steps.before.outputs.exit == '0'
+        working-directory: case/${{ inputs.target-dir }}
+        run: |
+          set -o pipefail
+          PM='${{ steps.install.outputs.pm }}'
+          SPEC='${{ inputs.package }}@${{ inputs.breaking-version }}'
+          if [ "$PM" = "pnpm" ]; then
+            pnpm add "$SPEC" 2>&1 | tail -30
+          elif [ "$PM" = "yarn" ]; then
+            yarn add "$SPEC" 2>&1 | tail -30
+          else
+            npm install "$SPEC" 2>&1 | tail -30
+          fi
+          node -p "'installed: ' + require('${{ inputs.package }}/package.json').version" || true
+
+      # Half two: the same suite, same machine, one thing changed.
+      - name: Run the tests AFTER the upgrade
+        id: after
+        if: steps.before.outputs.exit == '0'
+        working-directory: case/${{ inputs.target-dir }}
+        timeout-minutes: 15
+        run: |
+          set +e
+          ${{ inputs.test-command }} > /tmp/after.log 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          tail -80 /tmp/after.log
+
+      # One line, so a candidate can be accepted or dropped without reading logs.
+      - name: Verdict
+        if: always()
+        run: |
+          BEFORE='${{ steps.before.outputs.exit }}'
+          AFTER='${{ steps.after.outputs.exit }}'
+          {
+            echo ""
+            echo "### Verdict"
+            echo ""
+            if [ -z "$BEFORE" ]; then
+              echo "**UNKNOWN** - the tests never ran. Install failed, or the run timed out."
+              echo ""
+              echo "Not evidence against the case. Try another Node version, or a narrower \`target-dir\`."
+            elif [ "$BEFORE" != "0" ]; then
+              echo "**NOT A CASE** - the tests were already failing at this commit (exit $BEFORE)."
+              echo ""
+              echo "Nothing can be proved from here: a suite that starts red cannot go from red to green because of us."
+            elif [ "$AFTER" = "0" ]; then
+              echo "**NOT A CASE** - the tests still pass with \`${{ inputs.package }}@${{ inputs.breaking-version }}\` (exit 0)."
+              echo ""
+              echo "The upgrade did not break this suite. Either the tests do not cover the changed calls, or they were excluded from \`${{ inputs.test-command }}\`."
+            elif [ -z "$AFTER" ]; then
+              echo "**UNKNOWN** - green before, but the second run did not finish. Install of the new version failed, or it timed out."
+            else
+              echo "**VALID CASE** - green before, red after (exit $AFTER)."
+              echo ""
+              echo "The break is real and this suite sees it. Patchery can be pointed at it."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The full logs, so a verdict can be argued with rather than trusted.
+      - name: Keep the test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: /tmp/*.log
+          if-no-files-found: ignore
