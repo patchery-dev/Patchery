@@ -836,6 +836,27 @@ check("it only claims a different model when one actually ran", () => {
   assert.ok(!/different model/.test(renderReviewSection(outcome, review, { model: "x", differentModel: false })));
   assert.match(renderReviewSection(outcome, review, { model: "x", differentModel: true }), /different model/);
 });
+// The provider claim is the strongest one available, so it must be the hardest to
+// make by accident: only when the run was actually pointed somewhere else.
+check("a different provider is claimed only when one was configured", () => {
+  const review = parseReview(goodReview()).review;
+  const outcome = reviewOutcome({ review });
+  const withProvider = renderReviewSection(outcome, review, {
+    model: "deepseek-v4",
+    differentModel: true,
+    differentProvider: true,
+  });
+  assert.match(withProvider, /different provider/);
+  assert.match(withProvider, /blind spots/);
+  const sameProvider = renderReviewSection(outcome, review, { model: "x", differentModel: true });
+  assert.ok(!/different provider/.test(sameProvider), "must not claim a provider it did not use");
+});
+check("no provider and no model means no claim about weights at all", () => {
+  const review = parseReview(goodReview()).review;
+  const md = renderReviewSection(reviewOutcome({ review }), review, { model: "glm-5.3" });
+  assert.ok(!/different provider|different model/.test(md));
+  assert.match(md, /no shared context/);
+});
 check("the disclosure sentence is always there", () =>
   assert.match(
     renderReviewSection(reviewOutcome({ review: parseReview(goodReview()).review }), parseReview(goodReview()).review, {}),

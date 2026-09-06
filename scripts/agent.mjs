@@ -83,6 +83,16 @@ const STALL_NO_EDIT_TURNS = Number.isFinite(rawNoEdit) && rawNoEdit >= 2 ? Math.
 const verifyMode = normalizeVerifyMode(env("SMA_VERIFY_MODE"));
 const VERIFY_MODE = verifyMode.mode;
 const VERIFY_MODEL = env("SMA_VERIFY_MODEL");
+// A different provider is the strongest independence lever there is: two models from
+// the same family share training data and idioms, and a model is least likely to flag
+// its own preferred way of getting something wrong.
+//
+// It is also a real privacy expansion, and that must be said out loud rather than
+// buried: pointing the reviewer at a second endpoint means a second party sees the
+// diff of the code under review. That is a decision for whoever runs this, not a
+// default - both inputs are empty unless someone sets them deliberately.
+const VERIFY_BASE_URL = env("SMA_VERIFY_BASE_URL");
+const VERIFY_AUTH_TOKEN = env("SMA_VERIFY_AUTH_TOKEN");
 // Measured, not guessed: at 6 the reviewer spent every turn reading - one Glob, two
 // Greps for other call sites, five Reads - and ran out before it could answer, which
 // scores as "unavailable" and wastes the whole call.
@@ -97,7 +107,14 @@ const REVIEW_TOOLS = ["Read", "Grep", "Glob"];
 
 // Literal values that must never reach a log or a PR body, whatever the
 // pattern matcher thinks. The run's own credentials are the obvious case.
-const SECRET_VALUES = [env("ANTHROPIC_AUTH_TOKEN"), env("ANTHROPIC_API_KEY")].filter(Boolean);
+// The reviewer's own credential belongs here too. It is a second key, on a path no
+// pattern would recognise, and everything this script prints ends up in a public
+// Actions log or a public PR body.
+const SECRET_VALUES = [
+  env("ANTHROPIC_AUTH_TOKEN"),
+  env("ANTHROPIC_API_KEY"),
+  VERIFY_AUTH_TOKEN,
+].filter(Boolean);
 const clean = (text) => redactSecrets(text, SECRET_VALUES);
 
 // Everything printed goes through redaction: test output and agent chatter are
@@ -730,20 +747,30 @@ let reviewMeta = { model: "", differentModel: false, costUsd: 0, permissionDenia
       maxTurns: VERIFY_MAX_TURNS,
       outputFormat: { type: "json_schema", schema: REVIEW_SCHEMA },
     };
-    if (VERIFY_MODEL) {
-      reviewOpts.model = VERIFY_MODEL;
-      // The composite action pins ANTHROPIC_MODEL and all three DEFAULT_* vars to
-      // the fixer's model. Passing options.model alone gets silently remapped, and
-      // then the PR claims "a different model" when none ran. Spread process.env:
-      // a partial object here wipes PATH.
-      reviewOpts.env = {
-        ...process.env,
-        ANTHROPIC_MODEL: VERIFY_MODEL,
-        ANTHROPIC_DEFAULT_OPUS_MODEL: VERIFY_MODEL,
-        ANTHROPIC_DEFAULT_SONNET_MODEL: VERIFY_MODEL,
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: VERIFY_MODEL,
-        CLAUDE_CODE_SUBAGENT_MODEL: VERIFY_MODEL,
-      };
+    if (VERIFY_MODEL || VERIFY_BASE_URL || VERIFY_AUTH_TOKEN) {
+      // Spread process.env: a partial object here wipes PATH.
+      const reviewEnv = { ...process.env };
+      if (VERIFY_MODEL) {
+        reviewOpts.model = VERIFY_MODEL;
+        // The composite action pins ANTHROPIC_MODEL and all three DEFAULT_* vars to
+        // the fixer's model. Passing options.model alone gets silently remapped, and
+        // then the PR claims "a different model" when none ran.
+        reviewEnv.ANTHROPIC_MODEL = VERIFY_MODEL;
+        reviewEnv.ANTHROPIC_DEFAULT_OPUS_MODEL = VERIFY_MODEL;
+        reviewEnv.ANTHROPIC_DEFAULT_SONNET_MODEL = VERIFY_MODEL;
+        reviewEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL = VERIFY_MODEL;
+        reviewEnv.CLAUDE_CODE_SUBAGENT_MODEL = VERIFY_MODEL;
+      }
+      // A second endpoint, for the case the independence claim is actually about:
+      // a different provider entirely, not just a different name on the same one.
+      if (VERIFY_BASE_URL) reviewEnv.ANTHROPIC_BASE_URL = VERIFY_BASE_URL;
+      if (VERIFY_AUTH_TOKEN) {
+        reviewEnv.ANTHROPIC_AUTH_TOKEN = VERIFY_AUTH_TOKEN;
+        // Otherwise the fixer's key is still in the environment and a provider that
+        // prefers x-api-key would quietly authenticate as the wrong account.
+        delete reviewEnv.ANTHROPIC_API_KEY;
+      }
+      reviewOpts.env = reviewEnv;
     }
 
     let callError = null;
@@ -817,6 +844,10 @@ let reviewMeta = { model: "", differentModel: false, costUsd: 0, permissionDenia
       model: reviewModels.join(", ") || VERIFY_MODEL || "unknown",
       // Only claim a different model when the telemetry says one actually ran.
       differentModel: reviewModels.length > 0 && reviewModels.every((m) => !modelsUsed.includes(m)),
+      // A separate claim, and a stronger one. Unlike the model, this is not visible in
+      // telemetry - it is true because the run was configured to send the review
+      // somewhere else, which is a fact about this process, not about the answer.
+      differentProvider: !!VERIFY_BASE_URL && VERIFY_BASE_URL !== baseUrl,
       costUsd: reviewResult?.total_cost_usd ?? 0,
       permissionDenials: (reviewResult?.permission_denials ?? []).length,
     };

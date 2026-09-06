@@ -110,6 +110,22 @@ inputs:
       telemetry confirms one actually ran.
     required: false
     default: ""
+  verify-base-url:
+    description: >-
+      Send the review to a different provider. This is the strongest form of
+      independence available - two models from the same family share training data
+      and blind spots, and a model is least likely to flag its own preferred way of
+      getting something wrong. It is also a privacy decision: a second endpoint
+      means a second party sees the diff of the code under review. Empty by default
+      for exactly that reason.
+    required: false
+    default: ""
+  verify-auth-token:
+    description: >-
+      Credential for verify-base-url. Pass it from GitHub Secrets. It is redacted
+      from logs, the step summary and the pull request body like every other key.
+    required: false
+    default: ""
   verify-min-confidence:
     description: >-
       Below this confidence the reviewer's verdict is recorded as a concern rather
@@ -214,6 +230,8 @@ runs:
         SMA_STALL_NO_EDIT_TURNS: ${{ inputs.stall-no-edit-turns }}
         SMA_VERIFY_MODE: ${{ inputs.verify-mode }}
         SMA_VERIFY_MODEL: ${{ inputs.verify-model }}
+        SMA_VERIFY_BASE_URL: ${{ inputs.verify-base-url }}
+        SMA_VERIFY_AUTH_TOKEN: ${{ inputs.verify-auth-token }}
         SMA_VERIFY_MIN_CONFIDENCE: ${{ inputs.verify-min-confidence }}
         SMA_VERIFY_MAX_TURNS: ${{ inputs.verify-max-turns }}
         SMA_VERIFY_MAX_DIFF_BYTES: ${{ inputs.verify-max-diff-bytes }}

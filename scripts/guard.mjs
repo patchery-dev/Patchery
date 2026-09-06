@@ -1079,7 +1079,13 @@ function escapeForPr(text) {
  * @returns {string}
  */
 export function renderReviewSection(outcome, review, meta = {}) {
-  const { model = "", differentModel = false, costUsd = 0, permissionDenials = 0 } = meta;
+  const {
+    model = "",
+    differentModel = false,
+    differentProvider = false,
+    costUsd = 0,
+    permissionDenials = 0,
+  } = meta;
   if (!outcome || outcome.placement === "none") {
     return (
       "### Independent review\n\n" + (outcome?.headline ?? "The independent review did not run.")
@@ -1099,10 +1105,17 @@ export function renderReviewSection(outcome, review, meta = {}) {
   lines.push(
     "write access, could not run anything, and was not shown the fixing agent's explanation."
   );
+  // Three different strengths of claim, and only ever the one that is actually true.
+  // "A different provider" is the strongest and is the only one that answers the
+  // shared-blind-spots objection; "a different model" is weaker; the fallback claims
+  // nothing about weights at all.
   lines.push(
-    differentModel
-      ? "It ran on a different model (`" + model + "`)."
-      : "It ran as a separate agent with no shared context (`" + (model || "unknown") + "`)."
+    differentProvider
+      ? "It ran on a different provider entirely (`" + (model || "unknown") + "`), so it does " +
+        "not share the fixing agent's weights, training data or blind spots."
+      : differentModel
+        ? "It ran on a different model (`" + model + "`)."
+        : "It ran as a separate agent with no shared context (`" + (model || "unknown") + "`)."
   );
   lines.push("");
 
