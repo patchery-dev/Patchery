@@ -167,11 +167,43 @@ jobs:
             *) echo "::warning::asked for ${{ inputs.breaking-version }}, got $INSTALLED - the break may not be present" ;;
           esac
 
+      # Confirm the repository is actually red before handing it to the agent.
+      #
+      # It was not, three runs in a row, and nothing in the workflow noticed: the
+      # bump reported content-disposition@3.0.0 installed and the suite came back
+      # green, while verify-case reproduced ERR_REQUIRE_ESM twice from what looked
+      # like the same container - same Node, same version, same baseline of 1255
+      # passing and 2 pending. One of those two runs is measuring something other
+      # than what it reports, and neither log says which.
+      #
+      # A benchmark that hands an unbroken repository to the agent and writes down
+      # "nothing to fix" is not measuring the agent. So the red state becomes a
+      # precondition, checked and recorded, rather than an assumption inherited
+      # from a different workflow's verdict.
+      - name: Confirm the break is present
+        id: broken
+        working-directory: case/${{ inputs.target-dir }}
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          set +e
+          echo "resolved : $(node -p "require.resolve('${{ inputs.package }}')" 2>&1 | head -1)"
+          echo "on disk  : $(node "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)"
+          echo "node     : $(node --version)"
+          ${{ inputs.test-command }} > /tmp/broken.log 2>&1
+          EXIT=$?
+          echo "exit=$EXIT" >> "$GITHUB_OUTPUT"
+          echo "test exit: $EXIT"
+          tail -25 /tmp/broken.log
+          if [ "$EXIT" = "0" ]; then
+            echo "::warning::the suite is green after installing ${{ inputs.package }}@${{ inputs.breaking-version }} - there is no break here to fix"
+          fi
+
       # Everything above exists to reach this line honestly: somebody else's
       # repository, red, for a real reason.
       - name: Run Patchery
         id: patchery
-        if: steps.census.outputs.exit == '0'
+        if: steps.broken.outputs.exit != '0' && steps.broken.outputs.exit != ''
         uses: ./patchery
         continue-on-error: true
         with:
@@ -210,6 +242,7 @@ jobs:
             --before /tmp/census-before.json \
             --after /tmp/census-after.json \
             --baseline-exit '${{ steps.census.outputs.exit }}' \
+            --broken-exit '${{ steps.broken.outputs.exit }}' \
             --final-exit '${{ steps.recount.outputs.exit }}' \
             --action-outcome '${{ steps.patchery.outputs.outcome }}' \
             --changed '${{ steps.patchery.outputs.changed }}' \

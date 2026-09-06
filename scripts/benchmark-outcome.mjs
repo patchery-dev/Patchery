@@ -50,6 +50,7 @@ export function benchmarkOutcome({
   after = null,
   version = "",
   installed = "",
+  brokenExit = "",
 } = {}) {
   if (baselineExit !== "0") {
     return {
@@ -71,6 +72,28 @@ export function benchmarkOutcome({
         " but v" +
         installed +
         " is what installed - the break was not present, so nothing here is about Patchery",
+    };
+  }
+
+  // The break has to be visible in THIS container before the agent is graded in
+  // it. Three runs handed express to Patchery with content-disposition@3 installed
+  // and the suite green; Patchery said "already passes, nothing to fix", which was
+  // true and got written down as a fact about the product. verify-case reproduced
+  // the same case red, twice. Whatever the difference is, a row from the green
+  // container describes our setup, not the agent.
+  if (brokenExit === "0") {
+    return {
+      outcome: "BLOCKED",
+      detail:
+        "the suite was still green after installing v" +
+        (version || "?") +
+        " - there was no break in this container for Patchery to fix",
+    };
+  }
+  if (brokenExit === "") {
+    return {
+      outcome: "BLOCKED",
+      detail: "the run never established whether the break was present",
     };
   }
 
@@ -163,6 +186,7 @@ if (isMain) {
     review: a.review,
     version: a.version,
     installed: a.installed,
+    brokenExit: a["broken-exit"],
     before,
     after,
   });

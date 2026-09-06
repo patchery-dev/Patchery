@@ -1704,7 +1704,7 @@ check("outcome BLOCKED when the case never started green", () => {
 
 check("outcome FIXED when the tests are green and the suite is intact", () => {
   const r = benchmarkOutcome({
-    baselineExit: "0", finalExit: "0", changed: "true",
+    baselineExit: "0", brokenExit: "1", finalExit: "0", changed: "true",
     before: census(JEST_GREEN), after: census(JEST_GREEN),
   });
   assert.strictEqual(r.outcome, "FIXED");
@@ -1715,7 +1715,7 @@ check("outcome FIXED when the tests are green and the suite is intact", () => {
 check("outcome WRONG when the tests are green but fewer of them ran", () => {
   const shrunk = "Tests:       0 skipped, 900 passed, 900 total\n";
   const r = benchmarkOutcome({
-    baselineExit: "0", finalExit: "0", changed: "true",
+    baselineExit: "0", brokenExit: "1", finalExit: "0", changed: "true",
     before: census(JEST_GREEN), after: census(shrunk),
   });
   assert.strictEqual(r.outcome, "WRONG");
@@ -1724,7 +1724,7 @@ check("outcome WRONG when the tests are green but fewer of them ran", () => {
 
 check("outcome WRONG when a change shipped and the tests are still red", () => {
   const r = benchmarkOutcome({
-    baselineExit: "0", finalExit: "1", changed: "true",
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "true",
     before: census(JEST_GREEN), after: census(JEST_RED),
   });
   assert.strictEqual(r.outcome, "WRONG");
@@ -1734,14 +1734,14 @@ check("outcome WRONG when a change shipped and the tests are still red", () => {
 // separately or the table measures somebody else's product.
 check("outcome REFUSED is kept apart from NO-CHANGE", () => {
   const refused = benchmarkOutcome({
-    baselineExit: "0", finalExit: "1", changed: "false",
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false",
     actionOutcome: "refused: the reviewer refuted the fix",
     before: census(JEST_GREEN), after: census(JEST_RED),
   });
   assert.strictEqual(refused.outcome, "REFUSED");
 
   const nothing = benchmarkOutcome({
-    baselineExit: "0", finalExit: "1", changed: "false",
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false",
     actionOutcome: "the agent made no edits",
     before: census(JEST_GREEN), after: census(JEST_RED),
   });
@@ -1750,7 +1750,7 @@ check("outcome REFUSED is kept apart from NO-CHANGE", () => {
 
 check("a refuted review counts as REFUSED even when the outcome is quiet", () => {
   const r = benchmarkOutcome({
-    baselineExit: "0", finalExit: "1", changed: "false", review: "refuted",
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false", review: "refuted",
     before: census(JEST_GREEN), after: census(JEST_RED),
   });
   assert.strictEqual(r.outcome, "REFUSED");
@@ -1768,7 +1768,7 @@ check("parseArgs turns a missing flag into an empty string, not undefined", () =
 // dependency may never have been upgraded at all.
 check("outcome BLOCKED when the requested version is not what installed", () => {
   const r = benchmarkOutcome({
-    baselineExit: "0", finalExit: "0", changed: "false",
+    baselineExit: "0", brokenExit: "1", finalExit: "0", changed: "false",
     version: "3", installed: "1.0.0",
   });
   assert.strictEqual(r.outcome, "BLOCKED");
@@ -1777,7 +1777,7 @@ check("outcome BLOCKED when the requested version is not what installed", () => 
 
 check("a matching major is not treated as a mismatch", () => {
   const r = benchmarkOutcome({
-    baselineExit: "0", finalExit: "1", changed: "false",
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false",
     version: "3", installed: "3.0.1", actionOutcome: "refused",
   });
   assert.strictEqual(r.outcome, "REFUSED");
@@ -1785,7 +1785,7 @@ check("a matching major is not treated as a mismatch", () => {
 
 check("an unknown installed version does not block the run", () => {
   const r = benchmarkOutcome({
-    baselineExit: "0", finalExit: "1", changed: "false", version: "3", installed: "",
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false", version: "3", installed: "",
   });
   assert.strictEqual(r.outcome, "NO-CHANGE");
 });
@@ -1849,6 +1849,43 @@ check("findInstalled steps over a corrupt package.json", () => {
     })
   );
   assert.strictEqual(r.version, "10.1.0");
+});
+
+
+// The break has to exist in the container doing the grading. Three benchmark
+// runs handed express to Patchery with the new major installed and the suite
+// green; the agent said "already passes, nothing to fix" - true, and written
+// down as a fact about the product rather than about our setup.
+check("outcome BLOCKED when the suite is still green after the upgrade", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0",
+    brokenExit: "0",
+    version: "3",
+    installed: "3.0.0",
+    changed: "false",
+    actionOutcome: "nothing-to-do",
+  });
+  assert.strictEqual(r.outcome, "BLOCKED");
+  assert.match(r.detail, /no break in this container/);
+});
+
+check("outcome BLOCKED when the run never checked whether the break was there", () => {
+  const r = benchmarkOutcome({ baselineExit: "0", brokenExit: "", changed: "false" });
+  assert.strictEqual(r.outcome, "BLOCKED");
+});
+
+// A red suite is the precondition, not the finding: once it is met, the agent's
+// own behaviour is what gets graded.
+check("a confirmed break lets the agent be graded normally", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0",
+    brokenExit: "1",
+    version: "3",
+    installed: "3.0.0",
+    changed: "false",
+    actionOutcome: "refused: the reviewer refuted the fix",
+  });
+  assert.strictEqual(r.outcome, "REFUSED");
 });
 
 console.log("\n" + pass + " checks passed.\n");
