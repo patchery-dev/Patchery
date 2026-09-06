@@ -270,6 +270,18 @@ export function redactSecrets(text, extraValues = []) {
   ];
   for (const re of patterns) s = s.replace(re, "[REDACTED]");
 
+  // Credentials inside a URL. Every pattern above looks for a token shaped like a
+  // token; this is a password that can be shaped like anything, and the only
+  // thing marking it is where it sits. `https://user:secret@host` is an ordinary
+  // way to write a custom endpoint and it was going through untouched.
+  //
+  // The scheme and host are kept, because a log that says which endpoint was
+  // called is worth having and neither of them is the secret.
+  s = s.replace(
+    /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi,
+    (_m, scheme) => scheme + "[REDACTED]@"
+  );
+
   // KEY=value / "token": "value" style assignments, where the name itself says
   // this is a credential. Keeps the name so the log still makes sense.
   s = s.replace(
@@ -1872,6 +1884,10 @@ export function failureSignature(output = "") {
       .replace(/:\d+(?::\d+)?/g, "")
       .replace(/\b[0-9a-f]{7,}\b/gi, "<hash>")
       .replace(/\b\d+(?:\.\d+)?\s*m?s\b/gi, "<time>")
+      // Runners print the duration in brackets - "5 passed (2.3s)" - and replacing
+      // the number left the brackets behind, so the same failure re-run compared
+      // unequal purely because it took a different length of time.
+      .replace(/[([{]\s*<time>\s*[)\]}]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
     if (norm) seen.add(norm);

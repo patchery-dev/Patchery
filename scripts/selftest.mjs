@@ -2288,4 +2288,48 @@ check("packageBindings reads scoped packages and their subpaths", () => {
   assert.strictEqual(packageBindings("import x from '@mui/material/Button'\nx()", "@mui/material").count, 1);
 });
 
+
+// Credentials inside a URL. Every other pattern looks for a token shaped like a
+// token; this is a password that can be shaped like anything, and only its
+// position marks it. `anthropic-base-url` is exactly where one would appear.
+check("redactSecrets removes credentials embedded in a URL", () => {
+  const out = redactSecrets("endpoint https://user:supersecret@api.example.com/v1 ok");
+  assert.ok(!out.includes("supersecret"), out);
+  assert.ok(!out.includes("user:"), out);
+});
+
+// The scheme and host stay: a log that says which endpoint was called is worth
+// having, and neither of them is the secret.
+check("redactSecrets keeps the scheme and host of a redacted URL", () => {
+  const out = redactSecrets("https://user:supersecret@api.example.com/v1");
+  assert.match(out, /^https:\/\//);
+  assert.ok(out.includes("api.example.com"), out);
+});
+
+check("redactSecrets leaves an ordinary URL alone", () => {
+  const url = "https://api.example.com/v1/messages";
+  assert.strictEqual(redactSecrets("calling " + url), "calling " + url);
+});
+
+// A colon in a URL is usually a port, not a password.
+check("redactSecrets does not mistake a port for a credential", () => {
+  const url = "http://localhost:3000/health";
+  assert.strictEqual(redactSecrets("calling " + url), "calling " + url);
+});
+
+// The signature normaliser exists so a re-run of the same failure compares equal.
+// A duration printed in brackets was surviving it, so an identical failure could
+// be reported as a different one.
+check("failureSignature ignores a duration wherever it appears", () => {
+  const a = failureSignature("Tests: 1 failed, 5 passed");
+  const b = failureSignature("Tests: 1 failed, 5 passed (2.3s)");
+  assert.deepStrictEqual(a, b);
+});
+
+check("failureSignature still separates genuinely different failures", () => {
+  const a = failureSignature("TypeError: parse is not a function");
+  const b = failureSignature("TypeError: format is not a function");
+  assert.notDeepStrictEqual(a, b);
+});
+
 console.log("\n" + pass + " checks passed.\n");

@@ -193,6 +193,11 @@ const SECRET_VALUES = [
   env("ANTHROPIC_AUTH_TOKEN"),
   env("ANTHROPIC_API_KEY"),
   VERIFY_AUTH_TOKEN,
+  // The endpoints too. They are passed as secrets, they can carry credentials in
+  // the URL itself, and which provider a run went to is not always something the
+  // repository owner wants in a public log.
+  env("ANTHROPIC_BASE_URL"),
+  VERIFY_BASE_URL,
 ].filter(Boolean);
 const clean = (text) => redactSecrets(text, SECRET_VALUES);
 
@@ -986,11 +991,25 @@ if (!after.ok) {
       agentNotes: agentText.length ? agentText[agentText.length - 1].trim() : "",
     });
   }
+  // Three outcomes, not two. `changed` deliberately means "the original complaint
+  // stopped and a new one took its place" - progress. But a run where the old
+  // failure is still there AND new ones appeared is the opposite of progress, and
+  // it was being reported in the same words as a run that changed nothing at all.
+  // The change is reverted in every case; this only decides what is said.
+  const alsoBroke = !diff.changed && (diff.appeared || []).length > 0;
+  if (alsoBroke) {
+    log("\nThe original failure is still there, and these are new:");
+    for (const line of diff.appeared.slice(0, 5)) log("  - " + line);
+  }
   fail(
     diff.changed
       ? "Tests still fail, but not the same way they failed before. Everything was " +
           "reverted and no PR will be opened - the comparison above says what to try next."
-      : "Tests still fail after the fix. Everything was reverted, no PR will be opened."
+      : alsoBroke
+        ? "Tests still fail the way they did before, and the change added " +
+          diff.appeared.length +
+          " new failure(s) on top. Everything was reverted, no PR will be opened."
+        : "Tests still fail after the fix. Everything was reverted, no PR will be opened."
   );
 }
 
