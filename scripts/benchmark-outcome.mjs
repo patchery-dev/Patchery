@@ -48,11 +48,29 @@ export function benchmarkOutcome({
   review = "",
   before = null,
   after = null,
+  version = "",
+  installed = "",
 } = {}) {
   if (baselineExit !== "0") {
     return {
       outcome: "BLOCKED",
       detail: "the case never started green on our runner, so nothing could be measured",
+    };
+  }
+
+  // If the version we asked for is not the version that landed, everything below
+  // is measuring an unbroken repository. The first run of this benchmark ended
+  // green and read as "Patchery had nothing to offer" - a sentence about the
+  // product, from a container where the break may never have existed.
+  if (version && installed && String(installed).split(".")[0] !== String(version).split(".")[0]) {
+    return {
+      outcome: "BLOCKED",
+      detail:
+        "asked for v" +
+        version +
+        " but v" +
+        installed +
+        " is what installed - the break was not present, so nothing here is about Patchery",
     };
   }
 
@@ -143,6 +161,8 @@ if (isMain) {
     actionOutcome: a["action-outcome"],
     changed: a.changed,
     review: a.review,
+    version: a.version,
+    installed: a.installed,
     before,
     after,
   });
@@ -150,6 +170,7 @@ if (isMain) {
     repo: a.repo,
     package: a.package,
     version: a.version,
+    installed: a.installed || "",
     outcome,
     detail,
     before,

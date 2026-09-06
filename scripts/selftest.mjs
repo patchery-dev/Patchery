@@ -1761,4 +1761,32 @@ check("parseArgs turns a missing flag into an empty string, not undefined", () =
   assert.strictEqual(a.changed, "");
 });
 
+
+// A run where the break never installed is not a fact about Patchery. The first
+// benchmark run ended green and was filed as NO-CHANGE, from a container whose
+// dependency may never have been upgraded at all.
+check("outcome BLOCKED when the requested version is not what installed", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "0", changed: "false",
+    version: "3", installed: "1.0.0",
+  });
+  assert.strictEqual(r.outcome, "BLOCKED");
+  assert.match(r.detail, /the break was not present/);
+});
+
+check("a matching major is not treated as a mismatch", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", changed: "false",
+    version: "3", installed: "3.0.1", actionOutcome: "refused",
+  });
+  assert.strictEqual(r.outcome, "REFUSED");
+});
+
+check("an unknown installed version does not block the run", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", changed: "false", version: "3", installed: "",
+  });
+  assert.strictEqual(r.outcome, "NO-CHANGE");
+});
+
 console.log("\n" + pass + " checks passed.\n");

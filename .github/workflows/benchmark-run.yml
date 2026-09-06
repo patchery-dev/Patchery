@@ -155,6 +155,17 @@ jobs:
           if [ "$PM" = "pnpm" ]; then pnpm add "$SPEC" 2>&1 | tail -10
           elif [ "$PM" = "yarn" ]; then yarn add "$SPEC" 2>&1 | tail -10
           else npm install "$SPEC" 2>&1 | tail -10; fi
+          # Say which version actually landed. The first run of this workflow ended
+          # with the tests green when they should have been red, and there was no
+          # way to tell whether the break had been installed at all - the one line
+          # that would have answered it had been left out of this step.
+          INSTALLED=$(node -p "require('${{ inputs.package }}/package.json').version" 2>/dev/null || echo "NOT RESOLVABLE")
+          echo "installed: ${{ inputs.package }}@$INSTALLED"
+          echo "installed=$INSTALLED" >> "$GITHUB_OUTPUT"
+          case "$INSTALLED" in
+            '${{ inputs.breaking-version }}'*) ;;
+            *) echo "::warning::asked for ${{ inputs.breaking-version }}, got $INSTALLED - the break may not be present" ;;
+          esac
 
       # Everything above exists to reach this line honestly: somebody else's
       # repository, red, for a real reason.
@@ -207,6 +218,7 @@ jobs:
             --repo '${{ inputs.repo }}' \
             --package '${{ inputs.package }}' \
             --version '${{ inputs.breaking-version }}' \
+            --installed '${{ steps.bump.outputs.installed }}' \
             --out /tmp/benchmark.json | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Keep everything this run produced

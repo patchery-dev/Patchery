@@ -65,6 +65,21 @@ const bool = (name, fallback) => {
 
 const WORKSPACE = path.resolve(env("SMA_WORKSPACE", process.cwd()));
 const TARGET_DIR = path.resolve(WORKSPACE, env("SMA_TARGET_DIR", "."));
+
+// Git runs from the directory we were told to fix, not from the workspace root.
+//
+// In the ordinary case they are the same and this changes nothing. They come
+// apart when the repository being fixed sits inside the workspace rather than
+// being it - a benchmark run that checks out somebody else's repository next to
+// Patchery, a job that checks out with `path:`, a submodule. The workspace root
+// is then not a git repository at all, and the run stopped with "Not a git
+// repository" while a perfectly good checkout sat one directory down.
+//
+// Asking from the target directory is also simply more correct: the repository
+// we must diff is the one containing the code we were asked to change. Porcelain
+// and diff output stay root-relative regardless of where git is invoked, so
+// every path in the guard keeps meaning what it meant before.
+const GIT_CWD = fs.existsSync(TARGET_DIR) ? TARGET_DIR : WORKSPACE;
 const PACKAGE = env("SMA_PACKAGE");
 const CHANGELOG = env("SMA_CHANGELOG");
 const TEST_COMMAND = env("SMA_TEST_COMMAND", "npm test");
@@ -237,7 +252,7 @@ function git(args, { trim = true } = {}) {
   // caller here reads a diff or a file list, and on a large migration a 1 MB diff is
   // ordinary - the default turned "big change" into "command failed", which callers
   // then quietly treated as "no change".
-  const out = execFileSync("git", args, { cwd: WORKSPACE, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  const out = execFileSync("git", args, { cwd: GIT_CWD, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   // Porcelain output must NOT be trimmed: its first column is a status field
   // that is often a leading space (" M path"). Trimming eats it, and then the
   // fixed-width parse silently chops the first character off the path.
@@ -339,7 +354,11 @@ let repoRoot;
 try {
   repoRoot = git(["rev-parse", "--show-toplevel"]);
 } catch {
-  fail("Not a git repository. Without git I cannot verify what the agent changed, so I stop here.");
+  fail(
+    "Not a git repository: " +
+      GIT_CWD +
+      ". Without git I cannot verify what the agent changed, so I stop here."
+  );
 }
 log("git root     : " + repoRoot);
 
