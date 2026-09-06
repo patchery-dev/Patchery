@@ -1742,6 +1742,7 @@ export function buildDiagnosis({
   spend = "",
   discovered = [],
   agentNotes = "",
+  classification = null,
 } = {}) {
   const reads = discovered.filter((k) => k.startsWith("read:")).map((k) => k.slice(5));
   const searches = discovered.filter((k) => k.startsWith("grep:") || k.startsWith("glob:"));
@@ -1785,6 +1786,25 @@ export function buildDiagnosis({
     ...section("Commands it ran", commands, (c) => "- `" + c + "`"),
     reads.length || searches.length || commands.length ? "" : "It got no further than starting.\n",
     agentNotes ? "### Its own last word\n\n" + agentNotes + "\n" : "",
+    // The single most useful line for whoever picks this up. A run that ends
+    // without a fix still established what kind of break this is, and on the
+    // express run that diagnosis - correct, and expensive to reach - was thrown
+    // away with everything else.
+    ...(classification && classification.kind
+      ? [
+          "### What kind of break this is",
+          "",
+          "`" + classification.kind + "` - " + classification.what,
+          "",
+          classification.inScope === false
+            ? "**This class cannot be fixed by editing call sites.** " + classification.strategy
+            : classification.inScope === "partial"
+              ? "**Only partly a call-site problem.** " + classification.strategy
+              : classification.strategy,
+          "",
+          classification.evidence ? "From the failure itself:\n\n```\n" + classification.evidence + "\n```\n" : "",
+        ]
+      : []),
     "### What would help",
     "",
     "- If the list above stops short of the files that actually matter, the migration is",

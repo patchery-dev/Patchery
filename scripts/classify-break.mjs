@@ -45,11 +45,22 @@ const KINDS = [
     inScope: "partial",
     test: /ERR_REQUIRE_ESM|require\(\) of ES Module/,
     what: "the package now ships only as an ES module, and the code still loads it the old way",
+    // Written as a boundary, not a recipe. Given the two options and nothing
+    // else, the agent on express spent its budget building a third one: it
+    // transcribed the dependency's source into the project. That compiles, and
+    // no maintainer would take it - it forks a dependency to avoid a version
+    // decision that is theirs to make.
     strategy:
-      "Do not look for a renamed function - nothing was renamed. The import mechanism is what broke. " +
-      "Either convert the call site to a dynamic import(), or adjust the build/test configuration so the " +
-      "dependency is transformed. Prefer the call-site change when the surrounding function can be made " +
-      "async without changing its public behaviour; prefer the configuration change when it cannot.",
+      "Nothing was renamed - the import mechanism is what broke, so do not go looking for a changed " +
+      "signature. There are exactly two legitimate fixes. One: convert the call site to a dynamic " +
+      "import(), which is only possible if the surrounding function can become async without changing " +
+      "its public behaviour. Two: adjust the build or test configuration so the dependency is " +
+      "transformed for this project. " +
+      "If neither applies - a synchronous public API that cannot become async, and no build step to " +
+      "adjust - then this break cannot be fixed at the call site, and the honest answer is to say so " +
+      "and stop. Do NOT copy the dependency's source into this project, do not re-implement it, and do " +
+      "not pin the old version. Those hide a decision that belongs to whoever maintains this repository: " +
+      "raise the runtime, or change the dependency.",
   },
   {
     kind: "exports-blocked",
@@ -75,8 +86,10 @@ const KINDS = [
     test: /EBADENGINE|Unsupported engine|requires Node\.js version/,
     what: "the new version of the package needs a newer Node than this project runs on",
     strategy:
-      "This is not a code break and editing call sites will not fix it. Report it and stop: the project " +
-      "has to raise its own Node version first, which is its maintainers' decision, not ours.",
+      "This is not a code break, and no edit to any call site changes which Node the project runs on. " +
+      "Do not work around it - a polyfill, a vendored copy or a pinned old version all disguise the same " +
+      "unmade decision. Report which version the package requires, which one the project declares, and " +
+      "stop. Raising the minimum runtime is the maintainers' call, because it breaks their own users.",
   },
   {
     kind: "not-a-function",

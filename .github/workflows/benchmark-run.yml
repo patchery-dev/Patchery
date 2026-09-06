@@ -249,6 +249,7 @@ jobs:
           name: benchmark-${{ steps.slug.outputs.slug }}
           path: |
             /tmp/benchmark.json
+            ${{ steps.patchery.outputs.diagnosis-file }}
             /tmp/census-*.json
             /tmp/*.log
           if-no-files-found: ignore

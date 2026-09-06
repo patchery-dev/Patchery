@@ -19,6 +19,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { classifyFailure, briefing } from "./classify-break.mjs";
 import {
   protectedReason,
   parsePorcelainEntries,
@@ -415,6 +416,19 @@ const baseline = runTests();
 log(baseline.output.slice(-4000) || "(no output)");
 log("\n-> baseline: " + (baseline.ok ? "PASS" : "FAIL (exit " + baseline.code + ")"));
 
+// What kind of break this is, from the runner's own error code. Free, and it
+// answers a question the agent otherwise spends turns on: the express run spent
+// roughly half its budget establishing what Node had already stated in the first
+// line of the failure. A null kind means we could not tell, and the agent is
+// told nothing rather than guessed at.
+const classification = classifyFailure(baseline.output);
+if (classification.kind) {
+  log("-> break looks like: " + classification.kind + " - " + classification.what);
+  if (classification.inScope === false) {
+    log("   this class is not fixable by editing call sites; the agent is told to report and stop");
+  }
+}
+
 // A command that does not exist is a setup mistake, not a broken project. Saying
 // "baseline FAIL" here would send a paid agent after a typo.
 if (!baseline.ok) {
@@ -538,6 +552,12 @@ const prompt = [
   "- Do not 'fix' the failure by deleting code, skipping assertions, or catching and",
   "  swallowing the error. Migrate the call sites properly.",
   EXTRA ? "\nAdditional instructions from the repository owner:\n" + EXTRA + "\n" : "",
+  // Last, so it is the freshest thing in the prompt, and only when the failure
+  // named itself. It says what the error code already means and where the
+  // boundary of a legitimate fix is - not to narrow the agent's judgement, but
+  // to stop it spending turns rediscovering the diagnosis, and to stop it
+  // inventing a way around a decision that is not ours to make.
+  classification.kind ? "\n" + briefing(classification) + "\n" : "",
   "Work only inside: " + TARGET_DIR,
 ].join("\n");
 
@@ -626,6 +646,7 @@ if (stalledReason) {
     turns: s.toolTurns,
     edits: s.edits,
     discovered: s.keys,
+    classification,
     agentNotes: agentText.length ? agentText[agentText.length - 1].trim() : "",
   });
   stop(
@@ -694,15 +715,35 @@ if (result.subtype === "error_max_turns") {
       customEndpoint: usingCustomEndpoint,
     }),
     discovered: s.keys,
+    classification,
     agentNotes: agentText.length ? agentText[agentText.length - 1].trim() : "",
   });
+  // A run that produced no fix still produced a diagnosis, and on the express
+  // run that diagnosis was correct and had cost twenty minutes to reach - then
+  // was summarised as "inconclusive" and thrown away. What was learned goes in
+  // the sentence, not only in a file nobody is told to open.
   stop(
     "inconclusive",
-    "Inconclusive, needs human review: the agent used all " +
-      MAX_TURNS +
-      " turns without producing a verified fix. Either the migration is bigger than one " +
-      "run, or the premise is wrong (the code may not actually be broken). Any partial " +
-      "changes were reverted.",
+    [
+      "Inconclusive, needs human review: the agent used all " +
+        MAX_TURNS +
+        " turns without producing a verified fix. Any partial changes were reverted.",
+      classification.kind
+        ? "It was working on a `" + classification.kind + "` break - " + classification.what + "."
+        : "",
+      classification.inScope === false
+        ? "That class cannot be fixed by editing call sites, so no run of this agent will fix it."
+        : "",
+      "It read " +
+        s.keys.filter((k) => k.startsWith("read:")).length +
+        " file(s) and made " +
+        s.edits +
+        " edit(s) over " +
+        s.toolTurns +
+        " turn(s). The full account is in the diagnosis file.",
+    ]
+      .filter(Boolean)
+      .join(" "),
     { tests_passed: "false", diagnosis_file: diagnosisFile }
   );
 }
@@ -941,6 +982,7 @@ if (!after.ok) {
       turns: s.toolTurns,
       edits: s.edits,
       discovered: s.keys,
+    classification,
       agentNotes: agentText.length ? agentText[agentText.length - 1].trim() : "",
     });
   }
