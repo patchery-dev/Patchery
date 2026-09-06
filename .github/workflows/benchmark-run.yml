@@ -1,0 +1,221 @@
+# Runs Patchery against a confirmed case, in a repository we do not own.
+#
+# verify-case.yml answers "is this break real". This answers the question the
+# whole project is judged on: given a real break in somebody else's code, does
+# Patchery fix it, refuse it, or get it wrong.
+#
+# The setup is deliberately the same as verify-case's, up to the point where the
+# tests are red. From there this hands the broken checkout to the action and
+# records what came back. Nothing is pushed and no pull request is opened - the
+# candidate repositories are not ours to write to.
+name: Patchery (benchmark run)
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Repository, owner/name (must be a confirmed case)"
+        required: true
+      commit:
+        description: "Commit to pin to"
+        required: true
+      package:
+        description: "Package to upgrade and then fix the call sites of"
+        required: true
+      breaking-version:
+        description: "Version to install"
+        required: true
+      test-command:
+        description: "How to run the tests"
+        required: false
+        default: "npm test"
+      target-dir:
+        description: "Directory inside the candidate to fix"
+        required: false
+        default: "."
+      node-version:
+        description: "Node version (auto = ask the repository)"
+        required: false
+        default: "auto"
+  workflow_call:
+    inputs:
+      repo: { type: string, required: true }
+      commit: { type: string, required: true }
+      package: { type: string, required: true }
+      breaking-version: { type: string, required: true }
+      test-command: { type: string, required: false, default: "npm test" }
+      target-dir: { type: string, required: false, default: "." }
+      node-version: { type: string, required: false, default: "auto" }
+    secrets:
+      ANTHROPIC_AUTH_TOKEN: { required: true }
+      ANTHROPIC_BASE_URL: { required: false }
+      ANTHROPIC_MODEL: { required: false }
+      ALT_AUTH_TOKEN: { required: false }
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Name this case
+        id: slug
+        run: |
+          SLUG=$(printf '%s' '${{ inputs.repo }}-${{ inputs.package }}-v${{ inputs.breaking-version }}' | tr -c 'A-Za-z0-9._-' '-')
+          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+
+      # Patchery itself. Checked out into a directory of its own so the action's
+      # own files can never be mistaken for the candidate's.
+      - name: Check out Patchery
+        uses: actions/checkout@v4
+        with:
+          path: patchery
+
+      - name: Check out the candidate at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.commit }}
+          path: case
+          fetch-depth: 1
+
+      # Same reasoning as verify-case: the repository says which Node it needs,
+      # and guessing produced a verdict about our runner rather than the code.
+      - name: Decide which Node to use
+        id: node
+        run: |
+          WANT='${{ inputs.node-version }}'
+          if [ "$WANT" != "auto" ]; then
+            echo "asked for: $WANT"
+          elif [ -f case/.nvmrc ]; then
+            WANT=$(tr -d 'v \r\n' < case/.nvmrc)
+          else
+            WANT=$(node -e "
+              try {
+                const e = require('./case/package.json').engines;
+                const m = String((e && e.node) || '').match(/[0-9]+(?:\.[0-9]+)*/g);
+                const majors = (m || []).map((v) => parseInt(v, 10)).filter((n) => n > 0);
+                process.stdout.write(majors.length ? String(Math.min(...majors)) : '20');
+              } catch { process.stdout.write('20') }
+            ")
+          fi
+          echo "chose Node $WANT"
+          echo "version=$WANT" >> "$GITHUB_OUTPUT"
+
+      - name: Use Node ${{ steps.node.outputs.version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+
+      - name: Install the candidate's dependencies
+        id: install
+        working-directory: case/${{ inputs.target-dir }}
+        run: |
+          set -o pipefail
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm install --frozen-lockfile 2>&1 | tail -20 || pnpm install --no-frozen-lockfile 2>&1 | tail -20
+            echo "pm=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f yarn.lock ]; then
+            corepack enable
+            yarn install --frozen-lockfile 2>&1 | tail -20 || yarn install 2>&1 | tail -20
+            echo "pm=yarn" >> "$GITHUB_OUTPUT"
+          else
+            npm ci 2>&1 | tail -20 || npm install 2>&1 | tail -20
+            echo "pm=npm" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The census. Which tests exist and pass while the code is still whole is
+      # the only honest baseline for judging the fix: a suite that ends with
+      # fewer tests than it started with has not been fixed, it has been edited
+      # into agreement. Recorded before anything is broken, so no later step -
+      # ours or the agent's - can influence it.
+      - name: Count the tests before anything is touched
+        id: census
+        working-directory: case/${{ inputs.target-dir }}
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          set +e
+          ${{ inputs.test-command }} > /tmp/baseline.log 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          node "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
+          cat /tmp/census-before.json
+
+      - name: Install the breaking version
+        id: bump
+        if: steps.census.outputs.exit == '0'
+        working-directory: case/${{ inputs.target-dir }}
+        run: |
+          set -o pipefail
+          PM='${{ steps.install.outputs.pm }}'
+          SPEC='${{ inputs.package }}@${{ inputs.breaking-version }}'
+          if [ "$PM" = "pnpm" ]; then pnpm add "$SPEC" 2>&1 | tail -10
+          elif [ "$PM" = "yarn" ]; then yarn add "$SPEC" 2>&1 | tail -10
+          else npm install "$SPEC" 2>&1 | tail -10; fi
+
+      # Everything above exists to reach this line honestly: somebody else's
+      # repository, red, for a real reason.
+      - name: Run Patchery
+        id: patchery
+        if: steps.census.outputs.exit == '0'
+        uses: ./patchery
+        continue-on-error: true
+        with:
+          package: ${{ inputs.package }}
+          target-dir: case/${{ inputs.target-dir }}
+          test-command: ${{ inputs.test-command }}
+          verify-tools: "off"
+          verify-base-url: ${{ vars.ALT_BASE_URL }}
+          verify-auth-token: ${{ secrets.ALT_AUTH_TOKEN }}
+          verify-model: deepseek-v4-flash
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL }}
+
+      # The action reports its own tests-passed. This asks the harder question:
+      # are the SAME tests passing. A fix that makes the suite green by removing
+      # the tests that judged it is the one failure a green light cannot catch,
+      # and the only way to see it is to compare the census.
+      - name: Count the tests again
+        id: recount
+        if: steps.census.outputs.exit == '0'
+        working-directory: case/${{ inputs.target-dir }}
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          set +e
+          ${{ inputs.test-command }} > /tmp/final.log 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          node "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/final.log > /tmp/census-after.json
+          cat /tmp/census-after.json
+
+      - name: Outcome
+        if: always()
+        run: |
+          node "$GITHUB_WORKSPACE/patchery/scripts/benchmark-outcome.mjs" \
+            --before /tmp/census-before.json \
+            --after /tmp/census-after.json \
+            --baseline-exit '${{ steps.census.outputs.exit }}' \
+            --final-exit '${{ steps.recount.outputs.exit }}' \
+            --action-outcome '${{ steps.patchery.outputs.outcome }}' \
+            --changed '${{ steps.patchery.outputs.changed }}' \
+            --review '${{ steps.patchery.outputs.review-status }}' \
+            --files '${{ steps.patchery.outputs.files }}' \
+            --repo '${{ inputs.repo }}' \
+            --package '${{ inputs.package }}' \
+            --version '${{ inputs.breaking-version }}' \
+            --out /tmp/benchmark.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep everything this run produced
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ steps.slug.outputs.slug }}
+          path: |
+            /tmp/benchmark.json
+            /tmp/census-*.json
+            /tmp/*.log
+          if-no-files-found: ignore

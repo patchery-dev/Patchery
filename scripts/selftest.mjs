@@ -13,6 +13,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { census, censusHeld } from "./test-census.mjs";
+import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import {
   protectedReason,
   parsePorcelain,
@@ -1613,5 +1615,150 @@ console.log("\ncalibration corpus - every case must pass the tests");
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
+
+
+// ---------------------------------------------------------------------------
+// The test census: what stops a fix from being credited for a suite it shrank.
+// ---------------------------------------------------------------------------
+
+const JEST_GREEN = "Test Suites: 99 passed, 99 total\nTests:       5 skipped, 1085 passed, 1090 total\n";
+const JEST_RED = "Test Suites: 25 failed, 11 passed, 36 of 99 total\nTests:       3 failed, 136 passed, 139 total\n";
+const VITEST_GREEN = " Test Files  2 passed (2)\n      Tests  18 passed (18)\n";
+const VITEST_RED = "      Tests  3 failed | 15 passed (18)\n";
+const MOCHA_GREEN = "  18 passing (2s)\n  1 pending\n";
+const MOCHA_RED = "  15 passing (2s)\n  3 failing\n";
+const TAP_GREEN = "# tests 18\n# pass 18\n# fail 0\n";
+
+check("census reads a jest summary", () => {
+  const c = census(JEST_GREEN);
+  assert.strictEqual(c.runner, "jest");
+  assert.strictEqual(c.passed, 1085);
+  assert.strictEqual(c.total, 1090);
+});
+
+check("census reads a jest run that ended early", () => {
+  const c = census(JEST_RED);
+  assert.strictEqual(c.failed, 3);
+  assert.strictEqual(c.passed, 136);
+});
+
+check("census reads vitest, green and red", () => {
+  assert.strictEqual(census(VITEST_GREEN).passed, 18);
+  assert.strictEqual(census(VITEST_RED).failed, 3);
+  assert.strictEqual(census(VITEST_RED).passed, 15);
+});
+
+check("census reads mocha", () => {
+  const c = census(MOCHA_GREEN);
+  assert.strictEqual(c.runner, "mocha");
+  assert.strictEqual(c.passed, 18);
+  assert.strictEqual(c.total, 19); // 18 passing + 1 pending
+});
+
+check("census reads node:test / TAP", () => {
+  assert.strictEqual(census(TAP_GREEN).passed, 18);
+});
+
+check("census survives terminal colour", () => {
+  const coloured = "\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m18 passed\u001b[39m\u001b[22m\u001b[90m (18)\u001b[39m\n";
+  assert.strictEqual(census(coloured).passed, 18);
+});
+
+// The refusal matters more than any parse. A runner we cannot read must not be
+// reported as a suite of zero tests, because zero would make every later
+// comparison look like a catastrophic shrink - or, worse, like a clean pass.
+check("census refuses rather than guessing zero", () => {
+  const c = census("some runner nobody has taught us about\nDone in 4.2s\n");
+  assert.strictEqual(c.runner, null);
+  assert.strictEqual(c.total, null);
+});
+
+check("censusHeld passes when the same tests still pass", () => {
+  const r = censusHeld(census(JEST_GREEN), census(JEST_GREEN));
+  assert.strictEqual(r.ok, true);
+});
+
+// This is the case the whole census exists for: a green run that is green
+// because the tests that would have failed are no longer being run.
+check("censusHeld catches a suite that got smaller", () => {
+  const shrunk = "Tests:       0 skipped, 900 passed, 900 total\n";
+  const r = censusHeld(census(JEST_GREEN), census(shrunk));
+  assert.strictEqual(r.ok, false);
+  assert.match(r.why, /got smaller/);
+});
+
+check("censusHeld says 'cannot tell' rather than 'fine' when it cannot parse", () => {
+  assert.strictEqual(censusHeld(census("mystery"), census(JEST_GREEN)).ok, null);
+  assert.strictEqual(censusHeld(census(JEST_GREEN), census("mystery")).ok, null);
+});
+
+// ---------------------------------------------------------------------------
+// Benchmark outcomes: the row that ends up in front of investors.
+// ---------------------------------------------------------------------------
+
+check("outcome BLOCKED when the case never started green", () => {
+  const r = benchmarkOutcome({ baselineExit: "1" });
+  assert.strictEqual(r.outcome, "BLOCKED");
+});
+
+check("outcome FIXED when the tests are green and the suite is intact", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "0", changed: "true",
+    before: census(JEST_GREEN), after: census(JEST_GREEN),
+  });
+  assert.strictEqual(r.outcome, "FIXED");
+});
+
+// A green suite that shrank must never be credited, and the census is asked
+// before the exit code precisely so that it cannot be.
+check("outcome WRONG when the tests are green but fewer of them ran", () => {
+  const shrunk = "Tests:       0 skipped, 900 passed, 900 total\n";
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "0", changed: "true",
+    before: census(JEST_GREEN), after: census(shrunk),
+  });
+  assert.strictEqual(r.outcome, "WRONG");
+  assert.match(r.detail, /got smaller/);
+});
+
+check("outcome WRONG when a change shipped and the tests are still red", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", changed: "true",
+    before: census(JEST_GREEN), after: census(JEST_RED),
+  });
+  assert.strictEqual(r.outcome, "WRONG");
+});
+
+// REFUSED is the product's claim, not a failure. It has to be countable
+// separately or the table measures somebody else's product.
+check("outcome REFUSED is kept apart from NO-CHANGE", () => {
+  const refused = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", changed: "false",
+    actionOutcome: "refused: the reviewer refuted the fix",
+    before: census(JEST_GREEN), after: census(JEST_RED),
+  });
+  assert.strictEqual(refused.outcome, "REFUSED");
+
+  const nothing = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", changed: "false",
+    actionOutcome: "the agent made no edits",
+    before: census(JEST_GREEN), after: census(JEST_RED),
+  });
+  assert.strictEqual(nothing.outcome, "NO-CHANGE");
+});
+
+check("a refuted review counts as REFUSED even when the outcome is quiet", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", changed: "false", review: "refuted",
+    before: census(JEST_GREEN), after: census(JEST_RED),
+  });
+  assert.strictEqual(r.outcome, "REFUSED");
+});
+
+check("parseArgs turns a missing flag into an empty string, not undefined", () => {
+  const a = parseArgs(["--repo", "a/b", "--changed"]);
+  assert.strictEqual(a.repo, "a/b");
+  assert.strictEqual(a.changed, "");
+});
 
 console.log("\n" + pass + " checks passed.\n");
