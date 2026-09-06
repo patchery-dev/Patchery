@@ -28,7 +28,14 @@ import { censusHeld } from "./test-census.mjs";
 export function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i].startsWith("--")) out[argv[i].slice(2)] = argv[i + 1] ?? "";
+    // Written the long way on purpose. This file has to parse on whatever Node
+    // the candidate repository needs, and node-fetch's CI runs Node 12, where
+    // `??` is a syntax error - so the whole script failed to load and three
+    // cases produced no result at all. The workflow now runs our tooling on the
+    // runner's own Node, but a script that cannot be parsed by an old one is a
+    // trap waiting for the next caller who forgets.
+    const next = argv[i + 1];
+    if (argv[i].indexOf("--") === 0) out[argv[i].slice(2)] = next === undefined || next === null ? "" : next;
   }
   return out;
 }

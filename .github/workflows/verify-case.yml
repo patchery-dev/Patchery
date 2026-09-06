@@ -88,6 +88,20 @@ jobs:
       # Our own repository, for the small scripts this workflow leans on. Same
       # layout as benchmark-run: ours under `patchery`, theirs under `case`, and
       # neither able to be mistaken for the other.
+      # The runner's own Node, captured before setup-node replaces it.
+      #
+      # Everything below sets up the CANDIDATE's Node so its tests run the way
+      # its maintainers run them - and that Node can be ancient. node-fetch's CI
+      # uses 12, where `??` is a syntax error, so our own result-writing script
+      # failed to parse and three cases finished with no result at all.
+      #
+      # Our tooling is not the thing being measured and must not inherit the
+      # subject's runtime. It runs on this one.
+      - name: Remember the runner's own Node
+        id: ours
+        run: |
+          echo "node=$(command -v node)" >> "$GITHUB_OUTPUT"
+          echo "our tooling runs on $(node --version) at $(command -v node)"
       - name: Check out Patchery
         uses: actions/checkout@v4
         with:
@@ -124,7 +138,7 @@ jobs:
       - name: Decide which Node to use
         id: node
         run: |
-          LIST=$(node "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }} --list)
+          LIST=$("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }} --list)
           echo "candidates: $LIST"
           echo "first=$(echo "$LIST" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "last=$(echo "$LIST" | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
@@ -258,7 +272,7 @@ jobs:
           # `exports` map that hides its own package.json, and the resolving probe
           # then reports the upgrade as never installed - a false negative aimed
           # squarely at the packages this benchmark is made of.
-          echo "installed: ${{ inputs.package }}@$(node "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)"
+          echo "installed: ${{ inputs.package }}@$("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)"
 
       # Half two: the same suite, same machine, one thing changed.
       - name: Run the tests AFTER the upgrade

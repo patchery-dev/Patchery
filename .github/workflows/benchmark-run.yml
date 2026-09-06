@@ -71,6 +71,21 @@ jobs:
           SLUG=$(printf '%s' '${{ inputs.repo }}-${{ inputs.package }}-v${{ inputs.breaking-version }}' | tr -c 'A-Za-z0-9._-' '-')
           echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
 
+      # The runner's own Node, captured before setup-node replaces it.
+      #
+      # Everything below sets up the CANDIDATE's Node so its tests run the way
+      # its maintainers run them - and that Node can be ancient. node-fetch's CI
+      # uses 12, where `??` is a syntax error, so our own result-writing script
+      # failed to parse and three cases finished with no result at all.
+      #
+      # Our tooling is not the thing being measured and must not inherit the
+      # subject's runtime. It runs on this one.
+      - name: Remember the runner's own Node
+        id: ours
+        run: |
+          echo "node=$(command -v node)" >> "$GITHUB_OUTPUT"
+          echo "our tooling runs on $(node --version) at $(command -v node)"
+
       # Patchery itself. Checked out into a directory of its own so the action's
       # own files can never be mistaken for the candidate's.
       - name: Check out Patchery
@@ -96,7 +111,7 @@ jobs:
       - name: Decide which Node to use
         id: node
         run: |
-          LIST=$(node "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }} --list)
+          LIST=$("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }} --list)
           echo "candidates: $LIST"
           echo "first=$(echo "$LIST" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "last=$(echo "$LIST" | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
@@ -138,7 +153,7 @@ jobs:
           set +e
           ${{ inputs.test-command }} > /tmp/baseline.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
-          node "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
+          "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
           cat /tmp/census-before.json
 
       - name: Use Node ${{ steps.node.outputs.last }} instead
@@ -165,7 +180,7 @@ jobs:
           tail -10 /tmp/reinstall.log
           ${{ inputs.test-command }} > /tmp/baseline.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
-          node "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
+          "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
           cat /tmp/census-before.json
 
       # Whichever attempt produced a green suite is what everything downstream
@@ -203,7 +218,7 @@ jobs:
           if [ "$PM" = "pnpm" ]; then pnpm add "$SPEC"
           elif [ "$PM" = "yarn" ]; then yarn add "$SPEC"
           else npm install "$SPEC"; fi
-          INSTALLED=$(node "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)
+          INSTALLED=$("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)
           echo "installed: ${{ inputs.package }}@$INSTALLED"
           echo "installed=$INSTALLED" >> "$GITHUB_OUTPUT"
           case "$INSTALLED" in
@@ -234,7 +249,7 @@ jobs:
         run: |
           set +e
           echo "resolved : $(node -p "require.resolve('${{ inputs.package }}')" 2>&1 | head -1)"
-          echo "on disk  : $(node "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)"
+          echo "on disk  : $("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)"
           echo "node     : $(node --version)"
           ${{ inputs.test-command }} > /tmp/broken.log 2>&1
           EXIT=$?
@@ -279,13 +294,13 @@ jobs:
           set +e
           ${{ inputs.test-command }} > /tmp/final.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
-          node "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/final.log > /tmp/census-after.json
+          "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/final.log > /tmp/census-after.json
           cat /tmp/census-after.json
 
       - name: Outcome
         if: always()
         run: |
-          node "$GITHUB_WORKSPACE/patchery/scripts/benchmark-outcome.mjs" \
+          "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/benchmark-outcome.mjs" \
             --before /tmp/census-before.json \
             --after /tmp/census-after.json \
             --baseline-exit '${{ steps.baseline.outputs.exit }}' \
