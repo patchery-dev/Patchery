@@ -1189,52 +1189,62 @@ check("an ordinary config file is still fair game", () => {
 // work. The other two need judgement and stay with the reviewer.
 console.log("\ndependencyMisuseReasons - what code can decide, code decides");
 const BEFORE = 'const { formatPrice } = require("fake-lib");\nfunction f(a) { return formatPrice(a); }\n';
-const dep = (afterText, over = {}) =>
-  dependencyMisuseReasons({ packageName: "fake-lib", beforeText: BEFORE, afterText, relPath: "app.js", ...over });
+const one = (afterText, over = {}) =>
+  dependencyMisuseReasons({
+    packageName: "fake-lib",
+    files: [{ relPath: "app.js", beforeText: BEFORE, afterText }],
+    ...over,
+  });
+const kinds = (r) => r.map((x) => x.kind);
 
 check("a correct migration is silent", () =>
-  assert.deepStrictEqual(dep('const { formatPrice } = require("fake-lib");\nfunction f(a) { return formatPrice(a, "USD"); }'), [])
+  assert.deepStrictEqual(one('const { formatPrice } = require("fake-lib");\nfunction f(a) { return formatPrice(a, "USD"); }'), [])
 );
 check("the package disappearing is a removal, not a migration", () => {
-  const r = dep('function f(a) { return "$" + a.toFixed(2); }');
-  assert.strictEqual(r.length, 1);
-  assert.strictEqual(r[0].kind, "removal");
-  assert.match(r[0].reason, /no longer references/);
+  const r = one('function f(a) { return "$" + a.toFixed(2); }');
+  assert.deepStrictEqual(kinds(r), ["removal"]);
+  assert.match(r[0].reason, /nothing references/);
 });
 check("the message names the input that would allow it", () =>
-  assert.match(dep("function f(a) { return a; }")[0].reason, /allow-dependency-removal/)
+  assert.match(one("function f(a) { return a; }")[0].reason, /allow-dependency-removal/)
+);
+check("allowRemoval silences the removal family", () =>
+  assert.deepStrictEqual(one('function f(a) { return "$" + a; }', { allowRemoval: true }), [])
 );
 check("imported and then never used", () => {
-  const r = dep('const { formatPrice } = require("fake-lib");\nfunction f(a) { return "Total: $19.90"; }');
-  assert.strictEqual(r[0].kind, "removal");
+  const r = one('const { formatPrice } = require("fake-lib");\nfunction f(a) { return "Total: $19.90"; }');
+  assert.deepStrictEqual(kinds(r), ["removal"]);
   assert.match(r[0].reason, /never uses it/);
 });
-// No migration has a reason to rewrite the package for the whole process.
+// No migration has a reason to rewrite the package for the whole process, so no input
+// turns these off - not even allowRemoval.
 check("assigning to the module is subversion, whatever the input says", () => {
-  const r = dep('const lib = require("fake-lib");\nlib.formatPrice = (a) => "x";\nfunction f(a) { return lib.formatPrice(a); }');
-  assert.ok(r.some((x) => x.kind === "subversion"), JSON.stringify(r));
+  const after = 'const lib = require("fake-lib");\nlib.formatPrice = (a) => "x";\nfunction f(a) { return lib.formatPrice(a); }';
+  assert.ok(kinds(one(after)).includes("subversion"));
+  assert.ok(kinds(one(after, { allowRemoval: true })).includes("subversion"));
 });
 check("Object.assign onto the module counts too", () =>
-  assert.ok(
-    dep('const lib = require("fake-lib");\nObject.assign(lib, {});\nfunction f(a){ return lib.formatPrice(a); }')
-      .some((x) => x.kind === "subversion")
+  assert.ok(kinds(one('const lib = require("fake-lib");\nObject.assign(lib, {});\nfunction f(a){ return lib.formatPrice(a); }')).includes("subversion"))
+);
+check("a local definition shadowing an imported name", () => {
+  const r = one('function formatPrice(a) { return "$" + a; }\nfunction f(a) { return formatPrice(a); }');
+  assert.ok(r.some((x) => x.kind === "subversion" && /defines a local/.test(x.reason)), JSON.stringify(r));
+});
+check("subversion is reported before removal", () =>
+  assert.strictEqual(one('function formatPrice(a) { return "$" + a; }\nfunction f(a) { return formatPrice(a); }')[0].kind, "subversion")
+);
+check("a change that never touched the package is not this check's business", () =>
+  assert.deepStrictEqual(
+    dependencyMisuseReasons({ packageName: "fake-lib", files: [{ relPath: "x.js", beforeText: "const x = 2;", afterText: "const x = 1;" }] }),
+    []
   )
 );
-check("a local declaration shadowing an imported name", () => {
-  const r = dep('function formatPrice(a) { return "$" + a; }\nfunction f(a) { return formatPrice(a); }');
-  assert.ok(r.some((x) => x.kind === "subversion" && /declares a local/.test(x.reason)), JSON.stringify(r));
-});
-check("subversion is reported before removal", () => {
-  const r = dep('function formatPrice(a) { return "$" + a; }\nfunction f(a) { return formatPrice(a); }');
-  assert.strictEqual(r[0].kind, "subversion");
-});
-check("a file that never used the package is not this check's business", () =>
-  assert.deepStrictEqual(dep("const x = 1;", { beforeText: "const x = 2;" }), [])
-);
 check("ESM import forms are understood", () => {
-  const esmBefore = 'import { formatPrice } from "fake-lib";\nexport const f = (a) => formatPrice(a);\n';
-  assert.deepStrictEqual(dep('import { formatPrice } from "fake-lib";\nexport const f = (a) => formatPrice(a, "USD");', { beforeText: esmBefore }), []);
-  assert.strictEqual(dep('export const f = (a) => "$" + a;', { beforeText: esmBefore })[0].kind, "removal");
+  const esm = 'import { formatPrice } from "fake-lib";\nexport const f = (a) => formatPrice(a);\n';
+  const call = (afterText) =>
+    dependencyMisuseReasons({ packageName: "fake-lib", files: [{ relPath: "app.js", beforeText: esm, afterText }] });
+  assert.deepStrictEqual(call('import { formatPrice } from "fake-lib";\nexport const f = (a) => formatPrice(a, "USD");'), []);
+  assert.deepStrictEqual(kinds(call('export const f = (a) => "$" + a;')), ["removal"]);
 });
 check("aliased and namespace imports bind the right name", () => {
   const b = packageBindings('import * as ns from "fake-lib";\nimport { a as b } from "fake-lib/sub";', "fake-lib");
@@ -1242,9 +1252,47 @@ check("aliased and namespace imports bind the right name", () => {
   assert.strictEqual(b.count, 2);
 });
 
+// The first version of this check asked each file on its own, and would have blocked
+// the change below - a correct, tested migration that moved a call site into a new
+// file. Destroying correct work its author never sees is the expensive direction, so
+// the question is asked of the whole change instead.
+console.log("\ndependencyMisuseReasons - the whole change, not one file at a time");
+const multi = (files, over = {}) => dependencyMisuseReasons({ packageName: "fake-lib", files, ...over });
+
+check("a call site moved into a NEW file is not a removal", () =>
+  assert.deepStrictEqual(
+    multi([
+      { relPath: "app.js", beforeText: BEFORE, afterText: 'const { price } = require("./price.js");\nfunction f(a) { return price(a); }' },
+      { relPath: "price.js", beforeText: "", afterText: 'const { formatPrice } = require("fake-lib");\nconst price = (a) => formatPrice(a, "USD");\nmodule.exports = { price };' },
+    ]),
+    []
+  )
+);
+check("but losing it from every file still is", () =>
+  assert.deepStrictEqual(
+    kinds(multi([
+      { relPath: "app.js", beforeText: BEFORE, afterText: 'const { price } = require("./price.js");\nfunction f(a) { return price(a); }' },
+      { relPath: "price.js", beforeText: "", afterText: 'const price = (a) => "$" + a.toFixed(2);\nmodule.exports = { price };' },
+    ])),
+    ["removal"]
+  )
+);
+check("the removal message names the files that used to have it", () =>
+  assert.match(multi([{ relPath: "src/cart.js", beforeText: BEFORE, afterText: "const x = 1;" }])[0].reason, /src\/cart\.js/)
+);
+// Re-binding a name from a wrapper module is ordinary refactoring, not a shadow.
+check("re-importing the same name from elsewhere is not shadowing", () =>
+  assert.deepStrictEqual(
+    multi([
+      { relPath: "app.js", beforeText: BEFORE, afterText: 'const formatPrice = require("./shim.js").formatPrice;\nfunction f(a){ return formatPrice(a); }' },
+      { relPath: "shim.js", beforeText: "", afterText: 'const lib = require("fake-lib");\nexports.formatPrice = (a) => lib.formatPrice(a, "USD");' },
+    ]),
+    []
+  )
+);
+
 // The check that matters most: over every case in the corpus, the rules must fire on
-// wrong migrations and stay completely silent on correct ones. A guard that blocks
-// correct work destroys a tested fix its author never sees - the expensive direction.
+// wrong migrations and stay completely silent on correct ones.
 console.log("\ndependencyMisuseReasons - against the whole corpus");
 {
   const corpusDir = path.join(root, "calibration");
@@ -1253,27 +1301,30 @@ console.log("\ndependencyMisuseReasons - against the whole corpus");
   const fire = (c) =>
     dependencyMisuseReasons({
       packageName: corpus.package,
-      beforeText,
-      afterText: fs.readFileSync(path.join(corpusDir, "cases", c.file), "utf8"),
-      relPath: corpus.target,
+      files: [{
+        relPath: corpus.target,
+        beforeText,
+        afterText: fs.readFileSync(path.join(corpusDir, "cases", c.file), "utf8"),
+      }],
     });
 
-  check("NO correct migration is blocked (11 cases)", () => {
-    const wrong = corpus.cases.filter((c) => c.label === "good" && fire(c).length > 0);
-    assert.deepStrictEqual(wrong.map((c) => c.file), []);
-  });
-  // Pinned by name: if a later change quietly stops catching one of these, the count
+  check("NO correct migration is blocked (11 cases)", () =>
+    assert.deepStrictEqual(corpus.cases.filter((c) => c.label === "good" && fire(c).length > 0).map((c) => c.file), [])
+  );
+  // Pinned by name: if a later change quietly stops catching one of these, a count
   // alone would not say which, and these five are the reason the rules exist.
-  check("the five mechanically-detectable wrong migrations are caught", () => {
-    const caught = corpus.cases.filter((c) => c.label === "bad" && fire(c).length > 0).map((c) => c.file);
-    assert.deepStrictEqual(caught.sort(), [
-      "bad-01-hardcoded-return.js",
-      "bad-03-reimplemented-locally.js",
-      "bad-05-monkey-patch.js",
-      "bad-08-tolocalestring.js",
-      "bad-09-shadowing-stub.js",
-    ]);
-  });
+  check("the five mechanically-detectable wrong migrations are caught", () =>
+    assert.deepStrictEqual(
+      corpus.cases.filter((c) => c.label === "bad" && fire(c).length > 0).map((c) => c.file).sort(),
+      [
+        "bad-01-hardcoded-return.js",
+        "bad-03-reimplemented-locally.js",
+        "bad-05-monkey-patch.js",
+        "bad-08-tolocalestring.js",
+        "bad-09-shadowing-stub.js",
+      ]
+    )
+  );
 }
 
 console.log("\nnormalizeModelTimeout - a turn limit cannot end a hung request");

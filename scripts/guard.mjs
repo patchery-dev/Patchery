@@ -754,89 +754,112 @@ export function packageBindings(text = "", packageName = "") {
  * are genuinely a matter of judgement and are left to the reviewer, which is the
  * division of labour this project is built on: what code can decide, code decides.
  *
+ * Takes the WHOLE change, not one file. "Did this migration abandon the package" is a
+ * question about the change as a whole: a legitimate fix can move a call site out of
+ * one file and into a new one, and asking each file on its own would call that a
+ * removal and destroy a correct, tested change - the expensive direction, and a
+ * mistake this check made in its first version. The local faults - patching the
+ * module, shadowing its exports - stay per-file, because they are local facts.
+ *
  * Returns reasons, most serious first. `subversion` never has a legitimate form and
  * is not gated by any input; `removal` has a rare legitimate form - an API deleted
- * outright, inlined on purpose - and `allow-dependency-removal` exists for it.
+ * outright, inlined on purpose - which `allowRemoval` covers.
  *
- * @param {{packageName: string, beforeText: string, afterText: string, relPath: string}} a
+ * @param {{packageName: string, files: Array<{relPath: string, beforeText: string, afterText: string}>, allowRemoval: boolean}} a
  * @returns {Array<{kind: "removal"|"subversion", reason: string}>}
  */
-export function dependencyMisuseReasons({
-  packageName = "",
-  beforeText = "",
-  afterText = "",
-  relPath = "",
-} = {}) {
+export function dependencyMisuseReasons({ packageName = "", files = [], allowRemoval = false } = {}) {
   const out = [];
-  if (!packageName) return out;
+  if (!packageName || !Array.isArray(files) || files.length === 0) return out;
 
-  const before = packageBindings(beforeText, packageName);
-  const after = packageBindings(afterText, packageName);
-  // A file that never touched this package is not this check's business.
-  if (before.count === 0) return out;
-  const where = relPath ? "`" + relPath + "`" : "the changed file";
+  const seen = files.map((f) => ({
+    relPath: f?.relPath || "a changed file",
+    afterText: f?.afterText || "",
+    before: packageBindings(f?.beforeText || "", packageName),
+    after: packageBindings(f?.afterText || "", packageName),
+  }));
 
-  // 1. Gone entirely. "Migrate package X" that ends with no reference to X is not a
-  //    migration, it is a removal wearing a migration's commit message.
-  if (after.count === 0) {
+  const lost = seen.filter((f) => f.before.count > 0);
+  // Nothing in this change ever referenced the package, so none of this applies.
+  if (lost.length === 0) return out;
+
+  const stillReferenced = seen.reduce((n, f) => n + f.after.count, 0);
+  const name = (f) => "`" + f.relPath + "`";
+
+  // 1. Gone from the entire change. "Migrate package X" that ends with no reference to
+  //    X anywhere it touched is a removal wearing a migration's commit message.
+  if (stillReferenced === 0 && !allowRemoval) {
     out.push({
       kind: "removal",
       reason:
-        where + " no longer references `" + packageName + "` at all. A migration " +
-        "changes how a dependency is called; it does not stop calling it. If dropping " +
-        "the dependency really is the intended fix, set `allow-dependency-removal: true`.",
+        "After this change nothing references `" + packageName + "` any more - it was " +
+        "used in " + lost.map(name).join(", ") + " before. A migration changes how a " +
+        "dependency is called; it does not stop calling it. If dropping the dependency " +
+        "really is the intended fix, set `allow-dependency-removal: true`.",
     });
-  } else {
-    // 2. Still imported, never used. The import survives review by being there; the
-    //    code underneath it does something else entirely.
-    const body = after.statements.reduce((t, s) => t.split(s).join(" "), afterText);
-    const used = after.bindings.filter((n) => new RegExp("\\b" + escapeRegExp(n) + "\\b").test(body));
-    if (after.bindings.length > 0 && used.length === 0) {
-      out.push({
-        kind: "removal",
-        reason:
-          where + " imports " + after.bindings.map((n) => "`" + n + "`") .join(", ") +
-          " from `" + packageName + "` and then never uses it. The import is left " +
-          "standing while the work happens somewhere else.",
-      });
-    }
   }
 
-  // 3. Writing to the imported module. This changes the package for every consumer in
-  //    the process, not just this call site. No migration has a reason to do it.
-  for (const name of after.bindings) {
-    const n = escapeRegExp(name);
-    const patched =
-      new RegExp("\\b" + n + "\\s*\\.\\s*[A-Za-z_$][\\w$]*\\s*=(?!=)").test(afterText) ||
-      new RegExp("\\bObject\\.(?:assign|defineProperty)\\s*\\(\\s*" + n + "\\b").test(afterText);
-    if (patched) {
+  for (const f of seen) {
+    // 2. Still imported here, used nowhere here. Bindings are file-local in JavaScript,
+    //    so this one is honestly answerable per file: the import stands as cover while
+    //    the code underneath does something else.
+    if (f.after.bindings.length > 0) {
+      const body = f.after.statements.reduce((t, s) => t.split(s).join(" "), f.afterText);
+      const used = f.after.bindings.filter((n) =>
+        new RegExp("\\b" + escapeRegExp(n) + "\\b").test(body)
+      );
+      if (used.length === 0 && !allowRemoval) {
+        out.push({
+          kind: "removal",
+          reason:
+            name(f) + " imports " + f.after.bindings.map((n) => "`" + n + "`").join(", ") +
+            " from `" + packageName + "` and then never uses it. The import is left " +
+            "standing while the work happens somewhere else.",
+        });
+      }
+    }
+
+    // 3. Writing to the imported module. This changes the package for every consumer in
+    //    the process, not just this call site. No migration has a reason to do it.
+    for (const binding of f.after.bindings) {
+      const n = escapeRegExp(binding);
+      const patched =
+        new RegExp("\\b" + n + "\\s*\\.\\s*[A-Za-z_$][\\w$]*\\s*=(?!=)").test(f.afterText) ||
+        new RegExp("\\bObject\\.(?:assign|defineProperty)\\s*\\(\\s*" + n + "\\b").test(f.afterText);
+      if (patched) {
+        out.push({
+          kind: "subversion",
+          reason:
+            name(f) + " assigns to `" + binding + "`, which is the `" + packageName +
+            "` module itself. That rewrites the package for everything else in the " +
+            "process, not just this call site.",
+        });
+      }
+    }
+
+    // 4. A name that used to come from the package, now defined locally in the same
+    //    file. The call sites below still resolve, the tests still pass, and they no
+    //    longer reach the package.
+    for (const binding of f.before.bindings) {
+      if (f.after.bindings.includes(binding)) continue;
+      const n = escapeRegExp(binding);
+      const decl = f.afterText.match(
+        new RegExp("(?:function|class|const|let|var)\\s+" + n + "\\b[^\\n]*")
+      );
+      // Re-binding the same name from somewhere else is ordinary refactoring - a
+      // wrapper module, a re-export. Only a fresh local definition is a shadow.
+      if (!decl || /\brequire\s*\(|\bfrom\s+['"]|\bimport\s*\(/.test(decl[0])) continue;
       out.push({
         kind: "subversion",
         reason:
-          where + " assigns to `" + name + "`, which is the `" + packageName + "` module " +
-          "itself. That rewrites the package for everything else in the process, not " +
-          "just this call site.",
-      });
-    }
-  }
-
-  // 4. A name that used to come from the package, now declared locally. The call sites
-  //    still resolve, the tests still pass, and the dependency is gone from under them.
-  for (const name of before.bindings) {
-    if (after.bindings.includes(name)) continue;
-    const n = escapeRegExp(name);
-    if (new RegExp("(?:function|class|const|let|var)\\s+" + n + "\\b").test(afterText)) {
-      out.push({
-        kind: "subversion",
-        reason:
-          where + " declares a local `" + name + "`, a name it used to import from `" +
+          name(f) + " defines a local `" + binding + "`, a name it used to import from `" +
           packageName + "`. The calls below still resolve, so the tests pass, but they " +
           "no longer reach the package.",
       });
     }
   }
 
-  return out.sort((a, b) => (a.kind === "subversion" ? -1 : 1) - (b.kind === "subversion" ? -1 : 1));
+  return out.sort((a, b) => (a.kind === "subversion" ? 0 : 1) - (b.kind === "subversion" ? 0 : 1));
 }
 
 /**

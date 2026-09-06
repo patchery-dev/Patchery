@@ -851,15 +851,19 @@ if (violations.length > 0) {
 // the point of them - the test re-run cannot see any of this, because from its side
 // nothing is wrong.
 {
-  const depReasons = [];
+  // The WHOLE change, in one call. A legitimate migration can move a call site out of
+  // one file and into a new one, and asking each file on its own would read that as a
+  // removal and destroy a correct, tested change. New files are included for exactly
+  // that reason: they have no "before", but they are where the call site may have gone.
+  const depFiles = [];
   for (const entry of changedEntries) {
     if (entry.deleted) continue;
     let beforeText = "";
     try {
       beforeText = git(["show", "HEAD:" + entry.path], { trim: false });
     } catch {
-      // Untracked: there is no "before", so there is nothing to have abandoned.
-      continue;
+      // Untracked. No "before" is not the same as nothing to say.
+      beforeText = "";
     }
     let afterText = "";
     try {
@@ -867,19 +871,15 @@ if (violations.length > 0) {
     } catch {
       continue;
     }
-    for (const r of dependencyMisuseReasons({
-      packageName: PACKAGE,
-      beforeText,
-      afterText,
-      relPath: entry.path,
-    })) {
-      // Subversion has no legitimate form and no input turns it off. Removal does -
-      // an API deleted outright, inlined deliberately - so it has one, named in the
-      // message rather than left for someone to find.
-      if (r.kind === "removal" && ALLOW_DEP_REMOVAL) continue;
-      depReasons.push(r.reason);
-    }
+    depFiles.push({ relPath: entry.path, beforeText, afterText });
   }
+  const depReasons = dependencyMisuseReasons({
+    packageName: PACKAGE,
+    files: depFiles,
+    // Subversion has no legitimate form and this never reaches it - patching the
+    // module or shadowing its exports is refused whatever the input says.
+    allowRemoval: ALLOW_DEP_REMOVAL,
+  }).map((r) => r.reason);
   if (depReasons.length > 0) {
     for (const r of depReasons) log("[SAFETY] " + r);
     revertAll();
