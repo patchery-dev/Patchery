@@ -133,7 +133,12 @@ the design: a wrong migration that fails the tests is already caught by the test
 re-run, for free, before a reviewer is paid, so it tells you nothing about a
 confidence threshold. The population the threshold is applied to is exactly this one.
 
-**The run, on `glm-5.3`, 23 cases, $5.85:**
+**The run — 23 cases, 301,555 tokens, about three cents on the provider's own meter:**
+
+*Which GLM model answered is not recorded: this run predates the telemetry that
+now writes down the model that actually replied, and the model secret was edited
+the same day. Read the numbers below as "a GLM model", and note that this is
+exactly the gap the `Measured on:` line and the `model` input were added to close.*
 
 | | |
 | --- | --- |
@@ -189,10 +194,10 @@ The first human to see it was the reviewer.
 
 | files | lines | tests | turns | cost at list rates |
 | --- | --- | --- | --- | --- |
-| 1 | +1 −1 | failed → passed | 9 | $0.2251 |
+| 1 | +1 −1 | failed → passed | 9 | see note on cost below |
 
 A second agent then reviewed that diff without write access and without being shown
-the first agent's reasoning: **not refuted, confidence 72, $0.3298**. Proving the fix
+the first agent's reasoning: **not refuted, confidence 72**. Proving the fix
 cost more than making it. Every figure here is read out of the pull request itself,
 and [patchery.dev](https://patchery.dev) re-checks them against it in your browser —
 because we quoted two of them wrong once and nothing caught it.
@@ -399,7 +404,13 @@ node scripts/agent.mjs
   now flags the case instead of staying silent, but it cannot know which runtime
   you meant.
 - Ecosystems beyond Node / npm are plausible, but nobody has proven it.
-- Cost varies per run; `max-turns` is the brake.
+- Cost varies per run; `max-turns` is the brake. **Runs report tokens, not dollars,
+  when you point them at a non-Anthropic endpoint.** The SDK's cost figure prices
+  tokens with Anthropic's own rate table no matter who served the request: a
+  23-case calibration reported $5.8532 while the provider's console showed $0.03
+  for the same 301,555 tokens — 195x out. Input, cached input and output are
+  reported separately, because cached input is 31x cheaper than fresh input on
+  DeepSeek and 5x on GLM; multiply those by your provider's rate card.
 - The resulting PR **needs human review**. There is no auto-merge, and there
   should not be.
 - The agent sees your source code. Check what your model provider does with it

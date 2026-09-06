@@ -36,6 +36,7 @@ import {
   buildReviewEvidence,
   parseReview,
   confidenceThresholdReport,
+  tokenTotals,
   redactSecrets,
   REVIEW_SCHEMA,
   REVIEW_SYSTEM_PROMPT,
@@ -223,6 +224,7 @@ async function reviewOne(kase) {
     confidence: parsed.review.confidence,
     concerns: parsed.review.concerns.length,
     costUsd: result?.total_cost_usd ?? 0,
+    tokens: tokenTotals(result?.modelUsage).total,
     // From telemetry, not from what we asked for. A confidence threshold is a
     // per-model number, so a results file that names the requested model rather
     // than the one that answered would be a measurement of the wrong thing - and
@@ -249,7 +251,8 @@ for (const kase of cases) {
     ? "ERROR " + sample.error
     : sample.dryRun
       ? "dry run - " + sample.diffLines + " diff lines, " + sample.evidenceBytes + " bytes of evidence"
-      : sample.verdict + " @ " + sample.confidence + "  $" + (sample.costUsd || 0).toFixed(4);
+      : sample.verdict + " @ " + sample.confidence +
+        "  " + (sample.tokens || 0).toLocaleString("en-US") + " tok";
   console.log("  " + sample.label.padEnd(5) + " " + sample.id.padEnd(34) + " " + detail);
 }
 
@@ -278,7 +281,8 @@ try {
 
 const usable = samples.filter((s) => !s.error);
 const report = confidenceThresholdReport(usable);
-const spend = samples.reduce((n, s) => n + (s.costUsd || 0), 0);
+const tokens = samples.reduce((n, s) => n + (s.tokens || 0), 0);
+const anthropicList = samples.reduce((n, s) => n + (s.costUsd || 0), 0);
 
 console.log("\n" + "=".repeat(72));
 console.log("Before any threshold - how often the reviewer was simply right:");
@@ -310,8 +314,14 @@ if (report.net <= 0) {
     "the verdict itself carries whatever signal there is."
   );
 }
+// Tokens, not dollars. The SDK prices with Anthropic's own table whatever endpoint
+// served the request: this harness reported $5.8532 for a 23-case run while the
+// provider's console showed $0.03 for the same 301,555 tokens - a factor of 195.
+// Tokens are true either way, and the provider's rate card turns them into money.
 console.log("\nSamples: " + usable.length + " usable, " + (samples.length - usable.length) +
-  " errored. Spend: $" + spend.toFixed(4));
+  " errored. Tokens: " + tokens.toLocaleString("en-US") +
+  " (Anthropic's list price for these would be $" + anthropicList.toFixed(4) +
+  "; your provider charges its own rate).");
 
 // Named loudly, because the number above means nothing without it: a threshold
 // calibrated on one model does not transfer to another, not even to a smaller

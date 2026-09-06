@@ -690,6 +690,71 @@ export function normalizeVerifyMode(raw) {
 }
 
 /**
+ * Add up the tokens actually spent, across every model the run touched.
+ *
+ * Tokens are the only unit that survives a change of provider. The SDK also
+ * reports a dollar figure, and on a custom endpoint that figure is wrong - see
+ * renderSpend below for the measurement.
+ *
+ * @param {object} modelUsage the SDK result's modelUsage map
+ * @returns {{input: number, output: number, cacheRead: number, cacheCreation: number, total: number}}
+ */
+export function tokenTotals(modelUsage = {}) {
+  const t = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 };
+  for (const u of Object.values(modelUsage || {})) {
+    if (!u || typeof u !== "object") continue;
+    t.input += Number(u.inputTokens) || 0;
+    t.output += Number(u.outputTokens) || 0;
+    t.cacheRead += Number(u.cacheReadInputTokens) || 0;
+    t.cacheCreation += Number(u.cacheCreationInputTokens) || 0;
+  }
+  t.total = t.input + t.output + t.cacheRead + t.cacheCreation;
+  return t;
+}
+
+/**
+ * What a run cost, said in a unit that is actually true.
+ *
+ * The SDK's `total_cost_usd` prices tokens with Anthropic's own rate table and
+ * pays no attention to which endpoint served the request. Point ANTHROPIC_BASE_URL
+ * at a cheaper provider and the number does not change - so it stops being a cost
+ * and becomes "what this would have cost on Anthropic".
+ *
+ * Measured, 2026-09-06: a 23-case calibration run reported $5.8532. The provider's
+ * own console showed $0.03 for the same 301,555 tokens. That is $19.41 per million
+ * against a real $0.10 per million - a factor of about 195. This figure was going
+ * into every pull request body Patchery opened.
+ *
+ * So: tokens always, because they are true either way. Dollars only when the run
+ * really did go to Anthropic. On any other endpoint the dollar figure is still
+ * shown - it is a useful "what would Claude have charged" baseline - but it is
+ * named as an Anthropic-list-price comparison and never as the cost.
+ *
+ * @param {{modelUsage: object, costUsd: number, customEndpoint: boolean}} a
+ * @returns {string}
+ */
+export function renderSpend({ modelUsage = {}, costUsd = 0, customEndpoint = false } = {}) {
+  const t = tokenTotals(modelUsage);
+  const usd = "$" + (Number(costUsd) || 0).toFixed(4);
+  if (!t.total) return customEndpoint ? "tokens not reported" : usd;
+
+  // Broken down, not totalled. Cached input is charged at a fraction of fresh
+  // input - 31x cheaper on DeepSeek ($0.007 vs $0.22 per M), 5x on GLM ($0.015
+  // vs $0.075) - so a single token total cannot be turned back into money by
+  // anyone. These four numbers times your provider's four rates is the answer,
+  // and it stays correct when they change their prices, which a table baked in
+  // here would not.
+  const n = (v) => Number(v).toLocaleString("en-US");
+  const parts = [n(t.input) + " in", n(t.output) + " out"];
+  if (t.cacheRead) parts.splice(1, 0, n(t.cacheRead) + " cached");
+  if (t.cacheCreation) parts.splice(parts.length - 1, 0, n(t.cacheCreation) + " cache-write");
+  const tokens = parts.join(" · ") + " tokens";
+
+  if (!customEndpoint) return usd + " (" + tokens + ")";
+  return tokens + " — priced by your provider; " + usd + " is Anthropic's list price for the same";
+}
+
+/**
  * Normalise the verify-tools input.
  *
  * Same rule as verify-mode: an unrecognised value is an error, not a guess. This
@@ -1223,7 +1288,7 @@ export function renderReviewSection(outcome, review, meta = {}) {
     model = "",
     differentModel = false,
     differentProvider = false,
-    costUsd = 0,
+    spend = "",
     permissionDenials = 0,
   } = meta;
   if (!outcome || outcome.placement === "none") {
@@ -1289,7 +1354,7 @@ export function renderReviewSection(outcome, review, meta = {}) {
     }
     lines.push(
       "_Verdict: " + review.verdict.replace(/_/g, " ") + ", confidence " + review.confidence +
-        ". Cost $" + Number(costUsd || 0).toFixed(4) +
+        (spend ? ". Spend: " + spend : "") +
         (permissionDenials ? ". It tried " + permissionDenials + " denied tool call(s)." : "") + "._"
     );
   }
@@ -1461,7 +1526,7 @@ export function buildDiagnosis({
   changelog = "",
   turns = 0,
   edits = 0,
-  costUsd = 0,
+  spend = "",
   discovered = [],
   agentNotes = "",
 } = {}) {
@@ -1487,7 +1552,7 @@ export function buildDiagnosis({
     "| Outcome | `" + outcome + "` |",
     "| Turns used | " + turns + " |",
     "| Edits made (all reverted) | " + edits + " |",
-    "| Cost | $" + Number(costUsd || 0).toFixed(4) + " |",
+    "| Spend | " + (spend || "not reported") + " |",
     "",
     "### Why it stopped",
     "",

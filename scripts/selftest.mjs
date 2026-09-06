@@ -31,6 +31,8 @@ import {
   normalizeVerifyMode,
   normalizeVerifyTools,
   reviewPassPlan,
+  tokenTotals,
+  renderSpend,
   confidenceThresholdReport,
   shouldReview,
   truncateEvidence,
@@ -1172,6 +1174,53 @@ check("an ordinary config file is still fair game", () => {
   assert.strictEqual(protectedReason("vite.config.js"), null);
   assert.strictEqual(protectedReason("webpack.config.js"), null);
 });
+
+// The SDK's total_cost_usd prices tokens with Anthropic's rate table whatever
+// endpoint served the request. Measured 2026-09-06: a 23-case calibration reported
+// $5.8532 while the provider's console showed $0.03 for the same 301,555 tokens -
+// a factor of 195, and that figure was going into every pull request body.
+console.log("\nrenderSpend - never call another provider's bill a cost");
+const usage = (o = {}) => ({
+  m: { inputTokens: 12003, outputTokens: 4000, cacheReadInputTokens: 285552, cacheCreationInputTokens: 0, ...o },
+});
+check("tokens are summed across every model the run touched", () => {
+  const t = tokenTotals({
+    a: { inputTokens: 10, outputTokens: 1, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+    b: { inputTokens: 5, outputTokens: 2, cacheReadInputTokens: 3, cacheCreationInputTokens: 4 },
+  });
+  assert.deepStrictEqual([t.input, t.output, t.cacheRead, t.cacheCreation, t.total], [15, 3, 3, 4, 25]);
+});
+check("junk in modelUsage does not become NaN", () => {
+  const t = tokenTotals({ a: null, b: "nope", c: { inputTokens: "7" } });
+  assert.strictEqual(t.total, 7);
+});
+check("on Anthropic's own endpoint the dollar figure is the cost", () =>
+  assert.match(renderSpend({ modelUsage: usage(), costUsd: 5.8532 }), /^\$5\.8532 \(/)
+);
+// The whole point: on someone else's endpoint the number is not a cost and must
+// not read like one.
+check("on a custom endpoint the dollars are named as Anthropic's list price", () => {
+  const s = renderSpend({ modelUsage: usage(), costUsd: 5.8532, customEndpoint: true });
+  assert.ok(!/^\$/.test(s), "must not lead with a dollar figure");
+  assert.match(s, /priced by your provider/);
+  assert.match(s, /Anthropic's list price/);
+});
+// Cached input is 31x cheaper than fresh input on DeepSeek and 5x on GLM, so a
+// single total cannot be turned back into money. The breakdown is the deliverable.
+check("the breakdown is itemised, not totalled", () => {
+  const s = renderSpend({ modelUsage: usage(), costUsd: 1, customEndpoint: true });
+  assert.match(s, /12,003 in/);
+  assert.match(s, /285,552 cached/);
+  assert.match(s, /4,000 out/);
+  assert.ok(!s.includes("301,555"), "a bare total invites multiplying by one rate");
+});
+check("cache-write is shown only when there was any", () => {
+  assert.ok(!renderSpend({ modelUsage: usage() }).includes("cache-write"));
+  assert.match(renderSpend({ modelUsage: usage({ cacheCreationInputTokens: 99 }) }), /99 cache-write/);
+});
+check("no usage reported says so instead of claiming zero tokens", () =>
+  assert.strictEqual(renderSpend({ modelUsage: {}, customEndpoint: true }), "tokens not reported")
+);
 
 console.log("\nnormalizeVerifyTools - a typo must not silently pick a behaviour");
 check("empty and auto both mean auto", () => {

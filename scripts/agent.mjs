@@ -32,6 +32,7 @@ import {
   normalizeVerifyMode,
   normalizeVerifyTools,
   reviewPassPlan,
+  renderSpend,
   shouldReview,
   buildReviewEvidence,
   parseReview,
@@ -588,8 +589,12 @@ log(
     result.subtype +
     " | turns: " +
     result.num_turns +
-    " | cost (Anthropic-pricing estimate): $" +
-    (result.total_cost_usd ?? 0)
+    " | spend: " +
+    renderSpend({
+      modelUsage: result.modelUsage,
+      costUsd: result.total_cost_usd,
+      customEndpoint: usingCustomEndpoint,
+    })
 );
 log("-> model(s) used: " + (modelsUsed.join(", ") || "(unknown)"));
 
@@ -622,7 +627,11 @@ if (result.subtype === "error_max_turns") {
     changelog: CHANGELOG,
     turns: s.toolTurns,
     edits: s.edits,
-    costUsd: result.total_cost_usd ?? 0,
+    spend: renderSpend({
+      modelUsage: result.modelUsage,
+      costUsd: result.total_cost_usd,
+      customEndpoint: usingCustomEndpoint,
+    }),
     discovered: s.keys,
     agentNotes: agentText.length ? agentText[agentText.length - 1].trim() : "",
   });
@@ -847,7 +856,7 @@ group("5. Independent review (a second agent, with no way to change anything)");
 // paying for opinions on diffs that are about to be reverted.
 let reviewOutcomeResult = null;
 let review = null;
-let reviewMeta = { model: "", differentModel: false, costUsd: 0, permissionDenials: 0 };
+let reviewMeta = { model: "", differentModel: false, spend: "", permissionDenials: 0 };
 // Set once a tool-enabled pass has proved this model will not converge with tools.
 // Scoped to the run, because there is nowhere to remember it between runs.
 let toolsBurnedOut = false;
@@ -1048,7 +1057,11 @@ async function runReviewPass(entries) {
       // telemetry - it is true because the run was configured to send the review
       // somewhere else, which is a fact about this process, not about the answer.
       differentProvider: !!VERIFY_BASE_URL && VERIFY_BASE_URL !== baseUrl,
-      costUsd: reviewResult?.total_cost_usd ?? 0,
+      spend: renderSpend({
+        modelUsage: reviewResult?.modelUsage,
+        costUsd: reviewResult?.total_cost_usd,
+        customEndpoint: usingCustomEndpoint || !!VERIFY_BASE_URL,
+      }),
       permissionDenials: (reviewResult?.permission_denials ?? []).length,
     };
     if (reviewMeta.permissionDenials) {
@@ -1258,8 +1271,12 @@ const prBody = [
     (modelsUsed.join(", ") || "unknown") +
     "` - turns: " +
     result.num_turns +
-    " - cost estimate (Anthropic pricing; actual cost may differ if a different provider was used): $" +
-    (result.total_cost_usd ?? 0).toFixed(4),
+    " - spend: " +
+    renderSpend({
+      modelUsage: result.modelUsage,
+      costUsd: result.total_cost_usd,
+      customEndpoint: usingCustomEndpoint,
+    }),
   "",
   "> Needs human review. This PR was opened automatically, but it is never merged automatically.",
   "",
