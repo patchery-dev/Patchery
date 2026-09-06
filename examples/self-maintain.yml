@@ -59,6 +59,17 @@ jobs:
           anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
           anthropic-model: ${{ secrets.ANTHROPIC_MODEL }}
 
+      # A run that could not finish leaves a diagnosis instead of a fix: what it tried,
+      # why it stopped, what it had read. This turns a wasted run into a starting point.
+      # Opt in by uncommenting - it creates an issue in your repository.
+      # - name: File what it learned
+      #   if: steps.sma.outputs.outcome == 'inconclusive' && steps.sma.outputs.diagnosis-file != ''
+      #   uses: peter-evans/create-issue-from-file@v5
+      #   with:
+      #     title: "Patchery could not finish: ${{ inputs.package }}"
+      #     content-filepath: ${{ steps.sma.outputs.diagnosis-file }}
+      #     labels: patchery, needs-triage
+
       - name: Open a pull request
         if: steps.sma.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v7

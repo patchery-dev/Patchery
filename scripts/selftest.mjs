@@ -36,6 +36,7 @@ import {
   buildRepairPrompt,
   detectExtraChecks,
   extraCheckRegressions,
+  buildDiagnosis,
 } from "./guard.mjs";
 
 let pass = 0;
@@ -954,6 +955,53 @@ check("an already-unreadable package.json is not blamed on this run", () =>
 check("a project with no scripts field either side is fine", () =>
   assert.strictEqual(scriptsTamperReason('{"name":"x"}', '{"name":"x","version":"2"}'), null)
 );
+
+console.log("\nbuildDiagnosis - a run that produced nothing still learned something");
+const diag = () =>
+  buildDiagnosis({
+    packageName: "openai",
+    targetRel: "src",
+    testCommand: "npm test",
+    reason: "used all 25 turns",
+    outcome: "inconclusive",
+    baselineOutput: "TypeError: beta.assistants is not a function",
+    turns: 25,
+    edits: 0,
+    costUsd: 0.88,
+    discovered: ["read:src/a.ts", "read:src/b.ts", "grep:assistants|src||", "exec:npx tsc --noEmit"],
+    agentNotes: "I could not determine the new shape.",
+  });
+check("it says why it stopped and what the failure was", () => {
+  const md = diag();
+  assert.match(md, /used all 25 turns/);
+  assert.match(md, /beta\.assistants is not a function/);
+});
+// The point of the whole thing: three attempts at one migration each re-read almost
+// the same files, paying for the same reading three times.
+check("it lists what the run had already read, searched and run", () => {
+  const md = diag();
+  assert.match(md, /src\/a\.ts/);
+  assert.match(md, /src\/b\.ts/);
+  assert.match(md, /npx tsc --noEmit/);
+  assert.match(md, /Files it read/);
+  assert.match(md, /Commands it ran/);
+});
+check("it never claims to be a fix or a proposal", () => {
+  const md = diag();
+  assert.match(md, /not a fix and not a proposal/);
+  assert.match(md, /Nothing was changed/);
+});
+check("a run that got nowhere says so instead of printing empty headings", () => {
+  const md = buildDiagnosis({ packageName: "x", discovered: [] });
+  assert.match(md, /got no further than starting/);
+  assert.ok(!/Files it read/.test(md));
+});
+check("no arguments at all does not throw", () => assert.match(buildDiagnosis(), /Patchery could not finish/));
+check("markdown structure survives - headings are on their own lines", () => {
+  const md = diag();
+  assert.match(md, /\n### Why it stopped\n/);
+  assert.match(md, /\n\| --- \| --- \|\n/);
+});
 
 console.log("\ndetectExtraChecks - only what the project itself declares");
 const pkgWithChecks = JSON.stringify({

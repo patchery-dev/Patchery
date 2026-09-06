@@ -43,6 +43,7 @@ import {
   buildRepairPrompt,
   detectExtraChecks,
   extraCheckRegressions,
+  buildDiagnosis,
 } from "./guard.mjs";
 
 // ------------------------------------------------------------------ config
@@ -198,6 +199,25 @@ function runTests() {
   });
   const output = (r.stdout ?? "") + (r.stderr ?? "");
   return { ok: r.status === 0, code: r.status, output: output.trim() };
+}
+
+/**
+ * Write down what a run that produced nothing had learned, and return the path.
+ *
+ * Deliberately a FILE and nothing more: opening an issue or a draft PR in someone's
+ * repository is the workflow's decision, not this action's - the same split that
+ * keeps pr-body-file separate from create-pull-request.
+ */
+function writeDiagnosis(fields) {
+  try {
+    const file = path.join(env("RUNNER_TEMP", path.join(repoRoot, "..")), "sma-diagnosis.md");
+    fs.writeFileSync(file, clean(buildDiagnosis(fields)), "utf8");
+    log("Diagnosis written to: " + file);
+    return file;
+  } catch (err) {
+    log("could not write the diagnosis: " + (err?.message ?? err));
+    return "";
+  }
 }
 
 /** Run one extra check (a lint or a type-check) and report only whether it passed. */
@@ -507,6 +527,19 @@ if (stalledReason) {
   // cut it off" are different problems with different fixes, and the message alone
   // does not tell them apart.
   const s = stallDetector.inspect();
+  const diagnosisFile = writeDiagnosis({
+    packageName: PACKAGE,
+    targetRel: targetRel || ".",
+    testCommand: TEST_COMMAND,
+    reason: stalledReason,
+    outcome: "inconclusive",
+    baselineOutput: baseline.output,
+    changelog: CHANGELOG,
+    turns: s.toolTurns,
+    edits: s.edits,
+    discovered: s.keys,
+    agentNotes: agentText.length ? agentText[agentText.length - 1].trim() : "",
+  });
   stop(
     "inconclusive",
     "Inconclusive, needs human review: " +
@@ -515,7 +548,7 @@ if (stalledReason) {
       "reverted the unverified changes. Nothing was delivered. (" +
       s.toolTurns + " tool turns, " + s.discovered + " distinct things discovered, " +
       s.edits + " edit(s).)",
-    { tests_passed: "false" }
+    { tests_passed: "false", diagnosis_file: diagnosisFile }
   );
 }
 
@@ -552,6 +585,21 @@ if (result.subtype === "error_max_turns") {
     log("Discarding " + partial.length + " unverified change(s): " + partial.join(", "));
     revertPaths(partial);
   }
+  const s = stallDetector.inspect();
+  const diagnosisFile = writeDiagnosis({
+    packageName: PACKAGE,
+    targetRel: targetRel || ".",
+    testCommand: TEST_COMMAND,
+    reason: "the agent used all " + MAX_TURNS + " turns without producing a verified fix",
+    outcome: "inconclusive",
+    baselineOutput: baseline.output,
+    changelog: CHANGELOG,
+    turns: s.toolTurns,
+    edits: s.edits,
+    costUsd: result.total_cost_usd ?? 0,
+    discovered: s.keys,
+    agentNotes: agentText.length ? agentText[agentText.length - 1].trim() : "",
+  });
   stop(
     "inconclusive",
     "Inconclusive, needs human review: the agent used all " +
@@ -559,7 +607,7 @@ if (result.subtype === "error_max_turns") {
       " turns without producing a verified fix. Either the migration is bigger than one " +
       "run, or the premise is wrong (the code may not actually be broken). Any partial " +
       "changes were reverted.",
-    { tests_passed: "false" }
+    { tests_passed: "false", diagnosis_file: diagnosisFile }
   );
 }
 

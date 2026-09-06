@@ -211,6 +211,13 @@ outputs:
   summary:
     description: "One-line human-readable summary."
     value: ${{ steps.run.outputs.summary }}
+  diagnosis-file:
+    description: >-
+      Path to a markdown diagnosis, written when a run ends `inconclusive`: what it
+      tried, why it stopped, and what it had read by then. Empty otherwise. Feed it
+      to an issue or upload it as an artifact - opening anything in your repository
+      is your workflow's decision, not this action's.
+    value: ${{ steps.run.outputs.diagnosis_file }}
   review-status:
     description: >-
       How the independent review ended: not-reviewed, unavailable, not-refuted,
