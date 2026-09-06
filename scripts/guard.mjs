@@ -1801,3 +1801,121 @@ export function buildDiagnosis({
     .join("\n")
     .replace(/\n{3,}/g, "\n\n");
 }
+/**
+ * The error lines from a test run, normalised so two runs can be compared.
+ *
+ * Keeps only lines that look like a failure and strips the parts that move between
+ * runs anyway - absolute paths, line:column numbers, timings, hex ids. What is left
+ * is the shape of the failure rather than its coordinates.
+ *
+ * @param {string} output
+ * @returns {string[]} distinct, in the order they first appeared
+ */
+export function failureSignature(output = "") {
+  const seen = new Set();
+  for (const raw of String(output).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const looksLikeFailure =
+      /\b[A-Za-z]*Error\b/.test(line) ||
+      /\bCannot find module\b|\bis not a function\b|\bis not defined\b/.test(line) ||
+      /^(?:FAIL|✕|×|✗|not ok)\b/.test(line) ||
+      /\bfailed\b/i.test(line);
+    // A stack frame is where the failure happened, not what it was, and it moves
+    // whenever anyone touches the file above it.
+    if (!looksLikeFailure || /^at\s/.test(line)) continue;
+    const norm = line
+      .replace(/[A-Za-z]:[\\/][^\s:]+|(?:\/[^\s:]+)+/g, "<path>")
+      .replace(/:\d+(?::\d+)?/g, "")
+      .replace(/\b[0-9a-f]{7,}\b/gi, "<hash>")
+      .replace(/\b\d+(?:\.\d+)?\s*m?s\b/gi, "<time>")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (norm) seen.add(norm);
+  }
+  return [...seen];
+}
+
+/** Package names an error line blames, e.g. Cannot find module 'x' / require('x'). */
+export function packagesNamedIn(lines = []) {
+  const out = new Set();
+  for (const line of lines) {
+    for (const m of String(line).matchAll(/['"`]([@\w][\w.@/-]*)['"`]/g)) {
+      const name = m[1];
+      // Relative paths are the project's own files, not a dependency.
+      if (name.startsWith(".") || name.startsWith("<")) continue;
+      out.add(name.split("/").slice(0, name.startsWith("@") ? 2 : 1).join("/"));
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Did the failure change, or is it the same one?
+ *
+ * This is the difference between "the fix did not work" and "the fix worked and
+ * uncovered the next problem" - and until now both ended the same way: revert
+ * everything, say "tests still fail", throw away a correct partial fix along with
+ * the information that would have made the next attempt cheap.
+ *
+ * Heuristic, and named as one wherever it is reported. It decides what to TELL
+ * someone, never what to keep: a run whose tests fail is still reverted in full.
+ *
+ * @param {string} beforeOutput baseline, from before the agent ran
+ * @param {string} afterOutput the same command after the change
+ * @returns {{changed: boolean, gone: string[], appeared: string[], packages: string[]}}
+ */
+export function failureChanged(beforeOutput = "", afterOutput = "") {
+  const before = failureSignature(beforeOutput);
+  const after = failureSignature(afterOutput);
+  const gone = before.filter((l) => !after.includes(l));
+  const appeared = after.filter((l) => !before.includes(l));
+  return {
+    // Both halves required. New lines alone can be noise piled on the same failure;
+    // it is only evidence of progress when the original complaint actually stopped.
+    changed: gone.length > 0 && appeared.length > 0,
+    gone,
+    appeared,
+    packages: packagesNamedIn(appeared),
+  };
+}
+
+/**
+ * What to say when the tests still fail but the failure is a different one.
+ *
+ * The change is reverted either way - nothing here weakens that. The point is to
+ * hand back the one thing the run learned that the old message threw away.
+ *
+ * @param {{packageName: string, testCommand: string, diff: object}} a
+ * @returns {string}
+ */
+export function chainedFailureMessage({ packageName = "", testCommand = "", diff = {} } = {}) {
+  const next = (diff.packages || []).filter((p) => p !== packageName);
+  const lines = [
+    "`" + testCommand + "` still fails, so everything was reverted and no pull request " +
+      "was opened. But it is not failing the same way it was before.",
+    "",
+    "The original failure is gone:",
+    ...(diff.gone || []).slice(0, 5).map((l) => "  - " + l),
+    "",
+    "and this is what fails now:",
+    ...(diff.appeared || []).slice(0, 5).map((l) => "  - " + l),
+    "",
+    "That usually means the migration of `" + packageName + "` was right as far as it " +
+      "went, and a second breakage was sitting behind it. Patchery fixes one package per " +
+      "run, so it cannot follow the chain on its own.",
+  ];
+  if (next.length > 0) {
+    lines.push(
+      "",
+      "The new failure names: " + next.map((p) => "`" + p + "`").join(", ") +
+        ". Re-running with `package:` set to one of those is the obvious next step."
+    );
+  }
+  lines.push(
+    "",
+    "This comparison is a heuristic on test output, so treat it as a lead rather than " +
+      "a diagnosis. Nothing was kept: the working tree is exactly as it was."
+  );
+  return lines.join("\n");
+}

@@ -35,6 +35,10 @@ import {
   renderSpend,
   dependencyMisuseReasons,
   packageBindings,
+  failureChanged,
+  failureSignature,
+  packagesNamedIn,
+  chainedFailureMessage,
   normalizeModelTimeout,
   timeoutReason,
   confidenceThresholdReport,
@@ -1326,6 +1330,71 @@ console.log("\ndependencyMisuseReasons - against the whole corpus");
     )
   );
 }
+
+// "The fix did not work" and "the fix worked and uncovered the next problem" used to
+// end identically: revert, say "tests still fail", throw away the one thing the run
+// learned. This tells them apart. It decides what to SAY - a run whose tests fail is
+// still reverted in full either way.
+console.log("\nfailureChanged - the same failure, or the next one?");
+const ERR_A = "TypeError: currency is required as of fake-lib@2.0.0\n    at formatPrice (/home/x/node_modules/fake-lib/index.js:3:11)";
+const ERR_B = 'Error: Cannot find module "other-lib"\n    at Module._load (node:internal/modules/cjs/loader:1215:15)';
+
+check("the same failure at a different line is still the same failure", () =>
+  assert.strictEqual(failureChanged(ERR_A, ERR_A.replace("3:11", "9:42")).changed, false)
+);
+check("a different failure is reported as changed", () => {
+  const d = failureChanged(ERR_A, ERR_B);
+  assert.strictEqual(d.changed, true);
+  assert.deepStrictEqual(d.packages, ["other-lib"]);
+});
+// New noise on top of the same failure is not progress, so both halves are required:
+// the original complaint has to have actually stopped.
+check("extra output alongside the SAME error is not progress", () =>
+  assert.strictEqual(failureChanged(ERR_A, ERR_A + "\nnpm warn something unrelated").changed, false)
+);
+check("passing tests are not a changed failure", () =>
+  assert.strictEqual(failureChanged(ERR_A, "ok 1 - all good").changed, false)
+);
+check("stack frames are ignored - they move whenever anyone edits above them", () => {
+  const sig = failureSignature(ERR_A);
+  assert.strictEqual(sig.length, 1);
+  assert.ok(!sig[0].includes("at formatPrice"));
+});
+check("paths, line numbers and timings are normalised away", () =>
+  assert.strictEqual(
+    failureSignature("Error: boom /a/b/c.js:12:3 in 41ms")[0],
+    failureSignature("Error: boom /x/y/z.js:99:1 in 7ms")[0]
+  )
+);
+check("relative paths are the project's own files, not a dependency", () =>
+  assert.deepStrictEqual(packagesNamedIn(["Cannot find module './helpers'"]), [])
+);
+check("a scoped package keeps both of its segments", () =>
+  assert.deepStrictEqual(packagesNamedIn(['Cannot find module "@scope/pkg/sub"']), ["@scope/pkg"])
+);
+check("the message says what to run next, and admits it is a guess", () => {
+  const m = chainedFailureMessage({
+    packageName: "fake-lib",
+    testCommand: "npm test",
+    diff: failureChanged(ERR_A, ERR_B),
+  });
+  assert.match(m, /other-lib/);
+  assert.match(m, /heuristic/);
+  assert.match(m, /reverted/);
+});
+// The package under migration naturally appears in its own error text; suggesting it
+// as the next thing to try would be a loop.
+check("it does not suggest re-running on the package it just tried", () =>
+  assert.ok(
+    !/Re-running with/.test(
+      chainedFailureMessage({
+        packageName: "other-lib",
+        testCommand: "npm test",
+        diff: failureChanged(ERR_A, ERR_B),
+      })
+    )
+  )
+);
 
 console.log("\nnormalizeModelTimeout - a turn limit cannot end a hung request");
 check("empty means the 20-minute default", () =>

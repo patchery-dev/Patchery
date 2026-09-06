@@ -45,6 +45,8 @@ import {
   REVIEW_NO_TOOLS_NOTE,
   scriptsTamperReason,
   dependencyMisuseReasons,
+  failureChanged,
+  chainedFailureMessage,
   actionableConcerns,
   buildRepairPrompt,
   detectExtraChecks,
@@ -898,9 +900,37 @@ log(after.output.slice(-4000) || "(no output)");
 log("\n-> after the fix: " + (after.ok ? "PASS" : "FAIL (exit " + after.code + ")"));
 
 if (!after.ok) {
+  // Same failure, or a different one? Until now both ended here identically, and the
+  // difference is most of what the run learned: a NEW failure means the migration was
+  // right as far as it went and a second breakage was sitting behind it. The change is
+  // reverted either way - this decides what to say, never what to keep.
+  const diff = failureChanged(baseline.output, after.output);
   log("\nTests still fail. Reverting every change...");
   revertAll();
-  fail("Tests still fail after the fix. Everything was reverted, no PR will be opened.");
+  if (diff.changed) {
+    const message = chainedFailureMessage({ packageName: PACKAGE, testCommand: TEST_COMMAND, diff });
+    log("\n" + message);
+    const s = stallDetector.inspect();
+    writeDiagnosis({
+      packageName: PACKAGE,
+      targetRel: targetRel || ".",
+      testCommand: TEST_COMMAND,
+      reason: message,
+      outcome: "inconclusive",
+      baselineOutput: baseline.output,
+      changelog: CHANGELOG,
+      turns: s.toolTurns,
+      edits: s.edits,
+      discovered: s.keys,
+      agentNotes: agentText.length ? agentText[agentText.length - 1].trim() : "",
+    });
+  }
+  fail(
+    diff.changed
+      ? "Tests still fail, but not the same way they failed before. Everything was " +
+          "reverted and no PR will be opened - the comparison above says what to try next."
+      : "Tests still fail after the fix. Everything was reverted, no PR will be opened."
+  );
 }
 
 /**
