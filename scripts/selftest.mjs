@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { census, censusHeld } from "./test-census.mjs";
 import { findInstalled } from "./installed-version.mjs";
 import { decideNodeVersion, lowestMajor, fromNvmrc, FALLBACK } from "./node-version.mjs";
+import { classifyFailure, briefing } from "./classify-break.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import {
   protectedReason,
@@ -1949,6 +1950,75 @@ check("decideNodeVersion names its source when the project is silent", () => {
 check("decideNodeVersion steps over an unusable .nvmrc", () => {
   const r = decideNodeVersion("/w", fakeDir({ "/w/.nvmrc": "lts/*\n", "/w/package.json": '{"engines":{"node":"^20"}}' }));
   assert.strictEqual(r.version, "20");
+});
+
+
+// The break classifier. Its whole reason to exist is that Node states the kind
+// of failure in its own error code, and the agent was spending turns
+// rediscovering what the first line of the log already said.
+check("classifyFailure recognises the ESM boundary, from express's real output", () => {
+  const real =
+    " Exception during run: Error [ERR_REQUIRE_ESM]: require() of ES Module " +
+    "/home/runner/work/case/node_modules/content-disposition/dist/index.js from " +
+    "/home/runner/work/case/lib/response.js not supported.";
+  const c = classifyFailure(real);
+  assert.strictEqual(c.kind, "esm-require");
+  assert.strictEqual(c.inScope, "partial");
+  assert.match(c.evidence, /ERR_REQUIRE_ESM/);
+});
+
+check("classifyFailure recognises a removed subpath", () => {
+  const c = classifyFailure("Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './lib' is not defined");
+  assert.strictEqual(c.kind, "exports-blocked");
+  assert.strictEqual(c.inScope, true);
+});
+
+// The one class Patchery must NOT try to fix: no call-site edit raises the
+// project's Node version, and pretending otherwise ships a change that cannot work.
+check("classifyFailure marks an engine requirement as out of scope", () => {
+  const c = classifyFailure("npm warn EBADENGINE Unsupported engine { required: { node: '>=22' } }");
+  assert.strictEqual(c.kind, "engine");
+  assert.strictEqual(c.inScope, false);
+  assert.match(c.strategy, /not a code break/);
+});
+
+check("classifyFailure recognises the ordinary migration case", () => {
+  const c = classifyFailure("TypeError: parse is not a function");
+  assert.strictEqual(c.kind, "not-a-function");
+  assert.strictEqual(c.inScope, true);
+});
+
+check("classifyFailure recognises a changed return shape", () => {
+  const c = classifyFailure("TypeError: Cannot read properties of undefined (reading 'value')");
+  assert.strictEqual(c.kind, "shape-change");
+});
+
+// A module that will not load reports itself before any call inside it can
+// fail, so the loading problem has to win - and the classification has to be
+// repeated after each fix, because one wall hides the next.
+check("a loading failure outranks a call failure in the same log", () => {
+  const both = ["TypeError: parse is not a function", "Error [ERR_REQUIRE_ESM]: require() of ES Module x"].join("\n");
+  assert.strictEqual(classifyFailure(both).kind, "esm-require");
+});
+
+check("classifyFailure sees through terminal colour", () => {
+  const coloured = "[31mError [ERR_REQUIRE_ESM]: require() of ES Module x[39m";
+  assert.strictEqual(classifyFailure(coloured).kind, "esm-require");
+});
+
+// Refusing to guess is the point. An unrecognised failure gives the agent no
+// briefing at all, which is exactly where it stood before this existed.
+check("classifyFailure returns a null kind rather than guessing", () => {
+  const c = classifyFailure("Something nobody has taught us about\nDone in 4.2s");
+  assert.strictEqual(c.kind, null);
+  assert.strictEqual(c.inScope, null);
+  assert.strictEqual(briefing(c), "");
+});
+
+check("the briefing says the classification can be overruled by the code", () => {
+  const b = briefing(classifyFailure("Error [ERR_REQUIRE_ESM]: require() of ES Module x"));
+  assert.match(b, /advisory/);
+  assert.match(b, /believe the code/);
 });
 
 console.log("\n" + pass + " checks passed.\n");
