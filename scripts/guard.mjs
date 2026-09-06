@@ -689,6 +689,196 @@ export function normalizeVerifyMode(raw) {
   };
 }
 
+const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The local names a file binds from one package, and how many times it names it.
+ *
+ * Handles `const {a, b} = require("p")`, `const ns = require("p")`, `import d from
+ * "p"`, `import {a as b} from "p"`, `import * as ns from "p"`, and subpaths
+ * (`require("p/sub")`). Deliberately text-based, like `protectedReason` above:
+ * this runs on a diff in a repository we do not parse, and a regex that is honest
+ * about being a regex beats a parser that is wrong about being a parser.
+ *
+ * @param {string} text
+ * @param {string} packageName
+ * @returns {{count: number, bindings: string[], statements: string[]}}
+ */
+export function packageBindings(text = "", packageName = "") {
+  if (!text || !packageName) return { count: 0, bindings: [], statements: [] };
+  const spec = "['\"]" + escapeRegExp(packageName) + "(?:/[^'\"]*)?['\"]";
+  const bindings = new Set();
+  const statements = [];
+  let count = 0;
+
+  const addBinder = (binder) => {
+    for (const raw of String(binder).replace(/[{}]/g, ",").split(",")) {
+      const part = raw.trim();
+      if (!part) continue;
+      // `* as ns` and `a as b` both bind the name on the right.
+      const aliased = part.match(/\bas\s+([A-Za-z_$][\w$]*)\s*$/);
+      const name = aliased ? aliased[1] : part.match(/^([A-Za-z_$][\w$]*)$/)?.[1];
+      if (name) bindings.add(name);
+    }
+  };
+
+  const cjs = new RegExp(
+    "(?:const|let|var)\\s+(\\{[^}]*\\}|[A-Za-z_$][\\w$]*)\\s*=\\s*require\\(\\s*" + spec + "\\s*\\)",
+    "g"
+  );
+  const esm = new RegExp("import\\s+([\\s\\S]*?)\\s+from\\s+" + spec, "g");
+  const bare = new RegExp("(?:require\\(\\s*|import\\(\\s*|from\\s+)" + spec, "g");
+
+  for (const m of text.matchAll(cjs)) {
+    addBinder(m[1]);
+    statements.push(m[0]);
+  }
+  for (const m of text.matchAll(esm)) {
+    addBinder(m[1]);
+    statements.push(m[0]);
+  }
+  for (const _ of text.matchAll(bare)) count++;
+
+  return { count, bindings: [...bindings], statements };
+}
+
+/**
+ * Ways a "migration" can satisfy the tests while quietly abandoning the package it
+ * was sent to migrate.
+ *
+ * Every one of these was measured, not imagined. Over 23 labelled changes, the
+ * reviewing models missed six wrong migrations between them; four of the six were
+ * this - the dependency dropped, shadowed, patched or imported-and-ignored - and the
+ * models cleared them with the same confidence they use to clear correct work. The
+ * remaining two (a currency swapped then string-patched back, an invented heuristic)
+ * are genuinely a matter of judgement and are left to the reviewer, which is the
+ * division of labour this project is built on: what code can decide, code decides.
+ *
+ * Returns reasons, most serious first. `subversion` never has a legitimate form and
+ * is not gated by any input; `removal` has a rare legitimate form - an API deleted
+ * outright, inlined on purpose - and `allow-dependency-removal` exists for it.
+ *
+ * @param {{packageName: string, beforeText: string, afterText: string, relPath: string}} a
+ * @returns {Array<{kind: "removal"|"subversion", reason: string}>}
+ */
+export function dependencyMisuseReasons({
+  packageName = "",
+  beforeText = "",
+  afterText = "",
+  relPath = "",
+} = {}) {
+  const out = [];
+  if (!packageName) return out;
+
+  const before = packageBindings(beforeText, packageName);
+  const after = packageBindings(afterText, packageName);
+  // A file that never touched this package is not this check's business.
+  if (before.count === 0) return out;
+  const where = relPath ? "`" + relPath + "`" : "the changed file";
+
+  // 1. Gone entirely. "Migrate package X" that ends with no reference to X is not a
+  //    migration, it is a removal wearing a migration's commit message.
+  if (after.count === 0) {
+    out.push({
+      kind: "removal",
+      reason:
+        where + " no longer references `" + packageName + "` at all. A migration " +
+        "changes how a dependency is called; it does not stop calling it. If dropping " +
+        "the dependency really is the intended fix, set `allow-dependency-removal: true`.",
+    });
+  } else {
+    // 2. Still imported, never used. The import survives review by being there; the
+    //    code underneath it does something else entirely.
+    const body = after.statements.reduce((t, s) => t.split(s).join(" "), afterText);
+    const used = after.bindings.filter((n) => new RegExp("\\b" + escapeRegExp(n) + "\\b").test(body));
+    if (after.bindings.length > 0 && used.length === 0) {
+      out.push({
+        kind: "removal",
+        reason:
+          where + " imports " + after.bindings.map((n) => "`" + n + "`") .join(", ") +
+          " from `" + packageName + "` and then never uses it. The import is left " +
+          "standing while the work happens somewhere else.",
+      });
+    }
+  }
+
+  // 3. Writing to the imported module. This changes the package for every consumer in
+  //    the process, not just this call site. No migration has a reason to do it.
+  for (const name of after.bindings) {
+    const n = escapeRegExp(name);
+    const patched =
+      new RegExp("\\b" + n + "\\s*\\.\\s*[A-Za-z_$][\\w$]*\\s*=(?!=)").test(afterText) ||
+      new RegExp("\\bObject\\.(?:assign|defineProperty)\\s*\\(\\s*" + n + "\\b").test(afterText);
+    if (patched) {
+      out.push({
+        kind: "subversion",
+        reason:
+          where + " assigns to `" + name + "`, which is the `" + packageName + "` module " +
+          "itself. That rewrites the package for everything else in the process, not " +
+          "just this call site.",
+      });
+    }
+  }
+
+  // 4. A name that used to come from the package, now declared locally. The call sites
+  //    still resolve, the tests still pass, and the dependency is gone from under them.
+  for (const name of before.bindings) {
+    if (after.bindings.includes(name)) continue;
+    const n = escapeRegExp(name);
+    if (new RegExp("(?:function|class|const|let|var)\\s+" + n + "\\b").test(afterText)) {
+      out.push({
+        kind: "subversion",
+        reason:
+          where + " declares a local `" + name + "`, a name it used to import from `" +
+          packageName + "`. The calls below still resolve, so the tests pass, but they " +
+          "no longer reach the package.",
+      });
+    }
+  }
+
+  return out.sort((a, b) => (a.kind === "subversion" ? -1 : 1) - (b.kind === "subversion" ? -1 : 1));
+}
+
+/**
+ * How long any single model call may run before it is abandoned.
+ *
+ * `max-turns` is documented as the cost brake, and against a provider that stops
+ * answering it brakes nothing: a hung request is not a turn. Measured 2026-09-06 -
+ * a 23-case calibration whose reference run took 64 minutes was still going after
+ * three hours, with no error and no output. In the action that failure mode costs a
+ * customer six hours of runner time and produces nothing at all: not a pull request,
+ * not a summary, not even the diagnosis file written for runs that end empty,
+ * because the code that writes it is never reached.
+ *
+ * A turn limit bounds work. This bounds waiting. They are different brakes.
+ *
+ * @param {string} raw minutes, from the action input
+ * @returns {{minutes: number, error: string|null}}
+ */
+export function normalizeModelTimeout(raw) {
+  const v = String(raw ?? "").trim();
+  if (v === "") return { minutes: 20, error: null };
+  const n = Number(v);
+  // 0 means "wait forever", which has to stay reachable: a slow self-hosted model
+  // on a long migration is a real case, and silently capping it would be its own
+  // kind of lie. It is opt-in, and the log says what was chosen.
+  if (Number.isFinite(n) && n >= 0 && n <= 360) return { minutes: Math.floor(n), error: null };
+  return {
+    minutes: 20,
+    error: 'model-timeout-minutes must be a number between 0 and 360 - got "' + v + '"',
+  };
+}
+
+/** What to say when a model call is abandoned, in a way that names the next step. */
+export function timeoutReason(label, minutes) {
+  return (
+    "the " + label + " produced nothing for " + minutes + " minutes and was stopped. " +
+    "This is a stalled request, not a slow one - a turn limit cannot catch it, because " +
+    "waiting is not a turn. Raise `model-timeout-minutes` if your model really is this " +
+    "slow, or set it to 0 to wait indefinitely."
+  );
+}
+
 /**
  * Add up the tokens actually spent, across every model the run touched.
  *

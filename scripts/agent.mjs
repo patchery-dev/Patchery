@@ -33,6 +33,8 @@ import {
   normalizeVerifyTools,
   reviewPassPlan,
   renderSpend,
+  normalizeModelTimeout,
+  timeoutReason,
   shouldReview,
   buildReviewEvidence,
   parseReview,
@@ -42,6 +44,7 @@ import {
   REVIEW_SYSTEM_PROMPT,
   REVIEW_NO_TOOLS_NOTE,
   scriptsTamperReason,
+  dependencyMisuseReasons,
   actionableConcerns,
   buildRepairPrompt,
   detectExtraChecks,
@@ -74,6 +77,12 @@ const BASELINE_RETRIES = Math.max(0, Number(env("SMA_BASELINE_RETRIES", "2")) ||
 // often needs the root manifest), and whether deleting a tracked file is allowed.
 const ALLOWED_PATHS = parsePathList(env("SMA_ALLOWED_PATHS"));
 const ALLOW_DELETIONS = bool("SMA_ALLOW_DELETIONS", false);
+// A migration changes how a dependency is called; it does not stop calling it.
+// Measured over 23 labelled changes: four of the six wrong migrations the reviewing
+// models cleared were exactly this - the package dropped, shadowed, patched, or
+// imported and then ignored - and they were cleared with the same confidence the
+// models use to clear correct work. What code can decide, code decides.
+const ALLOW_DEP_REMOVAL = bool("SMA_ALLOW_DEPENDENCY_REMOVAL", false);
 const STALL_REPEATS = Math.max(2, Number(env("SMA_STALL_REPEATS", "3")) || 3);
 // A turn that opens a file, runs a command or makes a search it has not made before
 // is progress, even before anything has been edited. Only repeating work already
@@ -96,6 +105,28 @@ const VERIFY_MODE = verifyMode.mode;
 // no-tools pass if the model spends every turn investigating and never answers -
 // then remembers that for the rest of the run, so a second review does not pay the
 // same discovery cost twice. Set it explicitly once you know your reviewer model.
+// A wall-clock brake, separate from the turn brake. See guard.mjs for why both are
+// needed: a provider that stops answering never spends a turn.
+const modelTimeout = normalizeModelTimeout(env("SMA_MODEL_TIMEOUT_MINUTES"));
+const MODEL_TIMEOUT_MIN = modelTimeout.minutes;
+
+/**
+ * Give one model call a deadline. Returns the abortController to hand to the SDK
+ * and a done() that must be called so a finished call does not leave a timer -
+ * and, more importantly, does not abort the NEXT call.
+ */
+function deadline(label) {
+  if (!MODEL_TIMEOUT_MIN) return { abortController: undefined, done: () => {}, expired: () => false };
+  const ac = new AbortController();
+  let fired = false;
+  const timer = setTimeout(() => {
+    fired = true;
+    log("[timeout] " + timeoutReason(label, MODEL_TIMEOUT_MIN));
+    ac.abort();
+  }, MODEL_TIMEOUT_MIN * 60 * 1000);
+  return { abortController: ac, done: () => clearTimeout(timer), expired: () => fired };
+}
+
 const verifyTools = normalizeVerifyTools(env("SMA_VERIFY_TOOLS"));
 const VERIFY_TOOLS = verifyTools.tools;
 const VERIFY_MODEL = env("SMA_VERIFY_MODEL");
@@ -284,6 +315,7 @@ if (!fs.existsSync(TARGET_DIR)) {
 // start is the only answer that cannot leave them believing it.
 if (verifyMode.error) fail(verifyMode.error);
 if (verifyTools.error) fail(verifyTools.error);
+if (modelTimeout.error) fail(modelTimeout.error);
 
 group("0. Environment");
 // "Custom endpoint" means anything other than Anthropic's own host. Some
@@ -498,6 +530,7 @@ const stallDetector = createStallDetector({
   root: TARGET_DIR.replace(/\\/g, "/"),
 });
 
+const agentDeadline = deadline("fixing agent");
 try {
   for await (const message of query({
     prompt,
@@ -506,6 +539,7 @@ try {
       allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
       permissionMode: "bypassPermissions",
       maxTurns: MAX_TURNS,
+      abortController: agentDeadline.abortController,
     },
   })) {
     if (message.type === "assistant") {
@@ -539,7 +573,13 @@ try {
     }
   }
 } catch (err) {
+  // An abort surfaces here as an ordinary throw. Say which it was: "the agent
+  // crashed" sends someone reading a stack trace, "it stopped answering" sends
+  // them to the provider.
+  if (agentDeadline.expired()) fail(timeoutReason("fixing agent", MODEL_TIMEOUT_MIN));
   fail("The agent crashed: " + (err?.message ?? err));
+} finally {
+  agentDeadline.done();
 }
 
 // Stopped early because it was going in circles. Anything it half-changed is
@@ -807,6 +847,51 @@ if (violations.length > 0) {
   }
 }
 
+// Checked here, before the tests: these are all changes that PASS the tests. That is
+// the point of them - the test re-run cannot see any of this, because from its side
+// nothing is wrong.
+{
+  const depReasons = [];
+  for (const entry of changedEntries) {
+    if (entry.deleted) continue;
+    let beforeText = "";
+    try {
+      beforeText = git(["show", "HEAD:" + entry.path], { trim: false });
+    } catch {
+      // Untracked: there is no "before", so there is nothing to have abandoned.
+      continue;
+    }
+    let afterText = "";
+    try {
+      afterText = fs.readFileSync(path.join(repoRoot, entry.path), "utf8");
+    } catch {
+      continue;
+    }
+    for (const r of dependencyMisuseReasons({
+      packageName: PACKAGE,
+      beforeText,
+      afterText,
+      relPath: entry.path,
+    })) {
+      // Subversion has no legitimate form and no input turns it off. Removal does -
+      // an API deleted outright, inlined deliberately - so it has one, named in the
+      // message rather than left for someone to find.
+      if (r.kind === "removal" && ALLOW_DEP_REMOVAL) continue;
+      depReasons.push(r.reason);
+    }
+  }
+  if (depReasons.length > 0) {
+    for (const r of depReasons) log("[SAFETY] " + r);
+    revertAll();
+    fail(
+      "Blocked and reverted, no PR will be opened. " + depReasons.join(" ") + " " +
+        "These changes pass your tests - that is why they are checked here rather than " +
+        "left to the test run - and a reviewing model cleared this class of change as " +
+        "often as it cleared correct work, which is why it is a rule and not an opinion."
+    );
+  }
+}
+
 group("4. Run the tests again myself (do not trust the agent's word)");
 const after = runTests();
 log(after.output.slice(-4000) || "(no output)");
@@ -938,6 +1023,7 @@ async function runReviewPass(entries) {
     // depend on by caret range. This is the check that does not rely on it.
     const treeBefore = JSON.stringify(workingTreeEntries());
 
+    const reviewDeadline = deadline("reviewer");
     const reviewOpts = {
       cwd: TARGET_DIR,
       systemPrompt: REVIEW_SYSTEM_PROMPT,
@@ -949,6 +1035,7 @@ async function runReviewPass(entries) {
       permissionMode: "dontAsk",
       maxTurns: VERIFY_MAX_TURNS,
       outputFormat: { type: "json_schema", schema: REVIEW_SCHEMA },
+      abortController: reviewDeadline.abortController,
     };
     if (VERIFY_MODEL || VERIFY_BASE_URL || VERIFY_AUTH_TOKEN) {
       // Spread process.env: a partial object here wipes PATH.
@@ -1025,7 +1112,11 @@ async function runReviewPass(entries) {
         }
       }
     } catch (err) {
-      callError = "the reviewer crashed: " + (err?.message ?? err);
+      callError = reviewDeadline.expired()
+        ? timeoutReason("reviewer", MODEL_TIMEOUT_MIN)
+        : "the reviewer crashed: " + (err?.message ?? err);
+    } finally {
+      reviewDeadline.done();
     }
 
     const tamper = treeBefore !== JSON.stringify(workingTreeEntries());
@@ -1100,6 +1191,7 @@ if (VERIFY_REPAIR && review) {
     for (const c of actionable) log("  - " + c.file + ": " + c.claim.slice(0, 120));
 
     let repairFailed = null;
+    const repairDeadline = deadline("repair turn");
     try {
       for await (const message of query({
         prompt: buildRepairPrompt({ packageName: PACKAGE, testCommand: TEST_COMMAND, concerns: actionable }),
@@ -1107,6 +1199,7 @@ if (VERIFY_REPAIR && review) {
           cwd: TARGET_DIR,
           allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
           permissionMode: "bypassPermissions",
+          abortController: repairDeadline.abortController,
           maxTurns: VERIFY_REPAIR_TURNS,
         },
       })) {
@@ -1118,7 +1211,11 @@ if (VERIFY_REPAIR && review) {
         }
       }
     } catch (err) {
-      repairFailed = "the repair turn crashed: " + (err?.message ?? err);
+      repairFailed = repairDeadline.expired()
+        ? timeoutReason("repair turn", MODEL_TIMEOUT_MIN)
+        : "the repair turn crashed: " + (err?.message ?? err);
+    } finally {
+      repairDeadline.done();
     }
 
     if (repairFailed) {

@@ -104,6 +104,29 @@ inputs:
       change.
     required: false
     default: "auto"
+  allow-dependency-removal:
+    description: >-
+      Permit a "migration" that ends with the package no longer used. Off, because a
+      migration changes how a dependency is called - it does not stop calling it, and
+      a change that drops the dependency while the tests still pass is the exact shape
+      the reviewing models were measured clearing as readily as correct work. Turn it
+      on only when removing the dependency really is the intended fix: the API was
+      deleted outright and inlining it is the migration. It never gates the subversion
+      checks - monkey-patching the package, or shadowing its exports with a local
+      declaration, has no legitimate form and no input turns it off.
+    required: false
+    default: "false"
+  model-timeout-minutes:
+    description: >-
+      Abandon any single model call that has run this long. max-turns bounds work;
+      this bounds waiting, and they are different brakes - a provider that stops
+      answering never spends a turn, so a turn limit cannot end it. Without this a
+      hung request holds the runner until GitHub kills the job hours later, producing
+      no pull request, no summary, and not even the diagnosis file written for runs
+      that end empty, because the code that writes it is never reached. 0 waits
+      indefinitely, for a genuinely slow self-hosted model.
+    required: false
+    default: "20"
   verify-mode:
     description: >-
       Independent review of the fix by a second, read-only agent. `warn` (the
@@ -285,6 +308,8 @@ runs:
         SMA_DRY_RUN: ${{ inputs.dry-run }}
         SMA_ALLOWED_PATHS: ${{ inputs.allowed-paths }}
         SMA_ALLOW_DELETIONS: ${{ inputs.allow-deletions }}
+        SMA_ALLOW_DEPENDENCY_REMOVAL: ${{ inputs.allow-dependency-removal }}
+        SMA_MODEL_TIMEOUT_MINUTES: ${{ inputs.model-timeout-minutes }}
         SMA_BASELINE_RETRIES: ${{ inputs.baseline-retries }}
         SMA_STALL_REPEATS: ${{ inputs.stall-repeats }}
         SMA_STALL_STALE_TURNS: ${{ inputs.stall-stale-turns }}

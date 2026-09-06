@@ -33,6 +33,10 @@ import {
   reviewPassPlan,
   tokenTotals,
   renderSpend,
+  dependencyMisuseReasons,
+  packageBindings,
+  normalizeModelTimeout,
+  timeoutReason,
   confidenceThresholdReport,
   shouldReview,
   truncateEvidence,
@@ -1179,6 +1183,115 @@ check("an ordinary config file is still fair game", () => {
 // endpoint served the request. Measured 2026-09-06: a 23-case calibration reported
 // $5.8532 while the provider's console showed $0.03 for the same 301,555 tokens -
 // a factor of 195, and that figure was going into every pull request body.
+// Four wrong migrations the reviewing models cleared, moved out of the model's hands
+// and into code. Measured over the 23-case corpus: the models missed six, four were
+// this shape, and they were cleared with the same confidence used to clear correct
+// work. The other two need judgement and stay with the reviewer.
+console.log("\ndependencyMisuseReasons - what code can decide, code decides");
+const BEFORE = 'const { formatPrice } = require("fake-lib");\nfunction f(a) { return formatPrice(a); }\n';
+const dep = (afterText, over = {}) =>
+  dependencyMisuseReasons({ packageName: "fake-lib", beforeText: BEFORE, afterText, relPath: "app.js", ...over });
+
+check("a correct migration is silent", () =>
+  assert.deepStrictEqual(dep('const { formatPrice } = require("fake-lib");\nfunction f(a) { return formatPrice(a, "USD"); }'), [])
+);
+check("the package disappearing is a removal, not a migration", () => {
+  const r = dep('function f(a) { return "$" + a.toFixed(2); }');
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].kind, "removal");
+  assert.match(r[0].reason, /no longer references/);
+});
+check("the message names the input that would allow it", () =>
+  assert.match(dep("function f(a) { return a; }")[0].reason, /allow-dependency-removal/)
+);
+check("imported and then never used", () => {
+  const r = dep('const { formatPrice } = require("fake-lib");\nfunction f(a) { return "Total: $19.90"; }');
+  assert.strictEqual(r[0].kind, "removal");
+  assert.match(r[0].reason, /never uses it/);
+});
+// No migration has a reason to rewrite the package for the whole process.
+check("assigning to the module is subversion, whatever the input says", () => {
+  const r = dep('const lib = require("fake-lib");\nlib.formatPrice = (a) => "x";\nfunction f(a) { return lib.formatPrice(a); }');
+  assert.ok(r.some((x) => x.kind === "subversion"), JSON.stringify(r));
+});
+check("Object.assign onto the module counts too", () =>
+  assert.ok(
+    dep('const lib = require("fake-lib");\nObject.assign(lib, {});\nfunction f(a){ return lib.formatPrice(a); }')
+      .some((x) => x.kind === "subversion")
+  )
+);
+check("a local declaration shadowing an imported name", () => {
+  const r = dep('function formatPrice(a) { return "$" + a; }\nfunction f(a) { return formatPrice(a); }');
+  assert.ok(r.some((x) => x.kind === "subversion" && /declares a local/.test(x.reason)), JSON.stringify(r));
+});
+check("subversion is reported before removal", () => {
+  const r = dep('function formatPrice(a) { return "$" + a; }\nfunction f(a) { return formatPrice(a); }');
+  assert.strictEqual(r[0].kind, "subversion");
+});
+check("a file that never used the package is not this check's business", () =>
+  assert.deepStrictEqual(dep("const x = 1;", { beforeText: "const x = 2;" }), [])
+);
+check("ESM import forms are understood", () => {
+  const esmBefore = 'import { formatPrice } from "fake-lib";\nexport const f = (a) => formatPrice(a);\n';
+  assert.deepStrictEqual(dep('import { formatPrice } from "fake-lib";\nexport const f = (a) => formatPrice(a, "USD");', { beforeText: esmBefore }), []);
+  assert.strictEqual(dep('export const f = (a) => "$" + a;', { beforeText: esmBefore })[0].kind, "removal");
+});
+check("aliased and namespace imports bind the right name", () => {
+  const b = packageBindings('import * as ns from "fake-lib";\nimport { a as b } from "fake-lib/sub";', "fake-lib");
+  assert.deepStrictEqual(b.bindings.sort(), ["b", "ns"]);
+  assert.strictEqual(b.count, 2);
+});
+
+// The check that matters most: over every case in the corpus, the rules must fire on
+// wrong migrations and stay completely silent on correct ones. A guard that blocks
+// correct work destroys a tested fix its author never sees - the expensive direction.
+console.log("\ndependencyMisuseReasons - against the whole corpus");
+{
+  const corpusDir = path.join(root, "calibration");
+  const corpus = JSON.parse(fs.readFileSync(path.join(corpusDir, "corpus.json"), "utf8"));
+  const beforeText = fs.readFileSync(path.join(root, "test-fixture", "app.js"), "utf8");
+  const fire = (c) =>
+    dependencyMisuseReasons({
+      packageName: corpus.package,
+      beforeText,
+      afterText: fs.readFileSync(path.join(corpusDir, "cases", c.file), "utf8"),
+      relPath: corpus.target,
+    });
+
+  check("NO correct migration is blocked (11 cases)", () => {
+    const wrong = corpus.cases.filter((c) => c.label === "good" && fire(c).length > 0);
+    assert.deepStrictEqual(wrong.map((c) => c.file), []);
+  });
+  // Pinned by name: if a later change quietly stops catching one of these, the count
+  // alone would not say which, and these five are the reason the rules exist.
+  check("the five mechanically-detectable wrong migrations are caught", () => {
+    const caught = corpus.cases.filter((c) => c.label === "bad" && fire(c).length > 0).map((c) => c.file);
+    assert.deepStrictEqual(caught.sort(), [
+      "bad-01-hardcoded-return.js",
+      "bad-03-reimplemented-locally.js",
+      "bad-05-monkey-patch.js",
+      "bad-08-tolocalestring.js",
+      "bad-09-shadowing-stub.js",
+    ]);
+  });
+}
+
+console.log("\nnormalizeModelTimeout - a turn limit cannot end a hung request");
+check("empty means the 20-minute default", () =>
+  assert.strictEqual(normalizeModelTimeout("").minutes, 20)
+);
+check("0 stays reachable - waiting forever is a real choice", () =>
+  assert.strictEqual(normalizeModelTimeout("0").minutes, 0)
+);
+check("nonsense is an error, not a silent default", () => {
+  assert.ok(normalizeModelTimeout("soon").error);
+  assert.ok(normalizeModelTimeout("-5").error);
+  assert.ok(normalizeModelTimeout("999").error);
+});
+check("the message says what to do about it", () =>
+  assert.match(timeoutReason("reviewer", 20), /model-timeout-minutes/)
+);
+
 console.log("\nrenderSpend - never call another provider's bill a cost");
 const usage = (o = {}) => ({
   m: { inputTokens: 12003, outputTokens: 4000, cacheReadInputTokens: 285552, cacheCreationInputTokens: 0, ...o },
