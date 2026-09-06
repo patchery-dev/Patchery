@@ -318,6 +318,7 @@ jobs:
             --broken-exit '${{ steps.broken.outputs.exit }}' \
             --final-exit '${{ steps.recount.outputs.exit }}' \
             --action-outcome '${{ steps.patchery.outputs.outcome }}' \
+            --action-summary '${{ steps.patchery.outputs.summary }}' \
             --changed '${{ steps.patchery.outputs.changed }}' \
             --review '${{ steps.patchery.outputs.review-status }}' \
             --files '${{ steps.patchery.outputs.files }}' \

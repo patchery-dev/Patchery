@@ -317,13 +317,20 @@ runs:
     - name: Install agent dependencies
       shell: bash
       run: |
-        # Installed with the runner's npm, not the project's: an old Node ships an
-        # old npm that cannot read the SDK's package metadata. If it is not beside
-        # the runner's node, fall back rather than fail - a working install with
-        # the wrong npm beats no install at all, and the agent runs on our Node
-        # either way.
+        # Installed with the runner's npm, not the project's.
+        #
+        # The fallback used to be a plain `npm`, on the theory that a working
+        # install with the wrong npm beats no install. It does not. On a project
+        # pinned to Node 12 that is npm 6, which does not install peer
+        # dependencies - so the SDK arrived without `zod`, and the run failed much
+        # later with an error that named neither npm nor the SDK.
+        #
+        # Failing here says what is wrong, in the step where it is wrong.
         NPM="$(dirname "${{ steps.node.outputs.ours }}")/npm"
-        [ -x "$NPM" ] || NPM=npm
+        if [ ! -x "$NPM" ]; then
+          echo "::error::Could not find the runner's own npm next to $(dirname "${{ steps.node.outputs.ours }}"). Patchery needs it to install its SDK - the project's npm may be too old to do it correctly."
+          exit 1
+        fi
         "$NPM" install --no-save --no-audit --no-fund "@anthropic-ai/claude-agent-sdk@^0.1.77"
       working-directory: ${{ github.action_path }}
 

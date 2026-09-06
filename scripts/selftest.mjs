@@ -2494,4 +2494,44 @@ check("a multi-line call is treated as consumed", () => {
   assert.deepStrictEqual(out, []);
 });
 
+
+// A provider that stopped answering is not a product result. Four cases in the
+// second benchmark read "no fix produced: failed" - an agent with no ideas - when
+// the logs said the model had produced nothing for twenty minutes.
+check("outcome BLOCKED when the model stalled rather than answered", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0",
+    brokenExit: "1",
+    changed: "false",
+    actionOutcome: "failed",
+    actionSummary:
+      "the fixing agent produced nothing for 20 minutes and was stopped. This is a stalled request, not a slow one",
+  });
+  assert.strictEqual(r.outcome, "BLOCKED");
+  assert.match(r.detail, /stopped answering/);
+});
+
+// It must not swallow the results that ARE about the product.
+check("an ordinary failure is still not blamed on the provider", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0",
+    brokenExit: "1",
+    changed: "false",
+    actionOutcome: "no-changes",
+    actionSummary: "The agent finished and made no edits.",
+  });
+  assert.strictEqual(r.outcome, "NO-CHANGE");
+});
+
+check("a refusal survives a summary that mentions minutes", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0",
+    brokenExit: "1",
+    changed: "false",
+    actionOutcome: "refused: the reviewer refuted the fix",
+    actionSummary: "Reviewed in 3 minutes and refuted.",
+  });
+  assert.strictEqual(r.outcome, "REFUSED");
+});
+
 console.log("\n" + pass + " checks passed.\n");

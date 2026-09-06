@@ -58,6 +58,7 @@ export function benchmarkOutcome({
   version = "",
   installed = "",
   brokenExit = "",
+  actionSummary = "",
 } = {}) {
   if (baselineExit !== "0") {
     return {
@@ -101,6 +102,23 @@ export function benchmarkOutcome({
     return {
       outcome: "BLOCKED",
       detail: "the run never established whether the break was present",
+    };
+  }
+
+  // A provider that stopped answering is not a product result. Four cases in the
+  // second benchmark ended "no fix produced: failed", which reads as an agent
+  // with no ideas; the logs said the model had produced nothing for twenty
+  // minutes and the run was stopped waiting for it. On winston the agent had
+  // already written down the exact break - `is-stream` v4 is ESM-only with named
+  // exports, so `require('is-stream')` no longer returns a function - and then
+  // the request stalled.
+  //
+  // Filed with BLOCKED and kept out of the denominator, because it says nothing
+  // about whether Patchery can fix the break.
+  if (/stalled request|produced nothing for \d+ minutes/i.test(actionSummary)) {
+    return {
+      outcome: "BLOCKED",
+      detail: "the model stopped answering mid-run and the request was abandoned - not a verdict on the fix",
     };
   }
 
@@ -214,6 +232,7 @@ if (isMain) {
     version: a.version,
     installed: a.installed,
     brokenExit: a["broken-exit"],
+    actionSummary: a["action-summary"],
     before,
     after,
   });
