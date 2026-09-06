@@ -772,7 +772,7 @@ checked, and untouched:
         </p>
         <ol class="steps">
           <li><b>01</b><span>Put your AI key in the repository&rsquo;s secrets, as <code>ANTHROPIC_AUTH_TOKEN</code>.</span></li>
-          <li><b>02</b><span>Save the file on the right as <code>.github/workflows/self-maintain.yml</code>.</span></li>
+          <li><b>02</b><span>Save the file on the right as <code>.github/workflows/patchery.yml</code>.</span></li>
           <li><b>03</b><span>Start it from the Actions tab. You choose which library it works on.</span></li>
         </ol>
         <p class="muted">
@@ -785,10 +785,10 @@ checked, and untouched:
       <div class="install__code">
         <div class="scr__bar">
           <span class="scr__tag">yaml</span>
-          <span class="scr__path">.github/workflows/self-maintain.yml</span>
+          <span class="scr__path">.github/workflows/patchery.yml</span>
           <button class="copy" id="copyBtn" type="button">copy</button>
         </div>
-        <pre class="term term--yaml"><code><i class="y-k">name</i>: self-maintain
+        <pre class="term term--yaml"><code><i class="y-k">name</i>: Patchery
 
 <i class="y-k">on</i>:
   <i class="y-k">workflow_dispatch</i>:
@@ -821,7 +821,7 @@ checked, and untouched:
       - <i class="y-k">if</i>: <i class="y-e">steps.sma.outputs.changed == 'true'</i>
         <i class="y-k">uses</i>: peter-evans/create-pull-request@v7
         <i class="y-k">with</i>:
-          <i class="y-k">branch</i>:    self-maintain/<i class="y-e">${{ inputs.package }}</i>
+          <i class="y-k">branch</i>:    patchery/<i class="y-e">${{ inputs.package }}</i>
           <i class="y-k">body-path</i>: <i class="y-e">${{ steps.sma.outputs.pr-body-file }}</i>
           <i class="y-k">add-paths</i>: <i class="y-e">${{ steps.sma.outputs.files }}</i></code></pre>
       </div>

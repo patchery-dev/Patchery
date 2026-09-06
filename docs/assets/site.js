@@ -448,8 +448,8 @@
   /* ══════════════════════════  copy the workflow  ══════════════════════════ */
 
   var YML = [
-    "# .github/workflows/self-maintain.yml",
-    "name: self-maintain",
+    "# .github/workflows/patchery.yml",
+    "name: Patchery",
     "",
     "on:",
     "  workflow_dispatch:",
@@ -500,7 +500,7 @@
     "        if: steps.sma.outputs.changed == 'true'",
     "        uses: peter-evans/create-pull-request@v7",
     "        with:",
-    "          branch: self-maintain/${{ inputs.package }}",
+    "          branch: patchery/${{ inputs.package }}",
     '          title: "fix(deps): migrate ${{ inputs.package }} call sites"',
     "          body-path: ${{ steps.sma.outputs.pr-body-file }}",
     "          add-paths: ${{ steps.sma.outputs.files }}",
