@@ -108,16 +108,31 @@ jobs:
       # Set.prototype.intersection, which exists from Node 22, and we gave it 20.
       # That verdict was about our runner, not the repository - the worst kind of
       # wrong answer, because it reads as a finding and quietly drops a good case.
+      # Two candidates, not one, because no static rule picks the right Node.
+      #
+      # Too low and the project's own tooling will not start: knex declares
+      # `engines: ">=16"`, and on 16 a devDependency refused to load, so the batch
+      # recorded "already failing at this commit" about a healthy repository.
+      # Too high and the break disappears: express's ESM failure exists on 18 and
+      # not on 22.
+      #
+      # And a repository's CI names versions that are not interchangeable - axios
+      # runs compatibility smoke jobs on Node 12 beside a real suite on 26. So the
+      # first candidate is the lowest version CI runs, where a break matters most,
+      # and the fallback is the highest, where the tooling is most likely to work.
+      # Whichever produces a suite that actually runs is the one used.
       - name: Decide which Node to use
         id: node
         run: |
-          VERSION=$(node "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }})
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          LIST=$(node "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }} --list)
+          echo "candidates: $LIST"
+          echo "first=$(echo "$LIST" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "last=$(echo "$LIST" | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
 
-      - name: Use Node ${{ steps.node.outputs.version }}
+      - name: Use Node ${{ steps.node.outputs.first }}
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ steps.node.outputs.version }}
+          node-version: ${{ steps.node.outputs.first }}
 
       - name: Report what is being verified
         run: |
@@ -129,7 +144,7 @@ jobs:
             echo "| pinned to | \`${{ inputs.commit }}\` |"
             echo "| test command | \`${{ inputs.test-command }}\` |"
             echo "| directory | \`${{ inputs.target-dir }}\` |"
-            echo "| node | \`${{ steps.node.outputs.version }}\` |"
+            echo "| node | \`${{ steps.node.outputs.first }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Lockfile decides the tool. `npm ci` is refused when the lockfile and
@@ -173,9 +188,59 @@ jobs:
           echo "exit=$?" >> "$GITHUB_OUTPUT"
           tail -40 /tmp/before.log
 
+      # Second attempt, on the highest Node this repository's CI runs. Only when
+      # the first one produced a red suite - and a red suite here is far more
+      # often our runtime than the repository, which is what sixteen of
+      # thirty-three verdicts turned out to be.
+      - name: Use Node ${{ steps.node.outputs.last }} instead
+        if: steps.before.outputs.exit != '0' && steps.node.outputs.last != steps.node.outputs.first
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node.outputs.last }}
+
+      - name: Install and test again on Node ${{ steps.node.outputs.last }}
+        id: retry
+        if: steps.before.outputs.exit != '0' && steps.node.outputs.last != steps.node.outputs.first
+        working-directory: case/${{ inputs.target-dir }}
+        timeout-minutes: 20
+        continue-on-error: true
+        run: |
+          set +e
+          # A fresh install: native modules built against the previous Node will
+          # not load on this one, and their failure would read as the repository
+          # being broken.
+          rm -rf node_modules
+          if [ '${{ steps.install.outputs.pm }}' = 'pnpm' ]; then pnpm install --no-frozen-lockfile > /tmp/reinstall.log 2>&1
+          elif [ '${{ steps.install.outputs.pm }}' = 'yarn' ]; then yarn install > /tmp/reinstall.log 2>&1
+          else npm ci > /tmp/reinstall.log 2>&1 || npm install > /tmp/reinstall.log 2>&1; fi
+          tail -10 /tmp/reinstall.log
+          ${{ inputs.test-command }} > /tmp/before.log 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          echo "node: $(node --version)"
+          tail -40 /tmp/before.log
+
+      # Whichever attempt produced a green suite is the one the case is measured
+      # against; the rest of the workflow reads this and not the individual steps.
+      - name: Settle on a baseline
+        id: baseline
+        run: |
+          FIRST='${{ steps.before.outputs.exit }}'
+          RETRY='${{ steps.retry.outputs.exit }}'
+          if [ "$FIRST" = "0" ]; then
+            echo "exit=0" >> "$GITHUB_OUTPUT"
+            echo "node=${{ steps.node.outputs.first }}" >> "$GITHUB_OUTPUT"
+          elif [ "$RETRY" = "0" ]; then
+            echo "exit=0" >> "$GITHUB_OUTPUT"
+            echo "node=${{ steps.node.outputs.last }}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Node ${{ steps.node.outputs.first }} could not run this suite; measured on ${{ steps.node.outputs.last }} instead"
+          else
+            echo "exit=${FIRST:-1}" >> "$GITHUB_OUTPUT"
+            echo "node=${{ steps.node.outputs.first }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install the breaking version
         id: bump
-        if: steps.before.outputs.exit == '0'
+        if: steps.baseline.outputs.exit == '0'
         working-directory: case/${{ inputs.target-dir }}
         continue-on-error: true
         run: |
@@ -213,7 +278,7 @@ jobs:
       - name: Verdict
         if: always()
         run: |
-          BEFORE='${{ steps.before.outputs.exit }}'
+          BEFORE='${{ steps.baseline.outputs.exit }}'
           AFTER='${{ steps.after.outputs.exit }}'
           if [ '${{ steps.install.outcome }}' != 'success' ]; then
             V=UNKNOWN
@@ -242,6 +307,8 @@ jobs:
             echo "### $V"
             echo ""
             echo "$D"
+            echo ""
+            echo "Measured on Node ${{ steps.baseline.outputs.node }}."
           } >> "$GITHUB_STEP_SUMMARY"
           node -e "
             const [repo, pkg, version, commit, verdict, detail] = process.argv.slice(1);

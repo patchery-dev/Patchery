@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { census, censusHeld } from "./test-census.mjs";
 import { findInstalled } from "./installed-version.mjs";
-import { decideNodeVersion, lowestMajor, fromNvmrc, FALLBACK } from "./node-version.mjs";
+import { decideNodeVersion, lowestMajor, fromNvmrc, ciNodeVersions, FALLBACK } from "./node-version.mjs";
 import { classifyFailure, briefing } from "./classify-break.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import {
@@ -2037,6 +2037,101 @@ check("the escape hatches are named and refused", () => {
   const c = classifyFailure("Error [ERR_REQUIRE_ESM]: require() of ES Module x");
   assert.match(c.strategy, /do not re-implement it/);
   assert.match(c.strategy, /not pin/);
+});
+
+
+// Reading the CI workflow, from the two real files that motivated it.
+check("ciNodeVersions reads a matrix list", () => {
+  const express = "        node-version: [18, 19, 20, 21, 22, 23, 24, 25, 26]\n";
+  assert.deepStrictEqual(ciNodeVersions(express), [18, 19, 20, 21, 22, 23, 24, 25, 26]);
+});
+
+check("ciNodeVersions reads a single pinned version", () => {
+  assert.deepStrictEqual(ciNodeVersions("        node-version: [22.x]\n"), [22]);
+});
+
+// `${{ matrix.node-version }}` names a version without stating one; counting it
+// as data would put whatever digits appear in the expression into the answer.
+check("ciNodeVersions skips expressions and non-numeric values", () => {
+  const mixed = [
+    "          node-version: ${{ matrix.node-version }}",
+    "          node-version: 'lts/*'",
+    "          node-version: latest",
+    "        node-version: [20]",
+  ].join("\n");
+  assert.deepStrictEqual(ciNodeVersions(mixed), [20]);
+});
+
+const fakeRepo = (files, dirs = {}) => ({
+  exists: (p) => normC(p) in files,
+  readFile: (p) => files[normC(p)],
+  listDir: (p) => dirs[normC(p)] || [],
+});
+const normC = (p) => String(p).split("\\").join("/").replace(/^[A-Za-z]:/, "");
+
+// The failure this whole source exists for: knex declares `>=16` as its runtime
+// floor, its CI runs 22, and Node 16 could not even load a devDependency - so
+// the batch reported "already failing at this commit" about knex, for our choice.
+check("decideNodeVersion prefers CI over engines.node", () => {
+  const r = decideNodeVersion(
+    "/w",
+    fakeRepo(
+      {
+        "/w/package.json": '{"engines":{"node":">=16"}}',
+        "/w/.github/workflows/coverage.yml": "        node-version: [22.x]\n",
+      },
+      { "/w/.github/workflows": ["coverage.yml"] }
+    )
+  );
+  assert.strictEqual(r.version, "22");
+  assert.match(r.source, /CI/);
+});
+
+// The lowest version CI runs is the floor the maintainers commit to, so a break
+// there is a real break for them. Taking the highest would have hidden the
+// express ESM case, which only appears below Node 22.
+check("decideNodeVersion takes the lowest version CI runs, not the highest", () => {
+  const r = decideNodeVersion(
+    "/w",
+    fakeRepo(
+      { "/w/.github/workflows/ci.yml": "        node-version: [18, 20, 22, 24]\n" },
+      { "/w/.github/workflows": ["ci.yml"] }
+    )
+  );
+  assert.strictEqual(r.version, "18");
+});
+
+// A codeql or release workflow can name a Node that has nothing to do with the
+// test suite, and would quietly become the answer.
+check("decideNodeVersion prefers a test-shaped workflow over the others", () => {
+  const r = decideNodeVersion(
+    "/w",
+    fakeRepo(
+      {
+        "/w/.github/workflows/codeql.yml": "          node-version: 14\n",
+        "/w/.github/workflows/ci.yml": "        node-version: [20, 22]\n",
+      },
+      { "/w/.github/workflows": ["codeql.yml", "ci.yml"] }
+    )
+  );
+  assert.strictEqual(r.version, "20");
+});
+
+check(".nvmrc still wins over the CI files", () => {
+  const r = decideNodeVersion(
+    "/w",
+    fakeRepo(
+      { "/w/.nvmrc": "v22.11.0\n", "/w/.github/workflows/ci.yml": "        node-version: [18]\n" },
+      { "/w/.github/workflows": ["ci.yml"] }
+    )
+  );
+  assert.strictEqual(r.version, "22.11.0");
+});
+
+check("decideNodeVersion falls back to engines.node when there is no CI to read", () => {
+  const r = decideNodeVersion("/w", fakeRepo({ "/w/package.json": '{"engines":{"node":">=22.0.0"}}' }));
+  assert.strictEqual(r.version, "22");
+  assert.strictEqual(r.source, "engines.node");
 });
 
 console.log("\n" + pass + " checks passed.\n");
