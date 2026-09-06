@@ -359,7 +359,11 @@ try {
       stalledReason = stallDetector.observeTurn(toolUses);
       // Naming what was new this turn is the observability whose absence made the
       // false-positive stall take three paid runs to diagnose. It costs nothing.
-      for (const key of stallDetector.inspect().lastNew) log("  [new] " + key);
+      // Only for turns that used tools: a text-only turn leaves `lastNew` alone,
+      // and printing it again would just repeat the previous turn's discoveries.
+      if (toolUses.length > 0) {
+        for (const key of stallDetector.inspect().lastNew) log("  [new] " + key);
+      }
       if (stalledReason) {
         log("\n[STALLED] " + stalledReason + " - stopping early.");
         break;
