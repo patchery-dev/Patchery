@@ -18,6 +18,7 @@ import {
   looksLikeDependencyConflict,
   redactSecrets,
   createStallDetector,
+  baselinePassedMessage,
 } from "./guard.mjs";
 
 let pass = 0;
@@ -284,5 +285,40 @@ check("a text-only turn is not evidence of a stall", () => {
   assert.strictEqual(d.observeTurn([]), null);
   assert.strictEqual(d.observeTurn([]), null);
 });
+
+console.log("\nbaselinePassedMessage - a pass that was expected to be a failure");
+check("no changelog: the plain message, nothing extra", () => {
+  const m = baselinePassedMessage({ testCommand: "npm test", nodeVersion: "v24.0.0" });
+  assert.match(m, /already passes - nothing to fix/);
+  assert.ok(!/second look/.test(m), "must not warn when no specific break was named");
+});
+// Regression for gitroomhq/postiz-agent issue #9: a real, still-open break that a
+// newer Node quietly hid. The run reported a flat "nothing to fix" and nothing
+// distinguished it from a target that was never broken.
+check("changelog given: adds the runtime caveat", () => {
+  const m = baselinePassedMessage({
+    testCommand: "npm test",
+    changelog: "https://github.com/gitroomhq/postiz-agent/issues/9",
+    nodeVersion: "v24.20.0",
+  });
+  assert.match(m, /already passes - nothing to fix/);
+  assert.match(m, /second look/);
+  assert.match(m, /Node v24\.20\.0/);
+  assert.match(m, /node-version/);
+});
+check("a blank changelog counts as no changelog", () =>
+  assert.ok(
+    !/second look/.test(baselinePassedMessage({ testCommand: "npm test", changelog: "   " }))
+  )
+);
+check("no nodeVersion still gives a usable warning, not 'Node undefined'", () => {
+  const m = baselinePassedMessage({ testCommand: "npm test", changelog: "CHANGELOG.md" });
+  assert.match(m, /second look/);
+  assert.ok(!/Node undefined/.test(m));
+  assert.ok(!/Node \./.test(m));
+});
+check("no arguments at all does not throw", () =>
+  assert.match(baselinePassedMessage(), /nothing to fix/)
+);
 
 console.log("\n" + pass + " checks passed.\n");

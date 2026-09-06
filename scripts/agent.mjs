@@ -25,6 +25,7 @@ import {
   looksLikeDependencyConflict,
   redactSecrets,
   createStallDetector,
+  baselinePassedMessage,
 } from "./guard.mjs";
 
 // ------------------------------------------------------------------ config
@@ -243,9 +244,15 @@ if (!baseline.ok && BASELINE_RETRIES > 0) {
 }
 
 if (baseline.ok && REQUIRE_RED) {
+  // Pointed at a documented break but the tests pass? Say so, instead of letting a
+  // runtime-hidden failure look identical to "there was never anything wrong".
   stop(
     "nothing-to-do",
-    "`" + TEST_COMMAND + "` already passes - nothing to fix. The agent was not run.",
+    baselinePassedMessage({
+      testCommand: TEST_COMMAND,
+      changelog: CHANGELOG,
+      nodeVersion: process.version,
+    }),
     { tests_passed: "true" }
   );
 }

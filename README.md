@@ -209,6 +209,11 @@ node scripts/agent.mjs
 - No revenue, no users, no logo wall. Nobody is paying for this.
 - No open-source pull request accepted yet — two are waiting.
 - One package per run. It does not resolve cascading breakages.
+- Whether a break reproduces at all can depend on the runtime. Your `node-version`
+  decides which Node the tests run on, and a break that is real on an older one can
+  pass on a newer one — we hit exactly that, and the run said "nothing to fix". It
+  now flags the case instead of staying silent, but it cannot know which runtime
+  you meant.
 - Ecosystems beyond Node / npm are plausible, but nobody has proven it.
 - Cost varies per run; `max-turns` is the brake.
 - The resulting PR **needs human review**. There is no auto-merge, and there

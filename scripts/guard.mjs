@@ -210,6 +210,42 @@ export function redactSecrets(text, extraValues = []) {
 }
 
 /**
+ * What to say when the tests pass but the operator expected them to fail.
+ *
+ * Usually that means there is genuinely nothing to fix. But when the run was
+ * pointed at a specific documented break — a changelog or a linked issue — a
+ * passing baseline is suspicious, because whether a break reproduces can depend
+ * on the runtime the tests happen to run on.
+ *
+ * Real case: gitroomhq/postiz-agent issue #9 (node-fetch v3 is ESM-only, a CommonJS
+ * `require()` throws ERR_REQUIRE_ESM) is real and still reproduces for the reporter
+ * on Node v22.11.0. Patchery ran the same tests on Node v24 — where `require()` of a
+ * synchronous ES module has been supported since v22.12.0 — and saw them pass. The
+ * break was real; our runtime hid it. Nothing distinguished that false negative from
+ * "there was never anything wrong", which is the gap this closes.
+ *
+ * @param {{testCommand: string, changelog?: string, nodeVersion?: string}} opts
+ * @returns {string} the message to show
+ */
+export function baselinePassedMessage({ testCommand, changelog, nodeVersion } = {}) {
+  const cmd = "`" + String(testCommand ?? "the test command") + "`";
+  const plain = cmd + " already passes - nothing to fix. The agent was not run.";
+  if (!String(changelog ?? "").trim()) return plain;
+
+  const runtime = String(nodeVersion ?? "").trim();
+  return (
+    plain +
+    "\n\nWorth a second look: you pointed this run at a specific documented break" +
+    (runtime ? ", and the tests ran on Node " + runtime : "") +
+    ". Whether a break reproduces can depend on the runtime - a fix that landed in a " +
+    "newer Node, or a transitive dependency that resolved differently, can hide a real " +
+    "failure. If the linked changelog or issue describes a version-specific break, set " +
+    "`node-version` to the version it was reported on and run again. If it does not, " +
+    "this really is nothing to fix."
+  );
+}
+
+/**
  * Watches the agent's tool calls and decides whether it has stopped making
  * progress. Without this, a confused agent burns its entire turn budget (and
  * your money) re-reading the same files — observed for real: 25 turns, $0.88,
