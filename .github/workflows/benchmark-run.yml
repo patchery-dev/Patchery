@@ -59,7 +59,6 @@ on:
     secrets:
       ANTHROPIC_AUTH_TOKEN: { required: true }
       ANTHROPIC_BASE_URL: { required: false }
-      ANTHROPIC_MODEL: { required: false }
       ALT_AUTH_TOKEN: { required: false }
 
 permissions:
@@ -290,7 +289,7 @@ jobs:
           verify-model: deepseek-v4-flash
           anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
-          anthropic-model: ${{ inputs.model != '' && inputs.model || secrets.ANTHROPIC_MODEL }}
+          anthropic-model: ${{ inputs.model != '' && inputs.model || vars.ANTHROPIC_MODEL }}
 
       # The action reports its own tests-passed. This asks the harder question:
       # are the SAME tests passing. A fix that makes the suite green by removing

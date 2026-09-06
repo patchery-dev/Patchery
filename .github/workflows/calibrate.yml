@@ -71,7 +71,7 @@ jobs:
           # a workflow_dispatch input is displayed unmasked in the run's own UI.
           DEFAULT_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           DEFAULT_AUTH: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          DEFAULT_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          DEFAULT_MODEL: ${{ vars.ANTHROPIC_MODEL }}
           # Read from both stores. A model name is not a credential, and putting it
           # in Secrets actively hurt: GitHub masks secret values everywhere, so the
           # "Measured on: <model>" line - the one check that proves which model

@@ -64,7 +64,7 @@ jobs:
           verify-model: deepseek-v4-flash
           anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
-          anthropic-model: ${{ secrets.ANTHROPIC_MODEL }}
+          anthropic-model: ${{ vars.ANTHROPIC_MODEL }}
 
       - name: Open a pull request
         if: steps.sma.outputs.changed == 'true'
