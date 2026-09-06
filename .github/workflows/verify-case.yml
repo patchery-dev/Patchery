@@ -46,6 +46,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      # Two of the values are typed by hand and both are long. A wrong one costs a
+      # minute of git retries and then an "UNKNOWN - install failed" verdict that
+      # names the wrong thing; the repository name in run 3 was short one letter and
+      # the run said the tests never ran, which was true and useless. Ask first, so a
+      # typo comes back as a typo.
+      - name: Check the repository and commit exist
+        run: |
+          set -o pipefail
+          BASE=https://api.github.com/repos/${{ inputs.repo }}
+          if ! curl -sfL -H "Accept: application/vnd.github+json" "$BASE" > /dev/null; then
+            echo "::error::No repository called ${{ inputs.repo }}. Check the spelling - it is owner/name."
+            exit 1
+          fi
+          if ! curl -sfL -H "Accept: application/vnd.github+json" "$BASE/commits/${{ inputs.commit }}" > /dev/null; then
+            echo "::error::${{ inputs.repo }} exists but has no commit ${{ inputs.commit }}."
+            exit 1
+          fi
       - name: Check out the candidate at the pinned commit
         uses: actions/checkout@v4
         with:
@@ -179,7 +196,7 @@ jobs:
             echo "### Verdict"
             echo ""
             if [ -z "$BEFORE" ]; then
-              echo "**UNKNOWN** - the tests never ran. Install failed, or the run timed out."
+              echo "**UNKNOWN** - the tests never ran. Checkout or install failed, or the run timed out. The step that went red says which."
               echo ""
               echo "Not evidence against the case. Try a different Node version, or a narrower \`target-dir\`."
             elif [ "$BEFORE" != "0" ]; then
