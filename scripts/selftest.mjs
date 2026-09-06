@@ -67,7 +67,7 @@ for (const p of [
   "src/__mocks__/foo.js",
   "node_modules/fake-lib/index.js",
   "test-fixture/node_modules/fake-lib/index.js",
-  ".github/workflows/self-maintain.yml",
+  ".github/workflows/patchery-demo.yml",
   "package-lock.json",
   "pnpm-lock.yaml",
   "yarn.lock",

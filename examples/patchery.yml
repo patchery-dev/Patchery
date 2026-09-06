@@ -1,10 +1,10 @@
-# Save this in your own repository as .github/workflows/self-maintain.yml
+# Save this in your own repository as .github/workflows/patchery.yml
 #
 # Required GitHub Secrets (Settings -> Secrets and variables -> Actions):
 #   ANTHROPIC_AUTH_TOKEN  (required)
 #   ANTHROPIC_BASE_URL    (optional - only if you use a compatible custom endpoint)
 #   ANTHROPIC_MODEL       (optional)
-name: self-maintain
+name: Patchery
 
 on:
   workflow_dispatch:

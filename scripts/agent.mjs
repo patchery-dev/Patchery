@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * self-maintaining-action - agent orchestrator
+ * Patchery - agent orchestrator
  *
  * What it does, in order:
  *   1. Runs the project's tests   -> is it actually broken? If not, do nothing.

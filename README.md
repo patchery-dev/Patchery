@@ -248,12 +248,12 @@ General**); a repository cannot grant itself more than the org allows.
 
 ### 3. Copy the workflow
 
-Save [`examples/self-maintain.yml`](examples/self-maintain.yml) in your own repository
-as `.github/workflows/self-maintain.yml`.
+Save [`examples/patchery.yml`](examples/patchery.yml) in your own repository
+as `.github/workflows/patchery.yml`.
 
 ### 4. Run it
 
-Repo → **Actions → self-maintain → Run workflow**, then fill in which package broke
+Repo → **Actions → Patchery → Run workflow**, then fill in which package broke
 and which directory to fix.
 
 > There is deliberately **no scheduling or automatic package scanning** in this
@@ -317,7 +317,7 @@ and which directory to fix.
 2.0.0 and `formatPrice(amount)` became `formatPrice(amount, currency)`.
 `test-fixture/app.js` still makes the old call, so `npm test` fails.
 
-Go to **Actions → self-maintain (demo) → Run workflow**. Expected result: the agent
+Go to **Actions → Patchery (demo) → Run workflow**. Expected result: the agent
 fixes `app.js`, the tests pass, and a PR appears on the `self-maintain/fake-lib` branch.
 
 > Do **not** merge the demo PR — the fixture has to stay broken, otherwise later runs

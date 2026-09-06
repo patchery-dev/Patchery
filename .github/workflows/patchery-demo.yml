@@ -1,6 +1,6 @@
 # Runs the action end to end against this repo's own broken fixture.
 # Purpose: a real, reproducible "it works" run. Triggered by hand.
-name: self-maintain (demo)
+name: Patchery (demo)
 
 on:
   workflow_dispatch:
