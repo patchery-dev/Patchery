@@ -93,12 +93,12 @@ jobs:
       # Patchery itself. Checked out into a directory of its own so the action's
       # own files can never be mistaken for the candidate's.
       - name: Check out Patchery
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: patchery
 
       - name: Check out the candidate at the pinned commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ inputs.repo }}
           ref: ${{ inputs.commit }}
@@ -121,7 +121,7 @@ jobs:
           echo "last=$(echo "$LIST" | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
 
       - name: Use Node ${{ steps.node.outputs.first }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ steps.node.outputs.first }}
 
@@ -162,7 +162,7 @@ jobs:
 
       - name: Use Node ${{ steps.node.outputs.last }} instead
         if: steps.census.outputs.exit != '0' && steps.node.outputs.last != steps.node.outputs.first
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ steps.node.outputs.last }}
 

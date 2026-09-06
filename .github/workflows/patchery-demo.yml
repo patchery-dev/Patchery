@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # The fixture is committed in its broken state on purpose, so every run
       # starts from the same red baseline. Git gives us that for free.

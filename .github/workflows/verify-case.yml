@@ -103,12 +103,12 @@ jobs:
           echo "node=$(command -v node)" >> "$GITHUB_OUTPUT"
           echo "our tooling runs on $(node --version) at $(command -v node)"
       - name: Check out Patchery
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: patchery
 
       - name: Check out the candidate at the pinned commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ inputs.repo }}
           ref: ${{ inputs.commit }}
@@ -144,7 +144,7 @@ jobs:
           echo "last=$(echo "$LIST" | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
 
       - name: Use Node ${{ steps.node.outputs.first }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ steps.node.outputs.first }}
 
@@ -208,7 +208,7 @@ jobs:
       # thirty-three verdicts turned out to be.
       - name: Use Node ${{ steps.node.outputs.last }} instead
         if: steps.before.outputs.exit != '0' && steps.node.outputs.last != steps.node.outputs.first
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ steps.node.outputs.last }}
 
