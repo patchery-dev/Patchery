@@ -60,21 +60,25 @@
       run: function () {
         var mine = window.PatcheryGuard && window.PatcheryGuard.toString();
         if (!mine) return Promise.reject(new Error("the page's own copy was not exposed"));
-        return fetch(RAW + "scripts/guard.mjs", { cache: "no-store" })
-          .then(function (r) {
-            if (!r.ok) throw new Error("GitHub returned " + r.status);
-            return r.text();
-          })
-          .then(function (src) {
-            var theirs = extractFn(src, "protectedReason");
-            if (!theirs) throw new Error("protectedReason() not found in guard.mjs");
-            var a = normalise(theirs), b = normalise(mine);
-            return {
-              ok: a === b,
-              detail: a === b
-                ? "byte-for-byte identical to main@scripts/guard.mjs, ignoring whitespace"
-                : "THE PAGE AND THE REPOSITORY DISAGREE — trust the repository"
-            };
+
+        // Two different things can make this disagree, and only one of them is
+        // the page being wrong. Assets here are served with max-age=600, so a
+        // returning visitor can be handed new HTML while still executing a
+        // cached site.js. Ask what this origin serves right now: if that does
+        // not match what is running, the browser is stale, not the page — and
+        // saying "the page and the repository disagree" would be a false
+        // accusation against ourselves.
+        return fetch("assets/site.js", { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.text() : null; })
+          .catch(function () { return null; })
+          .then(function (served) {
+            var here = served && extractFn(served, "protectedReason");
+            if (here && normalise(here) !== normalise(mine)) {
+              return {
+                skip: "this browser is running a cached copy of the page's script - reload to check properly"
+              };
+            }
+            return checkAgainstRepo(mine);
           });
       }
     },
@@ -189,6 +193,28 @@
 
   /* Pull one function out of a source file by brace matching, so the check does
      not quietly succeed on a partial or reordered match. */
+  /* The comparison the check is actually about: what is running here against
+     what is on main. Reached only once we know this browser is not executing a
+     stale script. */
+  function checkAgainstRepo(mine) {
+    return fetch(RAW + "scripts/guard.mjs", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("GitHub returned " + r.status);
+        return r.text();
+      })
+      .then(function (src) {
+        var theirs = extractFn(src, "protectedReason");
+        if (!theirs) throw new Error("protectedReason() not found in guard.mjs");
+        var a = normalise(theirs), b = normalise(mine);
+        return {
+          ok: a === b,
+          detail: a === b
+            ? "byte-for-byte identical to main@scripts/guard.mjs, ignoring whitespace"
+            : "THE PAGE AND THE REPOSITORY DISAGREE — trust the repository"
+        };
+      });
+  }
+
   function extractFn(src, name) {
     var start = src.indexOf("function " + name);
     if (start === -1) return null;
