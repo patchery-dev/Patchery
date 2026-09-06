@@ -17,6 +17,7 @@ import { census, censusHeld } from "./test-census.mjs";
 import { findInstalled } from "./installed-version.mjs";
 import { decideNodeVersion, lowestMajor, fromNvmrc, ciNodeVersions, FALLBACK } from "./node-version.mjs";
 import { classifyFailure, briefing } from "./classify-break.mjs";
+import { testScriptUsable } from "./find-bumps.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import {
   protectedReason,
@@ -2132,6 +2133,57 @@ check("decideNodeVersion falls back to engines.node when there is no CI to read"
   const r = decideNodeVersion("/w", fakeRepo({ "/w/package.json": '{"engines":{"node":">=22.0.0"}}' }));
   assert.strictEqual(r.version, "22");
   assert.strictEqual(r.source, "engines.node");
+});
+
+
+// Suites that need something the container does not have. Every string here is
+// the real `scripts.test` of a repository whose verdict came back "already
+// failing at this commit" when it was in fact perfectly healthy.
+check("testScriptUsable rejects a suite that needs a browser", () => {
+  for (const script of [
+    "node run-tests.js && phantomjs tests/browser.js",
+    "cypress run",
+    "playwright test",
+    "karma start --single-run",
+    "wdio run wdio.conf.js",
+  ]) {
+    const r = testScriptUsable(script);
+    assert.strictEqual(r.ok, false, script);
+    assert.match(r.why, /browser or a container/);
+  }
+});
+
+check("testScriptUsable rejects a suite that needs a container", () => {
+  const r = testScriptUsable("docker-compose up -d && mocha test/");
+  assert.strictEqual(r.ok, false);
+});
+
+// knex's `npm test` runs its integration suite against postgres, mysql and
+// mariadb. The container has none of them.
+check("testScriptUsable rejects an integration suite", () => {
+  const r = testScriptUsable("npm run test:integration");
+  assert.strictEqual(r.ok, false);
+  assert.match(r.why, /integration/);
+});
+
+// The filter has to stay narrow: these are ordinary unit suites and every one
+// of them produced a usable verdict.
+check("testScriptUsable still accepts the suites that worked", () => {
+  for (const script of [
+    "mocha --require test/support/env --reporter spec --check-leaks test/ test/acceptance/",
+    "jest --maxWorkers=50%",
+    "vitest run",
+    "node --test",
+    "nyc mocha",
+  ]) {
+    assert.strictEqual(testScriptUsable(script).ok, true, script);
+  }
+});
+
+// A word that merely contains one of the names is not evidence.
+check("testScriptUsable does not reject on a coincidental substring", () => {
+  assert.strictEqual(testScriptUsable("jest test/integrations-of-ours.test.js").ok, true);
+  assert.strictEqual(testScriptUsable("mocha test/dockerfile-parser.test.js").ok, true);
 });
 
 console.log("\n" + pass + " checks passed.\n");

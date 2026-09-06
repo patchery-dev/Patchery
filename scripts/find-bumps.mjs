@@ -89,6 +89,31 @@ export function testScriptUsable(script) {
   if (/(^|\s)(-u|--update-snapshot|--fix)(\s|$)/.test(script)) {
     return { ok: false, why: "test script rewrites files: " + script };
   }
+
+  // A suite that needs something the container does not have cannot tell us
+  // anything, and it does not fail in a way that says so: it fails looking
+  // exactly like a broken repository. Twelve of thirty-three verdicts read
+  // "already failing at this commit" and were nothing of the kind -
+  //
+  //   knex        please upgrade node: mariadb requires at least version 20
+  //   nunjucks    test failed. phantomjs exit code: 1
+  //   pa11y-ci    Error: 1 === 0            (a browser it could not start)
+  //   typeorm     Cannot find ormconfig.json file in the root of the project
+  //   jsdom       Host entries not present for web platform tests
+  //
+  // Each is a healthy project whose tests need a database, a browser or a
+  // machine set up beforehand. Excluding them up front is honest; recording them
+  // as failures is not.
+  const NEEDS_A_SERVICE =
+    /(^|\s|\/)(phantomjs|selenium|chromedriver|geckodriver|cypress|playwright|puppeteer|karma|testcontainers|docker(-compose)?|wdio|webdriver)(\s|$|\/)/i;
+  if (NEEDS_A_SERVICE.test(script)) {
+    return { ok: false, why: "test script needs a browser or a container: " + script };
+  }
+  // "integration" in a test command means a database or a live service often
+  // enough that the cases it costs are cheaper than the verdicts it corrupts.
+  if (/(^|\s|:)integration/i.test(script)) {
+    return { ok: false, why: "test script runs integration tests: " + script };
+  }
   return { ok: true };
 }
 
@@ -190,49 +215,55 @@ async function inspectRepo(full) {
   return out;
 }
 
-const repos = ONE
-  ? [ONE]
-  : (await import("node:fs")).readFileSync(argv[0], "utf8")
-      .split("\n")
-      .map((l) => l.replace(/#.*/, "").trim())
-      .filter(Boolean);
+// The pure functions above are imported by the self-test. Everything below is
+// the command-line run, and importing this file must not start a GitHub crawl.
+const isMain = process.argv[1] && process.argv[1].endsWith("find-bumps.mjs");
+if (isMain) {
+  const repos = ONE
+    ? [ONE]
+    : (await import("node:fs")).readFileSync(argv[0], "utf8")
+        .split("\n")
+        .map((l) => l.replace(/#.*/, "").trim())
+        .filter(Boolean);
 
-const cases = [];
-const rejected = [];
+  const cases = [];
+  const rejected = [];
 
-for (const full of repos) {
-  console.error("· " + full);
-  try {
-    const r = await inspectRepo(full);
-    if (r.reject) {
-      rejected.push(r);
-      console.error("  skipped: " + r.reject);
-      continue;
+  for (const full of repos) {
+    console.error("· " + full);
+    try {
+      const r = await inspectRepo(full);
+      if (r.reject) {
+        rejected.push(r);
+        console.error("  skipped: " + r.reject);
+        continue;
+      }
+      for (const b of r.bumps) {
+        cases.push({
+          repo: r.repo,
+          commit: r.commit,
+          package: b.package,
+          "breaking-version": String(b.to),
+          "test-command": "npm test",
+          "target-dir": ".",
+          "node-version": "auto",
+          _stars: r.stars,
+          _bump: b.package + " v" + b.from + " -> v" + b.to,
+          _note: r.note || "",
+          _runtime: b.runtime,
+        });
+      }
+      console.error("  " + r.bumps.length + " bump(s): " + r.bumps.map((b) => b.package + " " + b.from + "->" + b.to).join(", "));
+    } catch (err) {
+      rejected.push({ repo: full, reject: err.message });
+      console.error("  error: " + err.message);
     }
-    for (const b of r.bumps) {
-      cases.push({
-        repo: r.repo,
-        commit: r.commit,
-        package: b.package,
-        "breaking-version": String(b.to),
-        "test-command": "npm test",
-        "target-dir": ".",
-        "node-version": "auto",
-        _stars: r.stars,
-        _bump: b.package + " v" + b.from + " -> v" + b.to,
-        _note: r.note || "",
-        _runtime: b.runtime,
-      });
-    }
-    console.error("  " + r.bumps.length + " bump(s): " + r.bumps.map((b) => b.package + " " + b.from + "->" + b.to).join(", "));
-  } catch (err) {
-    rejected.push({ repo: full, reject: err.message });
-    console.error("  error: " + err.message);
+    await sleep(300);
   }
-  await sleep(300);
+
+  console.error("\n" + cases.length + " candidate upgrade(s) from " + repos.length + " repositories");
+  for (const r of rejected) console.error("  skipped " + r.repo + ": " + r.reject);
+
+  process.stdout.write(JSON.stringify(cases, null, 2) + "\n");
+
 }
-
-console.error("\n" + cases.length + " candidate upgrade(s) from " + repos.length + " repositories");
-for (const r of rejected) console.error("  skipped " + r.repo + ": " + r.reject);
-
-process.stdout.write(JSON.stringify(cases, null, 2) + "\n");

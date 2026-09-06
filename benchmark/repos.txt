@@ -3,31 +3,81 @@
 # why that constraint was dropped.
 #
 # A line is a GitHub owner/name. Comments and blank lines are ignored.
+#
+# What earns a place here: a name a developer recognises, a real unit-test suite,
+# and a `npm test` that runs in an empty container. That last one is not a
+# formality - twelve of the first thirty-three verdicts were healthy projects
+# whose tests wanted a database, a browser or a prepared machine, and every one
+# of them came back looking like a broken repository.
 
-# --- widely used libraries with real suites ---
+# --- confirmed useful: these produced measurable verdicts ---
 expressjs/express
-axios/axios
-fastify/fastify
-markedjs/marked
-chartjs/Chart.js
-pmndrs/zustand
-typeorm/typeorm
-socketio/socket.io
-moment/luxon
-immutable-js/immutable-js
-jsdom/jsdom
-sindresorhus/got
 node-fetch/node-fetch
 winstonjs/winston
-handlebars-lang/handlebars.js
-mozilla/nunjucks
-Automattic/mongoose
-sequelize/sequelize
-knex/knex
 bcoe/yargs
-
-# --- applications and tools ---
 mozilla/treeherder
-mozilla/addons-frontend
-pa11y/pa11y-ci
-cinar/indicatorts
+axios/axios
+fastify/fastify
+immutable-js/immutable-js
+moment/luxon
+markedjs/marked
+sindresorhus/got
+handlebars-lang/handlebars.js
+chartjs/Chart.js
+Automattic/mongoose
+
+# --- widely used libraries, unit suites, no external services expected ---
+sindresorhus/p-map
+sindresorhus/execa
+sindresorhus/ky
+chalk/chalk
+debug-js/debug
+jshttp/http-errors
+jshttp/mime-types
+expressjs/body-parser
+expressjs/cors
+expressjs/multer
+expressjs/session
+pillarjs/router
+nodeca/js-yaml
+kelektiv/node-uuid
+uuidjs/uuid
+date-fns/date-fns
+Unitech/pm2
+motdotla/dotenv
+validatorjs/validator.js
+colinhacks/zod
+jquense/yup
+hapijs/joi
+lodash/lodash
+Reactive-Extensions/RxJS
+ReactiveX/rxjs
+caolan/async
+tj/commander.js
+yargs/yargs-parser
+isaacs/node-glob
+isaacs/minimatch
+npm/node-semver
+sindresorhus/globby
+node-cache/node-cache
+luin/ioredis
+nodemailer/nodemailer
+websockets/ws
+socketio/socket.io-client
+axios/axios-mock-adapter
+form-data/form-data
+request/request-promise
+node-formidable/formidable
+jaredhanson/passport
+auth0/node-jsonwebtoken
+dcodeIO/bcrypt.js
+kriasoft/node-sqlite
+
+# --- rejected, and why (kept so the reasons are not re-discovered) ---
+# knex/knex              npm test runs its integration suite against postgres/mysql/mariadb
+# mozilla/nunjucks       needs phantomjs
+# pa11y/pa11y-ci         needs a browser
+# typeorm/typeorm        needs ormconfig.json and a database
+# jsdom/jsdom            needs host entries for the web platform tests
+# mozilla/addons-frontend  test script watches and never exits
+# sequelize/sequelize    no test script at the root
