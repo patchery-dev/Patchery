@@ -34,7 +34,8 @@ re-runs your test command itself.
 2. Run the agent        -> Read the changelog, migrate the call sites.
 3. Check with git       -> What changed? Touched a test or node_modules? REVERT.
 4. Run the tests again  -> Never trust the agent's word; measure it.
-5. Open a PR            -> Only if steps 1-4 came back clean.
+5. Try to refute it     -> A second agent, read-only, never shown the first one's reasoning.
+6. Open a PR            -> Only if steps 1-4 came back clean, with step 5's verdict in it.
 ```
 
 Steps 3 and 4 are the point of this project.
@@ -58,6 +59,38 @@ open nothing. Whatever it blocks, it names, with the input that would allow it.
 That guard lives in [`scripts/guard.mjs`](scripts/guard.mjs) as pure functions, and
 is covered by [`scripts/selftest.mjs`](scripts/selftest.mjs), which runs on every
 push, offline, in about a second, with no API key.
+
+## "So one AI wrote it and the same AI approved it?"
+
+No. Step 5 is a second agent whose job is to **refute** the change, not to review it
+politely. It gets the diff, the test output from before and after, and the changelog.
+It is never given the first agent's explanation — not by convention, but because the
+function that assembles its evidence has no parameter for one, and a test fails if
+someone adds it. Hand a judge the author's argument and it grades the argument.
+
+It has `Read`, `Grep` and `Glob`, and nothing else. No shell: that is both code
+execution and a way to write files. No network. Whether it stayed read-only is
+measured against the working tree afterwards rather than assumed.
+
+Its opinion can only ever **lower** the outcome. It cannot unblock a protected path,
+widen the scope, or un-fail a test run — the mechanical guard and your own tests
+remain the authority, and the stochastic part stays off the critical path. Low
+confidence downgrades a refutation exactly as it downgrades an approval: the same bar
+to condemn as to bless. A review that could not run, or could not open the repository
+to check its own claims, never returns "not refuted".
+
+By default it never blocks. A false "this is bad" silently destroys a correct, tested
+fix and you never see the diff — the expensive direction. The verdict goes in the pull
+request instead, including the unflattering ones, because the honest answer to the
+question in this heading is an artifact you can read, not a veto you have to trust.
+`verify-mode: block` is there if you want it, and it saves the rejected diff as a
+patch file rather than losing it.
+
+**What it is not.** With `verify-model` empty it shares the fixer's weights, so what
+you get is different context, no rationale, no write access and an opposite success
+condition — not true independence. It will not catch a change that is wrong in a way
+invisible in the code and untested by your suite. Judge it on the concerns it actually
+files, which are on every PR for you to check.
 
 ---
 
@@ -147,6 +180,11 @@ and which directory to fix.
 | `changelog` | `""` | Changelog path or URL; empty means the agent looks for it |
 | `allowed-paths` | `""` | Paths outside `target-dir` the run may still change, one per line |
 | `allow-deletions` | `false` | Allow the run to delete tracked files |
+| `verify-mode` | `warn` | Independent review: `warn` records the verdict, `block` withholds a refuted PR, `off` skips it |
+| `verify-model` | `""` | Model for the reviewer; empty means the same one, in a separate call |
+| `verify-min-confidence` | `60` | Below this, a verdict is recorded as a concern rather than acted on |
+| `verify-max-turns` | `12` | Turn limit for the reviewer |
+| `verify-max-diff-bytes` | `60000` | Skip the review above this diff size |
 | `max-turns` | `25` | Agent turn limit — your cost brake |
 | `extra-instructions` | `""` | Extra instructions for the agent |
 | `require-failing-baseline` | `true` | Skip the agent entirely if tests already pass |
@@ -165,6 +203,8 @@ and which directory to fix.
 | `files` | Changed files, one per line (ready for `add-paths`) |
 | `pr-body-file` | Path to the generated PR body (ready for `body-path`) |
 | `summary` | One-line summary |
+| `review-status` | `not-reviewed`, `unavailable`, `not-refuted`, `concerns` or `refuted` |
+| `review-label` | Suggested PR label, e.g. `patchery:reviewed` |
 
 ---
 
