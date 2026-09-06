@@ -125,14 +125,17 @@
 
     {
       id: "proof.turns-and-cost",
-      claim: "The turn count and cost printed here are the ones written in the pull request itself.",
+      claim: "The turn count, cost and model printed here are the ones written in the pull request itself.",
       run: function () {
         var shown = document.querySelector("#proof .proofcard--lead .proofcard__stats");
         if (!shown) return { skip: "the proof section is not on this page" };
         var text = shown.textContent.replace(/\s+/g, " ");
         var pageTurns = (text.match(/AI turns used\s*(\d+)/i) || [])[1];
         var pageCost = (text.match(/\$([\d.]+)/) || [])[1];
-        if (!pageTurns || !pageCost) return { skip: "could not read the figures off this page" };
+        var pageModel = (text.match(/model\s+(\S+)/i) || [])[1];
+        if (!pageTurns || !pageCost || !pageModel) {
+          return { skip: "could not read the figures off this page" };
+        }
 
         return gh("pulls/2").then(function (pr) {
           var body = pr.body || "";
@@ -140,17 +143,20 @@
           // Anchored to the same line as the turn count. The body also quotes a
           // changelog example containing "$19.90", and a bare match finds that first.
           var prCost = (body.match(/turns:\s*\d+[^\n]*?\$([\d.]+)/i) || [])[1];
-          if (!prTurns || !prCost) {
-            return { skip: "the pull request body no longer states turns and cost" };
+          var prModel = (body.match(/Model:\s*`([^`\n]+)`/i) || [])[1];
+          if (!prTurns || !prCost || !prModel) {
+            return { skip: "the pull request body no longer states turns, cost and model" };
           }
-          var same = prTurns === pageTurns && prCost === pageCost;
+          prModel = prModel.trim();
+          var say = function (t, c, m) { return t + " turns · $" + c + " · " + m; };
+          var same = prTurns === pageTurns && prCost === pageCost && prModel === pageModel;
           return {
             ok: same,
             detail: same
-              ? "page says " + pageTurns + " turns · $" + pageCost +
+              ? "page says " + say(pageTurns, pageCost, pageModel) +
                 "   the pull request says the same"
-              : "PAGE SAYS " + pageTurns + " turns · $" + pageCost +
-                "   THE PULL REQUEST SAYS " + prTurns + " turns · $" + prCost
+              : "PAGE SAYS " + say(pageTurns, pageCost, pageModel) +
+                "   THE PULL REQUEST SAYS " + say(prTurns, prCost, prModel)
           };
         });
       }

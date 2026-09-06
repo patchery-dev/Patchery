@@ -25,6 +25,10 @@ on:
         description: "Substring filter, e.g. 'good-01' - for debugging the harness cheaply"
         required: false
         default: ""
+      model:
+        description: "Reviewer model; empty uses the ANTHROPIC_MODEL secret"
+        required: false
+        default: ""
 
 # Reads the repository and nothing else. This workflow opens no PR, writes no
 # branch, and touches no issue - it produces a number and an artifact.
@@ -50,7 +54,18 @@ jobs:
         env:
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          # A confidence threshold is a per-model number: what one model reports as
+          # 70 another reports as 45. Calibrating a model you are not running is a
+          # measurement of the wrong thing, so the model is selectable here without
+          # touching the shared secret every demo run also reads.
+          ANTHROPIC_MODEL: ${{ inputs.model != '' && inputs.model || secrets.ANTHROPIC_MODEL }}
+          # All four, exactly as action.yml does it. ANTHROPIC_MODEL on its own gets
+          # silently remapped to one of the DEFAULT_* tiers, and then the results
+          # file would name a model that never ran - the one failure this whole
+          # workflow exists to avoid.
+          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.model != '' && inputs.model || secrets.ANTHROPIC_MODEL }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.model != '' && inputs.model || secrets.ANTHROPIC_MODEL }}
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.model != '' && inputs.model || secrets.ANTHROPIC_MODEL }}
           # Through the environment, never interpolated into the script. A `${{ }}`
           # holding a dispatch input is pasted in as shell source before bash sees
           # it, so `--only "; curl evil"` would simply run. Only someone who can

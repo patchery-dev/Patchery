@@ -223,6 +223,11 @@ async function reviewOne(kase) {
     confidence: parsed.review.confidence,
     concerns: parsed.review.concerns.length,
     costUsd: result?.total_cost_usd ?? 0,
+    // From telemetry, not from what we asked for. A confidence threshold is a
+    // per-model number, so a results file that names the requested model rather
+    // than the one that answered would be a measurement of the wrong thing - and
+    // ANTHROPIC_MODEL does get remapped when the DEFAULT_* tiers disagree.
+    modelUsed: Object.keys(result?.modelUsage ?? {}).join(", "),
   };
 }
 
@@ -258,6 +263,17 @@ if (DRY_RUN) {
   );
   for (const s of broken) console.log("  " + s.id + ": " + s.error);
   process.exit(broken.length ? 1 : 0);
+}
+
+// The endpoint is recorded as a hostname, never the full URL. Which provider a
+// number was measured on is the point of recording it; a path or query string is
+// not, and this file is uploaded as a CI artifact, where GitHub's secret masking
+// does not reach. The token is redacted on top of that, belt and braces.
+let endpointHost = "(Anthropic default)";
+try {
+  if (process.env.ANTHROPIC_BASE_URL) endpointHost = new URL(process.env.ANTHROPIC_BASE_URL).host;
+} catch {
+  endpointHost = "(unparseable)";
 }
 
 const usable = samples.filter((s) => !s.error);
@@ -297,16 +313,14 @@ if (report.net <= 0) {
 console.log("\nSamples: " + usable.length + " usable, " + (samples.length - usable.length) +
   " errored. Spend: $" + spend.toFixed(4));
 
-// The endpoint is recorded as a hostname, never the full URL. Which provider a
-// number was measured on is the point of recording it; a path or query string is
-// not, and this file is uploaded as a CI artifact, where GitHub's secret masking
-// does not reach. The token is redacted on top of that, belt and braces.
-let endpointHost = "(Anthropic default)";
-try {
-  if (process.env.ANTHROPIC_BASE_URL) endpointHost = new URL(process.env.ANTHROPIC_BASE_URL).host;
-} catch {
-  endpointHost = "(unparseable)";
-}
+// Named loudly, because the number above means nothing without it: a threshold
+// calibrated on one model does not transfer to another, not even to a smaller
+// variant of the same family.
+const modelsSeen = [...new Set(usable.map((s) => s.modelUsed).filter(Boolean))];
+console.log(
+  "Measured on: " + (modelsSeen.join(", ") || process.env.ANTHROPIC_MODEL || "(unknown)") +
+  " via " + endpointHost + ". This recommendation applies to that model and no other."
+);
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(

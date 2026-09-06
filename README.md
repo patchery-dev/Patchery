@@ -183,6 +183,7 @@ version has to survive:
 | --- | --- |
 | [ianarawjo/ChainForge#416](https://github.com/ianarawjo/ChainForge/pull/416) | OpenAI SDK v3 → v4: three call sites, plus response unwrapping and `APIError` handling |
 | [ToolJet/ToolJet#17829](https://github.com/ToolJet/ToolJet/pull/17829) | Gemini plugin off `@google/generative-ai`, end-of-life since 30 Nov 2025 |
+| [Caknoooo/chatgpt3-openai-api#2](https://github.com/Caknoooo/chatgpt3-openai-api/pull/2) | OpenAI SDK v3 → v4, and a model that had already been shut down |
 
 All three are open. None has been merged. We will change this sentence the day that
 changes — and [patchery.dev](https://patchery.dev) checks it against the GitHub API
@@ -354,7 +355,8 @@ node scripts/agent.mjs
 
 - Nothing hosted. It runs in your Actions runner, not ours.
 - No revenue, no users, no logo wall. Nobody is paying for this.
-- No open-source pull request accepted yet — two are waiting.
+- No open-source pull request accepted yet — three are waiting, and no human has
+  looked at any of them yet.
 - One package per run. It does not resolve cascading breakages.
 - The off-limits check reads *which* files moved, never what the change did to them.
   Deleting a validation check inside a file the agent is entitled to edit walks past

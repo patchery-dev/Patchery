@@ -56,7 +56,7 @@
   var nav = $("#nav");
   var folio = $("#folio"), folioNow = $("#folioNow"), folioName = $("#folioName");
   var fillEl = $("#scrollbarFill");
-  var sections = $("[data-folio]");
+  var sections = $$("[data-folio]");
   var menu = $("#menu");
   var lastY = 0, lastFolio = "";
 
@@ -323,7 +323,8 @@
         if (!pr || !pr.body) return;
         var turns = pr.body.match(/turns:\s*(\d+)/i);
         var cost = pr.body.match(/turns:\s*\d+[^\n]*?\$([\d.]+)/i);
-        var next = { turns: turns && turns[1], cost: cost && ("$" + cost[1]) };
+        var model = pr.body.match(/Model:\s*`([^`\n]+)`/i);
+        var next = { turns: turns && turns[1], cost: cost && ("$" + cost[1]), model: model && model[1].trim() };
         for (var i = 0; i < slots.length; i++) {
           var want = next[slots[i].getAttribute("data-run")];
           if (want && slots[i].textContent.trim() !== want) slots[i].textContent = want;
