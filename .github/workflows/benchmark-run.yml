@@ -152,14 +152,14 @@ jobs:
           set -o pipefail
           PM='${{ steps.install.outputs.pm }}'
           SPEC='${{ inputs.package }}@${{ inputs.breaking-version }}'
-          if [ "$PM" = "pnpm" ]; then pnpm add "$SPEC" 2>&1 | tail -10
-          elif [ "$PM" = "yarn" ]; then yarn add "$SPEC" 2>&1 | tail -10
-          else npm install "$SPEC" 2>&1 | tail -10; fi
-          # Say which version actually landed. The first run of this workflow ended
-          # with the tests green when they should have been red, and there was no
-          # way to tell whether the break had been installed at all - the one line
-          # that would have answered it had been left out of this step.
-          INSTALLED=$(node -p "require('${{ inputs.package }}/package.json').version" 2>/dev/null || echo "NOT RESOLVABLE")
+          # Not piped through `tail`. This is the evidence for whether the break
+          # exists at all, and the first two runs of this workflow could not be
+          # explained because npm's own summary of what it changed had been
+          # trimmed off the end of the log.
+          if [ "$PM" = "pnpm" ]; then pnpm add "$SPEC"
+          elif [ "$PM" = "yarn" ]; then yarn add "$SPEC"
+          else npm install "$SPEC"; fi
+          INSTALLED=$(node "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)
           echo "installed: ${{ inputs.package }}@$INSTALLED"
           echo "installed=$INSTALLED" >> "$GITHUB_OUTPUT"
           case "$INSTALLED" in

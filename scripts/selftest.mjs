@@ -14,6 +14,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { census, censusHeld } from "./test-census.mjs";
+import { findInstalled } from "./installed-version.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import {
   protectedReason,
@@ -1787,6 +1788,67 @@ check("an unknown installed version does not block the run", () => {
     baselineExit: "0", finalExit: "1", changed: "false", version: "3", installed: "",
   });
   assert.strictEqual(r.outcome, "NO-CHANGE");
+});
+
+
+// The version probe. It was written the obvious way first - resolving
+// `<pkg>/package.json` - and the obvious way is blind to exactly the packages
+// this benchmark exists to measure: an ESM-only major declares an `exports` map
+// that makes every path but its entry point unreachable, so the probe threw and
+// the run reported the upgrade as never installed.
+const fakeFs = (files) => ({
+  exists: (p) => norm(p) in files,
+  readFile: (p) => files[norm(p)],
+});
+// Windows resolves "/w/case" to "C:\w\case", so the fake filesystem has to
+// speak both dialects: separators normalised and any drive letter dropped.
+const norm = (p) => String(p).split("\\").join("/").replace(/^[A-Za-z]:/, "");
+
+check("findInstalled reads the version from node_modules", () => {
+  const r = findInstalled(
+    "content-disposition",
+    "/w/case",
+    fakeFs({ "/w/case/node_modules/content-disposition/package.json": '{"version":"3.0.0"}' })
+  );
+  assert.strictEqual(r.version, "3.0.0");
+});
+
+// A hoisted dependency in a monorepo lives above the workspace member, so
+// reading only the target directory would call an installed package missing.
+check("findInstalled climbs to a hoisted dependency", () => {
+  const r = findInstalled(
+    "pino",
+    "/w/packages/server",
+    fakeFs({ "/w/node_modules/pino/package.json": '{"version":"10.1.0"}' })
+  );
+  assert.strictEqual(r.version, "10.1.0");
+});
+
+check("findInstalled handles a scoped package", () => {
+  const r = findInstalled(
+    "@mui/material",
+    "/w",
+    fakeFs({ "/w/node_modules/@mui/material/package.json": '{"version":"9.0.0"}' })
+  );
+  assert.strictEqual(r.version, "9.0.0");
+});
+
+check("findInstalled reports null rather than guessing when nothing is there", () => {
+  const r = findInstalled("nope", "/w/case", { exists: () => false, readFile: () => "" });
+  assert.strictEqual(r.version, null);
+});
+
+// An unreadable package.json is not evidence of absence; keep climbing.
+check("findInstalled steps over a corrupt package.json", () => {
+  const r = findInstalled(
+    "pino",
+    "/w/packages/server",
+    fakeFs({
+      "/w/packages/server/node_modules/pino/package.json": "{not json",
+      "/w/node_modules/pino/package.json": '{"version":"10.1.0"}',
+    })
+  );
+  assert.strictEqual(r.version, "10.1.0");
 });
 
 console.log("\n" + pass + " checks passed.\n");

@@ -85,6 +85,14 @@ jobs:
             exit 1
           fi
 
+      # Our own repository, for the small scripts this workflow leans on. Same
+      # layout as benchmark-run: ours under `patchery`, theirs under `case`, and
+      # neither able to be mistaken for the other.
+      - name: Check out Patchery
+        uses: actions/checkout@v4
+        with:
+          path: patchery
+
       - name: Check out the candidate at the pinned commit
         uses: actions/checkout@v4
         with:
@@ -203,7 +211,11 @@ jobs:
           else
             npm install "$SPEC" 2>&1 | tail -20
           fi
-          node -p "'installed: ' + require('${{ inputs.package }}/package.json').version" || true
+          # Read from disk, not through resolution: an ESM-only major publishes an
+          # `exports` map that hides its own package.json, and the resolving probe
+          # then reports the upgrade as never installed - a false negative aimed
+          # squarely at the packages this benchmark is made of.
+          echo "installed: ${{ inputs.package }}@$(node "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)"
 
       # Half two: the same suite, same machine, one thing changed.
       - name: Run the tests AFTER the upgrade
