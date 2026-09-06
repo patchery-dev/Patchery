@@ -1,0 +1,143 @@
+# Runs Patchery against every confirmed case and prints one table.
+#
+# This is the artefact the project is judged on: a rate, over real breaks in
+# repositories we do not own, with the losses in it. Not a demo.
+#
+# The cases come from benchmark/cases.json - the rows verify-batch confirmed as
+# genuinely red-after-green. Running an unconfirmed case would put a sentence
+# about the product in a container where the break may not exist, which has
+# happened and produced three wrong conclusions in a row.
+#
+# It calls benchmark-run.yml rather than repeating it, so the setup, the census
+# and the five outcomes stay defined in exactly one place.
+name: Patchery (benchmark, all cases)
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Only cases whose repo or package contains this text (empty = all)"
+        required: false
+        default: ""
+      limit:
+        description: "Stop after this many cases (0 = no limit)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+      count: ${{ steps.build.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Choose the cases to run
+        id: build
+        run: |
+          node -e "
+            const rows = require('./benchmark/cases.json');
+            const only = process.env.ONLY.trim().toLowerCase();
+            const limit = Number(process.env.LIMIT) || 0;
+            let picked = rows.filter(
+              (r) => !only || (r.repo + ' ' + r.package).toLowerCase().includes(only)
+            );
+            // Every case is a paid agent run, so a silent truncation would also be
+            // a silently smaller bill and a silently smaller denominator.
+            const cap = limit > 0 ? Math.min(limit, 50) : 50;
+            if (picked.length > cap) console.log('::warning::' + (picked.length - cap) + ' case(s) not run - capped at ' + cap);
+            picked = picked.slice(0, cap);
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'matrix=' + JSON.stringify(picked) + '\n');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'count=' + picked.length + '\n');
+            console.log(picked.length + ' case(s) queued');
+          "
+        env:
+          ONLY: ${{ inputs.only }}
+          LIMIT: ${{ inputs.limit }}
+
+  run:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    strategy:
+      # A case that fails is a result, not an accident that should cancel the rest.
+      fail-fast: false
+      # Each of these is a model doing twenty minutes of work. Four at a time is
+      # kind to the provider's rate limit and keeps the bill legible.
+      max-parallel: 4
+      matrix:
+        case: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/benchmark-run.yml
+    secrets: inherit
+    with:
+      repo: ${{ matrix.case.repo }}
+      commit: ${{ matrix.case.commit }}
+      package: ${{ matrix.case.package }}
+      breaking-version: ${{ matrix.case['breaking-version'] }}
+      test-command: ${{ matrix.case['test-command'] }}
+      target-dir: ${{ matrix.case['target-dir'] }}
+      node-version: ${{ matrix.case['node-version'] }}
+
+  report:
+    needs: [plan, run]
+    # A batch where half the cases failed is exactly when the table matters.
+    if: always() && needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect every result
+        uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-*
+          path: results
+
+      - name: The table
+        run: |
+          node -e "
+            const fs = require('fs'), path = require('path');
+            const rows = [];
+            const walk = (dir) => {
+              for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const p = path.join(dir, e.name);
+                if (e.isDirectory()) walk(p);
+                else if (e.name === 'benchmark.json') rows.push(JSON.parse(fs.readFileSync(p, 'utf8')));
+              }
+            };
+            try { walk('results') } catch {}
+
+            const order = ['FIXED', 'REFUSED', 'NO-CHANGE', 'WRONG', 'BLOCKED'];
+            rows.sort((a, b) => order.indexOf(a.outcome) - order.indexOf(b.outcome) || a.repo.localeCompare(b.repo));
+            const n = (v) => rows.filter((r) => r.outcome === v).length;
+
+            // BLOCKED is ours, not the product's, so it is named separately and
+            // kept out of the denominator - a setup failure is not a loss.
+            const judged = rows.length - n('BLOCKED');
+            const out = [];
+            out.push('## ' + n('FIXED') + ' fixed of ' + judged + ' cases it was able to attempt');
+            out.push('');
+            out.push('| | |');
+            out.push('|---|---|');
+            out.push('| fixed | ' + n('FIXED') + ' |');
+            out.push('| refused to ship an unproven fix | ' + n('REFUSED') + ' |');
+            out.push('| produced nothing | ' + n('NO-CHANGE') + ' |');
+            out.push('| **shipped something wrong** | **' + n('WRONG') + '** |');
+            out.push('| blocked by our setup (not counted) | ' + n('BLOCKED') + ' |');
+            out.push('');
+            out.push('| outcome | repo | upgrade | what happened |');
+            out.push('|---|---|---|---|');
+            for (const r of rows) {
+              out.push('| ' + r.outcome + ' | ' + r.repo + ' | \`' + r.package + '@' + r.version + '\` | ' + r.detail + ' |');
+            }
+            const queued = Number(process.env.QUEUED);
+            if (rows.length < queued) {
+              out.push('');
+              out.push('**' + (queued - rows.length) + ' case(s) reported nothing** - those runs died before reaching a verdict.');
+            }
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\n') + '\n');
+            console.log(out.join('\n'));
+          "
+        env:
+          QUEUED: ${{ needs.plan.outputs.count }}

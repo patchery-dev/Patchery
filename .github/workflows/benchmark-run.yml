@@ -83,16 +83,23 @@ jobs:
 
       # Same reasoning as verify-case: the repository says which Node it needs,
       # and guessing produced a verdict about our runner rather than the code.
+      # Same two candidates as verify-case, for the same reason: `engines.node` is
+      # the library's runtime floor, not the Node its tests run on, and the gap
+      # cost sixteen verdicts in the first batch. First the lowest version CI
+      # runs, where a break matters most; if that suite will not start, the
+      # highest, where the tooling is most likely to work.
       - name: Decide which Node to use
         id: node
         run: |
-          VERSION=$(node "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }})
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          LIST=$(node "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }} --list)
+          echo "candidates: $LIST"
+          echo "first=$(echo "$LIST" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "last=$(echo "$LIST" | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
 
-      - name: Use Node ${{ steps.node.outputs.version }}
+      - name: Use Node ${{ steps.node.outputs.first }}
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ steps.node.outputs.version }}
+          node-version: ${{ steps.node.outputs.first }}
 
       - name: Install the candidate's dependencies
         id: install
@@ -129,9 +136,56 @@ jobs:
           node "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
           cat /tmp/census-before.json
 
+      - name: Use Node ${{ steps.node.outputs.last }} instead
+        if: steps.census.outputs.exit != '0' && steps.node.outputs.last != steps.node.outputs.first
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node.outputs.last }}
+
+      # node_modules is rebuilt: native modules compiled against the previous
+      # Node will not load on this one, and their failure would read as the
+      # repository being broken.
+      - name: Install and count again on Node ${{ steps.node.outputs.last }}
+        id: recensus
+        if: steps.census.outputs.exit != '0' && steps.node.outputs.last != steps.node.outputs.first
+        working-directory: case/${{ inputs.target-dir }}
+        timeout-minutes: 20
+        continue-on-error: true
+        run: |
+          set +e
+          rm -rf node_modules
+          if [ '${{ steps.install.outputs.pm }}' = 'pnpm' ]; then pnpm install --no-frozen-lockfile > /tmp/reinstall.log 2>&1
+          elif [ '${{ steps.install.outputs.pm }}' = 'yarn' ]; then yarn install > /tmp/reinstall.log 2>&1
+          else npm ci > /tmp/reinstall.log 2>&1 || npm install > /tmp/reinstall.log 2>&1; fi
+          tail -10 /tmp/reinstall.log
+          ${{ inputs.test-command }} > /tmp/baseline.log 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          node "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
+          cat /tmp/census-before.json
+
+      # Whichever attempt produced a green suite is what everything downstream
+      # reads - including the Node handed to the action, so the agent is never
+      # judged on a runtime the case was not measured on.
+      - name: Settle on a baseline
+        id: baseline
+        run: |
+          FIRST='${{ steps.census.outputs.exit }}'
+          RETRY='${{ steps.recensus.outputs.exit }}'
+          if [ "$FIRST" = "0" ]; then
+            echo "exit=0" >> "$GITHUB_OUTPUT"
+            echo "node=${{ steps.node.outputs.first }}" >> "$GITHUB_OUTPUT"
+          elif [ "$RETRY" = "0" ]; then
+            echo "exit=0" >> "$GITHUB_OUTPUT"
+            echo "node=${{ steps.node.outputs.last }}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Node ${{ steps.node.outputs.first }} could not run this suite; measured on ${{ steps.node.outputs.last }} instead"
+          else
+            echo "exit=${FIRST:-1}" >> "$GITHUB_OUTPUT"
+            echo "node=${{ steps.node.outputs.first }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install the breaking version
         id: bump
-        if: steps.census.outputs.exit == '0'
+        if: steps.baseline.outputs.exit == '0'
         working-directory: case/${{ inputs.target-dir }}
         run: |
           set -o pipefail
@@ -197,7 +251,7 @@ jobs:
           package: ${{ inputs.package }}
           target-dir: case/${{ inputs.target-dir }}
           test-command: ${{ inputs.test-command }}
-          node-version: ${{ steps.node.outputs.version }}
+          node-version: ${{ steps.baseline.outputs.node }}
           verify-tools: "off"
           verify-base-url: ${{ vars.ALT_BASE_URL }}
           verify-auth-token: ${{ secrets.ALT_AUTH_TOKEN }}
@@ -212,7 +266,7 @@ jobs:
       # and the only way to see it is to compare the census.
       - name: Count the tests again
         id: recount
-        if: steps.census.outputs.exit == '0'
+        if: steps.baseline.outputs.exit == '0'
         working-directory: case/${{ inputs.target-dir }}
         timeout-minutes: 15
         continue-on-error: true
@@ -229,7 +283,7 @@ jobs:
           node "$GITHUB_WORKSPACE/patchery/scripts/benchmark-outcome.mjs" \
             --before /tmp/census-before.json \
             --after /tmp/census-after.json \
-            --baseline-exit '${{ steps.census.outputs.exit }}' \
+            --baseline-exit '${{ steps.baseline.outputs.exit }}' \
             --broken-exit '${{ steps.broken.outputs.exit }}' \
             --final-exit '${{ steps.recount.outputs.exit }}' \
             --action-outcome '${{ steps.patchery.outputs.outcome }}' \
