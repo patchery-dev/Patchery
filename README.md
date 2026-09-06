@@ -115,11 +115,10 @@ you have measured your reviewer model, at the cost of capping the verdict at
 one of its own claims. `verify-tools: on` insists on tools and reports a burnout as
 *the review could not run*, rather than quietly substituting the weaker answer.
 
-**`verify-min-confidence` is a guess, and it is labelled as one.** It ships at 60.
-Nobody measured 60. That input does exactly one thing — below it, a verdict is
-recorded as a concern instead of acted on — which means over a set of changes whose
-correctness is already known, every possible threshold has exactly three effects, and
-they can be counted:
+**`verify-min-confidence` shipped at 60. We measured it, and turned it off.**
+That input does exactly one thing — below it, a verdict is recorded as a concern
+instead of acted on — so over a set of changes whose correctness is already known,
+every possible threshold has exactly three effects, and they can be counted:
 
 | | |
 | --- | --- |
@@ -133,16 +132,39 @@ correct migrations and 12 subtly wrong ones. **Every case passes the tests.** Th
 the design: a wrong migration that fails the tests is already caught by the test
 re-run, for free, before a reviewer is paid, so it tells you nothing about a
 confidence threshold. The population the threshold is applied to is exactly this one.
-The script prints what each threshold from 0 to 100 would have done, and recommends
-`argmax(helped − falseAlarm − defused)` with ties going to the lowest, because the
-default should be to intervene less. A net of 0 everywhere is a real answer: it means
-the number carries no signal and the honest setting is 0.
 
-The counting is a pure function, unit-tested offline; `--dry-run` exercises the whole
-harness without calling a model, and CI runs it on every push so the tool cannot rot
-between uses. **What has not happened is the run itself** — that needs a key and a
-budget, and until someone does it, 60 stays a round number. The `review-confidence`
-output exists so your own runs accumulate the same data.
+**The run, on `glm-5.3`, 23 cases, $5.85:**
+
+| | |
+| --- | --- |
+| Correct migrations left alone | **11 / 11** |
+| Wrong migrations refuted | **10 / 12** |
+| Confidence when clearing a correct fix | 65 – 85, median 70 |
+| Confidence when refuting a wrong fix | 72 – 98, median 88 |
+
+The two it missed are the interesting part. One — formatting as EUR and rewriting the
+symbol back to a dollar sign — came back at **60**, the lowest confidence of the whole
+run. The number warned us. The other — deleting the dependency and declaring a local
+function with the old signature in its place — came back at **70**, which is the
+*median* confidence of the eleven correct fixes. No threshold anywhere can separate
+that one, because the reviewer cleared a wrong change with exactly the confidence it
+uses to clear right ones. The blind spot is a change that reads as locally coherent;
+you only see it if you notice the `require` disappeared.
+
+So: sweeping every threshold, the only ones that helped at all were **61–65**, each
+catching that first miss with no false alarms — a total benefit of **one case out of
+23**. At 66 the false alarms start; by 75 it costs more than it buys. And 60, the
+number that shipped, sits one point below the useful window: measured, it did nothing
+at all.
+
+**Which is why the default is now `0`, not 61.** 61 is the right number *for
+`glm-5.3`*. A default applies to models nobody has measured, and on those a threshold
+can only invent false alarms on correct fixes — the expensive direction, the one this
+whole design avoids. A parameter worth +1/23 on the one model we tested is not worth
+guessing about on the rest. Measure your own reviewer and set it: the counting is a
+pure function, unit-tested offline, `--dry-run` exercises the harness without calling
+a model, and CI runs it on every push so it cannot rot between uses. The
+`review-confidence` output records the same number from your real runs.
 
 **What it is not.** With `verify-model` empty it shares the fixer's weights, so what
 you get is different context, no rationale, no write access and an opposite success
@@ -280,7 +302,7 @@ and which directory to fix.
 | `verify-tools` | `auto` | Whether the reviewer may read the repository. `off` skips a tool pass your model never converges in — see below |
 | `verify-repair` | `false` | Hand an actionable concern back to the fixer for one more turn. Off on purpose — see above |
 | `verify-repair-turns` | `8` | Turn limit for that repair turn |
-| `verify-min-confidence` | `60` | Below this, a verdict is recorded as a concern rather than acted on. **A round number nobody has measured** — see below |
+| `verify-min-confidence` | `0` | Below this, a verdict is recorded as a concern rather than acted on. Off by default — measured, see below |
 | `verify-max-turns` | `12` | Turn limit for the reviewer |
 | `verify-max-diff-bytes` | `60000` | Skip the review above this diff size |
 | `max-turns` | `25` | Agent turn limit — your cost brake |

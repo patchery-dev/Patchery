@@ -913,7 +913,24 @@ check("a refutation renders as a caution, a concern as a warning", () => {
   const refuted = parseReview(goodReview({ verdict: "refuted" })).review;
   const concerned = parseReview(goodReview({ confidence: 10 })).review;
   assert.match(renderReviewSection(reviewOutcome({ review: refuted }), refuted, {}), /\[!CAUTION\]/);
-  assert.match(renderReviewSection(reviewOutcome({ review: concerned }), concerned, {}), /\[!WARNING\]/);
+  // minConfidence passed explicitly: this is a test of how a concern RENDERS, and
+  // the default is now 0, so a bare reviewOutcome() no longer downgrades on
+  // confidence at all. Leaving it implicit made this test silently depend on a
+  // default it was not about.
+  assert.match(
+    renderReviewSection(reviewOutcome({ review: concerned, minConfidence: 60 }), concerned, {}),
+    /\[!WARNING\]/
+  );
+});
+// The default itself, pinned. It was 60 for months on nobody's measurement; the
+// calibration run on glm-5.3 (23 labelled diffs) put the only useful window at
+// 61-65 and its whole benefit at +1 case out of 23. A default applies to models
+// nobody has measured, and on those a threshold can only invent false alarms on
+// correct fixes - the expensive direction - so it ships off.
+check("verify-min-confidence defaults to off, not to a guess", () => {
+  const low = parseReview(goodReview({ confidence: 10 })).review;
+  assert.strictEqual(reviewOutcome({ review: low }).status, "not-refuted");
+  assert.strictEqual(reviewOutcome({ review: low, minConfidence: 61 }).status, "concerns");
 });
 
 console.log("\nscriptsTamperReason - the definition of 'passing' must not move mid-run");

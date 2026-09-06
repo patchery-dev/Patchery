@@ -1132,7 +1132,7 @@ export function reviewOutcome({
   callError = null,
   diffTruncated = false,
   sawRepository = true,
-  minConfidence = 60,
+  minConfidence = 0,
   mode = "warn",
 } = {}) {
   const base = { rank: 0, blocking: false, placement: "none", confidence: null };

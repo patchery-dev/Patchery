@@ -154,13 +154,16 @@ inputs:
     description: >-
       Below this confidence the reviewer's verdict is recorded as a concern rather
       than acted on - in both directions. The same bar to condemn as to bless.
-      The default is a placeholder, not a measurement: nobody has calibrated it.
-      `scripts/calibrate.mjs` runs the real reviewer over a corpus of diffs whose
-      correctness is already known and reports what each threshold would actually
-      buy you; the `review-confidence` output records the same number from your own
-      runs. Until one of those says otherwise, treat 60 as a round number.
+      Off by default, and that is a measurement rather than an omission: calibrated
+      on glm-5.3 over 23 labelled diffs, the only threshold that helped at all was
+      61-65, and its entire benefit was one extra caught mistake out of 23. A
+      default applies to models nobody has measured, and on an unmeasured model a
+      threshold can only invent false alarms on correct fixes - the expensive
+      direction. Set it for your own reviewer model, measured: `npm run calibrate`
+      reports what each threshold would have done, and the `review-confidence`
+      output records the same number from your real runs.
     required: false
-    default: "60"
+    default: "0"
   verify-repair:
     description: >-
       When the review raises a concern the fixing agent can act on, give it one more

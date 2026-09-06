@@ -121,7 +121,7 @@ const VERIFY_REPAIR_TURNS = Math.max(1, Number(env("SMA_VERIFY_REPAIR_TURNS", "8
 // scores as "unavailable" and wastes the whole call.
 const VERIFY_MAX_TURNS = Math.max(1, Number(env("SMA_VERIFY_MAX_TURNS", "12")) || 12);
 const VERIFY_MAX_DIFF_BYTES = Math.max(0, Number(env("SMA_VERIFY_MAX_DIFF_BYTES", "60000")) || 0);
-const VERIFY_MIN_CONFIDENCE = Math.max(0, Math.min(100, Number(env("SMA_VERIFY_MIN_CONFIDENCE", "60")) || 0));
+const VERIFY_MIN_CONFIDENCE = Math.max(0, Math.min(100, Number(env("SMA_VERIFY_MIN_CONFIDENCE", "0")) || 0));
 // Read-only. No Bash: it is both code execution and a write vector (sed -i, a
 // redirect). No WebFetch: no egress channel with the customer's diff in context.
 const REVIEW_TOOLS = ["Read", "Grep", "Glob"];
