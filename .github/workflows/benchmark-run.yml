@@ -41,6 +41,10 @@ on:
         description: "Model for the fixer (empty = the repository default)"
         required: false
         default: ""
+      max-turns:
+        description: "Turn budget for the agent"
+        required: false
+        default: "45"
   workflow_call:
     inputs:
       repo: { type: string, required: true }
@@ -51,6 +55,7 @@ on:
       target-dir: { type: string, required: false, default: "." }
       node-version: { type: string, required: false, default: "auto" }
       model: { type: string, required: false, default: "" }
+      max-turns: { type: string, required: false, default: "45" }
     secrets:
       ANTHROPIC_AUTH_TOKEN: { required: true }
       ANTHROPIC_BASE_URL: { required: false }
@@ -272,6 +277,13 @@ jobs:
           target-dir: case/${{ inputs.target-dir }}
           test-command: ${{ inputs.test-command }}
           node-version: ${{ steps.baseline.outputs.node }}
+          # The default of 25 was not the binding constraint anyone expected. On
+          # winston the agent reached the exact cause - readable-stream v3 set
+          # `state.pipes` to the destination, v4 always keeps an array - and ran
+          # out of turns before it could write anything. Seven of seven results
+          # in the first batch were NO-CHANGE, and the transcripts show diagnosis,
+          # not confusion. Turns are the cheapest thing here.
+          max-turns: ${{ inputs.max-turns }}
           verify-tools: "off"
           verify-base-url: ${{ vars.ALT_BASE_URL }}
           verify-auth-token: ${{ secrets.ALT_AUTH_TOKEN }}

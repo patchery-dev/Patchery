@@ -27,6 +27,10 @@ on:
         description: "Model for the fixer, e.g. glm-5.3-flash (empty = the repository default)"
         required: false
         default: ""
+      max-turns:
+        description: "Turn budget for the agent"
+        required: false
+        default: "45"
 
 permissions:
   contents: read
@@ -86,6 +90,7 @@ jobs:
       target-dir: ${{ matrix.case['target-dir'] }}
       node-version: ${{ matrix.case['node-version'] }}
       model: ${{ inputs.model }}
+      max-turns: ${{ inputs.max-turns }}
 
   report:
     needs: [plan, run]
