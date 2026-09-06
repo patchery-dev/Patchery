@@ -7,7 +7,8 @@
  *   2. Runs the AI agent (Claude Agent SDK) -> migrate the broken call sites.
  *   3. Reads what changed via git -> if a protected file was touched, revert everything.
  *   4. Runs the tests again itself -> never trusts the agent's "tests pass" claim.
- *   5. Writes results to GITHUB_OUTPUT / GITHUB_STEP_SUMMARY and a ready-made PR body.
+ *   5. Asks a second, read-only agent to REFUTE the fix -> advisory, never raises trust.
+ *   6. Writes results to GITHUB_OUTPUT / GITHUB_STEP_SUMMARY and a ready-made PR body.
  *
  * Everything is configured through environment variables (action.yml fills them in).
  */
@@ -26,6 +27,15 @@ import {
   redactSecrets,
   createStallDetector,
   baselinePassedMessage,
+  normalizeVerifyMode,
+  shouldReview,
+  buildReviewEvidence,
+  parseReview,
+  reviewOutcome,
+  renderReviewSection,
+  REVIEW_SCHEMA,
+  REVIEW_SYSTEM_PROMPT,
+  REVIEW_NO_TOOLS_NOTE,
 } from "./guard.mjs";
 
 // ------------------------------------------------------------------ config
@@ -65,6 +75,22 @@ const STALL_STALE_TURNS = Math.max(2, Number(env("SMA_STALL_STALE_TURNS", "5")) 
 // default into 2 and kill every run on its second turn.
 const rawNoEdit = Number(env("SMA_STALL_NO_EDIT_TURNS", "0"));
 const STALL_NO_EDIT_TURNS = Number.isFinite(rawNoEdit) && rawNoEdit >= 2 ? Math.floor(rawNoEdit) : 0;
+
+// Independent review. Advisory by default: a false "this is bad" destroys a correct,
+// tested fix and the author never sees the diff, which is the expensive direction for
+// a tool whose adoption depends on believing it does something.
+const verifyMode = normalizeVerifyMode(env("SMA_VERIFY_MODE"));
+const VERIFY_MODE = verifyMode.mode;
+const VERIFY_MODEL = env("SMA_VERIFY_MODEL");
+// Measured, not guessed: at 6 the reviewer spent every turn reading - one Glob, two
+// Greps for other call sites, five Reads - and ran out before it could answer, which
+// scores as "unavailable" and wastes the whole call.
+const VERIFY_MAX_TURNS = Math.max(1, Number(env("SMA_VERIFY_MAX_TURNS", "12")) || 12);
+const VERIFY_MAX_DIFF_BYTES = Math.max(0, Number(env("SMA_VERIFY_MAX_DIFF_BYTES", "60000")) || 0);
+const VERIFY_MIN_CONFIDENCE = Math.max(0, Math.min(100, Number(env("SMA_VERIFY_MIN_CONFIDENCE", "60")) || 0));
+// Read-only. No Bash: it is both code execution and a write vector (sed -i, a
+// redirect). No WebFetch: no egress channel with the customer's diff in context.
+const REVIEW_TOOLS = ["Read", "Grep", "Glob"];
 
 // ----------------------------------------------------------------- helpers
 
@@ -596,7 +622,215 @@ if (!after.ok) {
   fail("Tests still fail after the fix. Everything was reverted, no PR will be opened.");
 }
 
-group("5. Summary");
+group("5. Independent review (a second agent, with no way to change anything)");
+
+// Everything that produces no PR exits above this point, so a run that delivers
+// nothing never pays for a review. Reviewing before the test re-run would be
+// paying for opinions on diffs that are about to be reverted.
+let reviewOutcomeResult = null;
+let review = null;
+let reviewMeta = { model: "", differentModel: false, costUsd: 0, permissionDenials: 0 };
+
+{
+  let diffText = "";
+  try {
+    diffText = changed.length ? git(["diff", "--unified=6", "--"].concat(changed)) : "";
+  } catch {
+    // execFileSync has a 1 MB default maxBuffer and throws on a pathological diff.
+    diffText = "";
+  }
+  // An untracked file has no diff; show it as all-additions so it is not invisible.
+  for (const entry of changedEntries) {
+    if (!entry.status.includes("?")) continue;
+    try {
+      const body = fs.readFileSync(path.join(repoRoot, entry.path), "utf8");
+      diffText +=
+        "\n--- /dev/null\n+++ b/" + entry.path + "\n" +
+        body.split("\n").map((l) => "+" + l).join("\n") + "\n";
+    } catch {}
+  }
+
+  const gate = shouldReview({
+    mode: VERIFY_MODE,
+    changedCount: changed.length,
+    diffBytes: diffText.length,
+    maxDiffBytes: VERIFY_MAX_DIFF_BYTES,
+  });
+
+  if (!gate.run) {
+    log("skipped: " + gate.skipReason);
+    reviewOutcomeResult = reviewOutcome({ skipReason: gate.skipReason, mode: VERIFY_MODE });
+  } else {
+    let changelogText = "";
+    if (CHANGELOG && !/^https?:\/\//i.test(CHANGELOG)) {
+      try {
+        changelogText = fs.readFileSync(path.resolve(TARGET_DIR, CHANGELOG), "utf8");
+      } catch {}
+    }
+
+    const evidence = buildReviewEvidence({
+      packageName: PACKAGE,
+      targetRel: targetRel || ".",
+      testCommand: TEST_COMMAND,
+      changedEntries,
+      diffText,
+      changelogText,
+      changelogUrl: /^https?:\/\//i.test(CHANGELOG) ? CHANGELOG : "",
+      baselineTail: baseline.output.slice(-2000),
+      afterTail: after.output.slice(-2000),
+      maxDiffBytes: VERIFY_MAX_DIFF_BYTES,
+    });
+
+    // Measured, not just requested: "the reviewer cannot change anything" is a
+    // public claim, and the tool restrictions below are requests to an SDK we
+    // depend on by caret range. This is the check that does not rely on it.
+    const treeBefore = JSON.stringify(workingTreeEntries());
+
+    const reviewOpts = {
+      cwd: TARGET_DIR,
+      systemPrompt: REVIEW_SYSTEM_PROMPT,
+      // The repository under review is third-party: its CLAUDE.md is, in the threat
+      // model, attacker-controlled. Never load it.
+      settingSources: [],
+      tools: REVIEW_TOOLS,
+      allowedTools: REVIEW_TOOLS,
+      permissionMode: "dontAsk",
+      maxTurns: VERIFY_MAX_TURNS,
+      outputFormat: { type: "json_schema", schema: REVIEW_SCHEMA },
+    };
+    if (VERIFY_MODEL) {
+      reviewOpts.model = VERIFY_MODEL;
+      // The composite action pins ANTHROPIC_MODEL and all three DEFAULT_* vars to
+      // the fixer's model. Passing options.model alone gets silently remapped, and
+      // then the PR claims "a different model" when none ran. Spread process.env:
+      // a partial object here wipes PATH.
+      reviewOpts.env = {
+        ...process.env,
+        ANTHROPIC_MODEL: VERIFY_MODEL,
+        ANTHROPIC_DEFAULT_OPUS_MODEL: VERIFY_MODEL,
+        ANTHROPIC_DEFAULT_SONNET_MODEL: VERIFY_MODEL,
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: VERIFY_MODEL,
+        CLAUDE_CODE_SUBAGENT_MODEL: VERIFY_MODEL,
+      };
+    }
+
+    let callError = null;
+    let reviewResult = null;
+    let reviewText = [];
+    // Whether the reviewer could actually open the repository to check its claims.
+    let sawRepository = true;
+
+    async function runReviewer(options, promptText) {
+      const text = [];
+      let res = null;
+      for await (const message of query({ prompt: promptText, options })) {
+        if (message.type === "assistant") {
+          for (const block of message.message.content) {
+            if (block.type === "text" && block.text.trim()) text.push(block.text);
+            else if (block.type === "tool_use") log("[review] " + block.name);
+          }
+        } else if (message.type === "result") {
+          res = message;
+        }
+      }
+      return { res, text };
+    }
+
+    try {
+      ({ res: reviewResult, text: reviewText } = await runReviewer(reviewOpts, evidence.text));
+      // Reading the repository is the reviewer's highest-value move - grepping for
+      // call sites the migration missed is the one check the mechanical guard cannot
+      // do. But a model that investigates until its turns run out answers nothing at
+      // all, which is worse than a shallower answer. Measured on GLM: 12 turns, 12
+      // tool calls, no verdict; the same review with no tools converged in 4.
+      // So: try it with eyes, and if it never lands, ask again without them.
+      if (reviewResult?.subtype === "error_max_turns") {
+        log("the reviewer used every turn investigating and never answered - asking again without tools.");
+        const { res, text } = await runReviewer(
+          { ...reviewOpts, tools: [], allowedTools: [] },
+          evidence.text + REVIEW_NO_TOOLS_NOTE
+        );
+        if (res?.subtype === "success") {
+          reviewResult = res;
+          reviewText = text;
+          sawRepository = false;
+        }
+      }
+    } catch (err) {
+      callError = "the reviewer crashed: " + (err?.message ?? err);
+    }
+
+    const tamper = treeBefore !== JSON.stringify(workingTreeEntries());
+    if (tamper) {
+      log("\n[SAFETY] The reviewer changed the working tree. It is not allowed to.");
+      revertAll();
+      fail(
+        "The independent reviewer modified the working tree. It runs with no write tools, so " +
+          "this should be impossible - everything was reverted and no PR will be opened. " +
+          "Set `verify-mode: off` to run without it until this is understood."
+      );
+    }
+
+    if (!callError && reviewResult && reviewResult.subtype !== "success") {
+      callError = reviewResult.subtype;
+    }
+    const parsed = callError
+      ? { ok: false, reason: callError }
+      : parseReview(reviewResult?.structured_output ?? reviewText.join("\n"));
+    if (parsed.ok) review = parsed.review;
+    else callError = callError || parsed.reason;
+
+    const reviewModels = Object.keys(reviewResult?.modelUsage ?? {});
+    reviewMeta = {
+      model: reviewModels.join(", ") || VERIFY_MODEL || "unknown",
+      // Only claim a different model when the telemetry says one actually ran.
+      differentModel: reviewModels.length > 0 && reviewModels.every((m) => !modelsUsed.includes(m)),
+      costUsd: reviewResult?.total_cost_usd ?? 0,
+      permissionDenials: (reviewResult?.permission_denials ?? []).length,
+    };
+    if (reviewMeta.permissionDenials) {
+      log("note: the reviewer tried " + reviewMeta.permissionDenials + " tool call(s) it is not allowed.");
+    }
+
+    reviewOutcomeResult = reviewOutcome({
+      review,
+      callError,
+      diffTruncated: evidence.truncated,
+      sawRepository,
+      minConfidence: VERIFY_MIN_CONFIDENCE,
+      mode: VERIFY_MODE,
+    });
+    log("-> review: " + reviewOutcomeResult.status + " (" + reviewOutcomeResult.tableCell + ")");
+  }
+}
+
+const reviewSection = renderReviewSection(reviewOutcomeResult, review, reviewMeta);
+
+// Blocking is opt-in, and even then only on an outright refutation. `stop()` writes
+// changed=false, so every already-published workflow gates on this with no YAML edit.
+if (reviewOutcomeResult.blocking) {
+  const patchPath = path.join(env("RUNNER_TEMP", path.join(repoRoot, "..")), "sma-rejected.patch");
+  try {
+    fs.writeFileSync(patchPath, git(["diff", "--"].concat(changed)), "utf8");
+  } catch {}
+  writeStepSummary("### Patchery\n\nBlocked by the independent review.\n\n" + reviewSection);
+  revertAll();
+  stop(
+    "blocked-by-review",
+    "The independent review refuted this fix, and verify-mode is `block`, so nothing was " +
+      "delivered. The rejected change was saved to " + patchPath + " - recover it with " +
+      "`git apply`. Set `verify-mode: warn` to get the pull request anyway and judge for " +
+      "yourself.\n\n" + reviewOutcomeResult.headline,
+    {
+      tests_passed: "true",
+      review_status: reviewOutcomeResult.status,
+      review_label: reviewOutcomeResult.label,
+      review_patch_file: patchPath,
+    }
+  );
+}
+
+group("6. Summary");
 
 let diffstat = "";
 try {
@@ -621,13 +855,17 @@ const prBody = [
     " |",
   "| `" + TEST_COMMAND + "` after the fix | passed |",
   "| Were any test files modified | No - enforced by CI |",
+  "| Independent review (second agent, no write access) | " + reviewOutcomeResult.tableCell + " |",
   "",
+  // A refutation or a concern belongs above the evidence, not buried under it.
+  reviewOutcomeResult.placement === "top" ? reviewSection : "",
   "### Changed files",
   "",
   changed.map((f) => "- `" + f + "`").join("\n"),
   "",
   diffstat ? "```\n" + diffstat + "\n```" : "",
   "",
+  reviewOutcomeResult.placement === "after-verification" ? reviewSection : "",
   "### What the agent said",
   "",
   explanation,
@@ -673,6 +911,8 @@ writeStepSummary(
 );
 writeOutputs({
   outcome: "fixed",
+  review_status: reviewOutcomeResult.status,
+  review_label: reviewOutcomeResult.label,
   changed: "true",
   tests_passed: "true",
   files: changed.join("\n"),

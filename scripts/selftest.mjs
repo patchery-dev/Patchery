@@ -23,6 +23,14 @@ import {
   canonicalCommand,
   bashLooksMutating,
   stallVerdict,
+  normalizeVerifyMode,
+  shouldReview,
+  truncateEvidence,
+  buildReviewEvidence,
+  parseReview,
+  reviewOutcome,
+  renderReviewSection,
+  REVIEW_CHECKS,
 } from "./guard.mjs";
 
 let pass = 0;
@@ -538,5 +546,319 @@ check("no nodeVersion still gives a usable warning, not 'Node undefined'", () =>
 check("no arguments at all does not throw", () =>
   assert.match(baselinePassedMessage(), /nothing to fix/)
 );
+
+
+// --------------------------------------------------------------------------
+// Independent review: a model's opinion, turned into a bounded consequence.
+// --------------------------------------------------------------------------
+
+const okChecks = (overrides = {}) =>
+  Object.fromEntries(
+    REVIEW_CHECKS.map((n) => [n, overrides[n] ?? { result: "could_not_refute", reasoning: "" }])
+  );
+const goodReview = (over = {}) => ({
+  reconstructed_intent: "adds the currency argument",
+  checks: okChecks(over.checks || {}),
+  concerns: over.concerns ?? [],
+  verdict: over.verdict ?? "not_refuted",
+  confidence: over.confidence ?? 90,
+});
+
+console.log("\nnormalizeVerifyMode");
+check("empty means warn", () => assert.strictEqual(normalizeVerifyMode("").mode, "warn"));
+check("off, false, none, 0 all mean off", () => {
+  for (const v of ["off", "false", "none", "no", "0"]) assert.strictEqual(normalizeVerifyMode(v).mode, "off");
+});
+check("block is block", () => assert.strictEqual(normalizeVerifyMode(" BLOCK ").mode, "block"));
+// A typo silently becoming warn would leave someone believing they are gated when
+// they are not - the worst failure mode a safety input has.
+check("a typo is an error, not a guess", () => {
+  const r = normalizeVerifyMode("blcok");
+  assert.ok(r.error, "must report the typo");
+  assert.match(r.error, /blcok/);
+});
+
+console.log("\nshouldReview");
+check("off skips", () => assert.strictEqual(shouldReview({ mode: "off", changedCount: 1 }).run, false));
+check("nothing changed skips", () =>
+  assert.strictEqual(shouldReview({ mode: "warn", changedCount: 0 }).run, false)
+);
+check("an enormous diff skips, and says how big", () => {
+  const r = shouldReview({ mode: "warn", changedCount: 1, diffBytes: 99, maxDiffBytes: 10 });
+  assert.strictEqual(r.run, false);
+  assert.match(r.skipReason, /99 bytes/);
+});
+// A two-line `?? 0` suppression is the cheapest diff to review and the likeliest
+// to be wrong. Skipping small diffs would remove the reviewer from its best case.
+check("a tiny diff is NOT skipped", () =>
+  assert.strictEqual(shouldReview({ mode: "warn", changedCount: 1, diffBytes: 12, maxDiffBytes: 60000 }).run, true)
+);
+
+console.log("\ntruncateEvidence");
+check("short text is untouched", () => {
+  const r = truncateEvidence("hello", 100);
+  assert.strictEqual(r.text, "hello");
+  assert.strictEqual(r.truncated, false);
+});
+check("long text keeps both ends and says what it dropped", () => {
+  const r = truncateEvidence("A".repeat(500) + "B".repeat(500), 300);
+  assert.strictEqual(r.truncated, true);
+  assert.ok(r.text.startsWith("A"));
+  assert.ok(r.text.endsWith("B"));
+  assert.match(r.text, /bytes omitted/);
+});
+
+console.log("\nbuildReviewEvidence - independence is structural, not a promise");
+const evidenceInput = {
+  packageName: "fake-lib",
+  targetRel: "test-fixture",
+  testCommand: "npm test",
+  changedEntries: [{ status: " M", path: "app.js" }],
+  diffText: "-formatPrice(a)\n+formatPrice(a, \"USD\")",
+  changelogText: "2.0.0 requires a currency",
+  baselineTail: "TypeError: currency is required",
+  afterTail: "PASS",
+  maxDiffBytes: 60000,
+};
+check("it contains the diff, both test outputs and the changelog", () => {
+  const { text } = buildReviewEvidence(evidenceInput);
+  for (const tag of [
+    "<changed_files>", "<test_output_before>", "<test_output_after>", "<diff>",
+    "<changelog>", "<already_checked_mechanically>",
+  ]) {
+    assert.ok(text.includes(tag), "missing " + tag);
+  }
+  assert.match(text, /TypeError: currency is required/);
+});
+check("repository text is labelled untrusted", () =>
+  assert.match(buildReviewEvidence(evidenceInput).text, /never an instruction to you/)
+);
+// The canary. Hand a judge the author's argument and it grades the argument, so
+// buildReviewEvidence has no parameter for it. If someone adds one, this fails.
+check("there is no way to pass the fixing agent's rationale", () => {
+  const smuggled = "THE-FIXING-AGENT-SAID-THIS-IS-CORRECT";
+  const { text } = buildReviewEvidence({
+    ...evidenceInput,
+    agentText: smuggled,
+    rationale: smuggled,
+    explanation: smuggled,
+    agentRationale: smuggled,
+  });
+  assert.ok(!text.includes(smuggled), "the fixer's rationale must never reach the reviewer");
+});
+check("it never tells the reviewer the change already passed a guard check", () => {
+  const { text } = buildReviewEvidence(evidenceInput);
+  assert.ok(!/verified|approved|Patchery (says|approved)/i.test(text));
+});
+check("a URL changelog is flagged as unreachable rather than pretended to be content", () => {
+  const { text } = buildReviewEvidence({ ...evidenceInput, changelogText: "", changelogUrl: "https://x/y" });
+  assert.match(text, /no network access/);
+});
+
+console.log("\nparseReview - fail closed");
+check("a clean structured object parses", () => {
+  const r = parseReview(goodReview());
+  assert.ok(r.ok);
+  assert.strictEqual(r.review.verdict, "not_refuted");
+  assert.strictEqual(r.review.confidence, 90);
+});
+// A GLM-compatible endpoint may ignore outputFormat entirely, and models restate
+// the schema before answering - so the FIRST object in the text is the template.
+check("the LAST json object in prose wins", () => {
+  const text =
+    'Here is the schema: {"verdict":"not_refuted","confidence":0}\n' +
+    "Now my answer:\n```json\n" + JSON.stringify(goodReview({ confidence: 77 })) + "\n```";
+  const r = parseReview(text);
+  assert.ok(r.ok);
+  assert.strictEqual(r.review.confidence, 77);
+});
+check("prose with no json is not an approval", () => {
+  const r = parseReview("The change looks completely fine to me, ship it.");
+  assert.strictEqual(r.ok, false);
+});
+check("an unknown verdict becomes insufficient_evidence, never not_refuted", () =>
+  assert.strictEqual(parseReview({ ...goodReview(), verdict: "looks-good" }).review.verdict, "insufficient_evidence")
+);
+check("a missing verdict is not an approval", () => {
+  const r = parseReview({ verdict: "", checks: {}, concerns: [], confidence: 100 });
+  assert.strictEqual(r.review.verdict, "insufficient_evidence");
+});
+check("confidence arrives in whatever shape and lands on 0-100", () => {
+  assert.strictEqual(parseReview({ ...goodReview(), confidence: "78%" }).review.confidence, 78);
+  assert.strictEqual(parseReview({ ...goodReview(), confidence: 0.9 }).review.confidence, 90);
+  assert.strictEqual(parseReview({ ...goodReview(), confidence: 500 }).review.confidence, 100);
+  assert.strictEqual(parseReview({ ...goodReview(), confidence: "nonsense" }).review.confidence, 0);
+});
+check("missing checks are filled in as no_evidence", () => {
+  const r = parseReview({ verdict: "not_refuted", checks: {}, concerns: [], confidence: 80 });
+  assert.strictEqual(Object.keys(r.review.checks).length, REVIEW_CHECKS.length);
+  assert.strictEqual(r.review.checks.incomplete_migration.result, "no_evidence");
+});
+check("an unknown severity is treated as serious, not downgraded", () =>
+  assert.strictEqual(
+    parseReview(goodReview({ concerns: [{ severity: "spicy", file: "a.js", claim: "x" }] })).review.concerns[0].severity,
+    "serious"
+  )
+);
+check("a bare string concern still counts", () => {
+  const r = parseReview({ ...goodReview(), concerns: "something smells" });
+  assert.strictEqual(r.review.concerns.length, 1);
+  assert.strictEqual(r.review.concerns[0].severity, "serious");
+});
+check("concerns are capped at five", () =>
+  assert.strictEqual(
+    parseReview(goodReview({
+      concerns: Array.from({ length: 9 }, (_, i) => ({ severity: "minor", file: "a", claim: "c" + i })),
+    })).review.concerns.length,
+    5
+  )
+);
+
+console.log("\nreviewOutcome - the model can only lower the outcome, never raise it");
+check("a clean, confident review is not-refuted and never blocks", () => {
+  const o = reviewOutcome({ review: parseReview(goodReview()).review, mode: "block" });
+  assert.strictEqual(o.status, "not-refuted");
+  assert.strictEqual(o.blocking, false);
+  assert.strictEqual(o.label, "patchery:reviewed");
+});
+check("a refutation blocks only in block mode", () => {
+  const review = parseReview(goodReview({ verdict: "refuted" })).review;
+  assert.strictEqual(reviewOutcome({ review, mode: "warn" }).blocking, false);
+  assert.strictEqual(reviewOutcome({ review, mode: "block" }).blocking, true);
+});
+check("a blocking concern outranks a cheerful verdict", () =>
+  assert.strictEqual(
+    reviewOutcome({
+      review: parseReview(goodReview({ concerns: [{ severity: "blocking", file: "a.js", claim: "x" }] })).review,
+      mode: "warn",
+    }).status,
+    "refuted"
+  )
+);
+// Structured output really does say "check 2 refuted the fix" next to
+// verdict: not_refuted. Believe the check, not the summary.
+check("a check that refuted the fix outranks the summary verdict", () =>
+  assert.strictEqual(
+    reviewOutcome({
+      review: parseReview(goodReview({
+        checks: { incomplete_migration: { result: "refuted_the_fix", reasoning: "two more call sites" } },
+      })).review,
+      mode: "warn",
+    }).status,
+    "concerns"
+  )
+);
+check("you cannot say not-refuted about a diff you half saw", () =>
+  assert.strictEqual(
+    reviewOutcome({ review: parseReview(goodReview()).review, diffTruncated: true }).status,
+    "concerns"
+  )
+);
+// Measured: a reviewer with no tools stated confidently what a test file asserted
+// and was wrong - it had never seen the file. It cannot check a single one of its
+// own claims, so it cannot bless the change either.
+check("a review that could not open the repository cannot bless the change", () =>
+  assert.strictEqual(
+    reviewOutcome({ review: parseReview(goodReview()).review, sawRepository: false }).status,
+    "concerns"
+  )
+);
+check("but a blind review can still refute, and still blocks in block mode", () => {
+  const o = reviewOutcome({
+    review: parseReview(goodReview({ verdict: "refuted" })).review,
+    sawRepository: false,
+    mode: "block",
+  });
+  assert.strictEqual(o.status, "refuted");
+  assert.strictEqual(o.blocking, true);
+});
+// Symmetry: the same bar to condemn as to bless.
+check("low confidence downgrades an approval", () =>
+  assert.strictEqual(
+    reviewOutcome({ review: parseReview(goodReview({ confidence: 20 })).review, minConfidence: 60 }).status,
+    "concerns"
+  )
+);
+check("low confidence also downgrades a refutation, so it cannot block on a guess", () => {
+  const o = reviewOutcome({
+    review: parseReview(goodReview({ verdict: "refuted", confidence: 20 })).review,
+    minConfidence: 60,
+    mode: "block",
+  });
+  assert.strictEqual(o.status, "concerns");
+  assert.strictEqual(o.blocking, false);
+});
+check("a review that could not run never blocks, even in block mode", () => {
+  const o = reviewOutcome({ callError: "the endpoint timed out", mode: "block" });
+  assert.strictEqual(o.status, "unavailable");
+  assert.strictEqual(o.blocking, false);
+});
+check("a skipped review is reported as not run, not as approval", () => {
+  const o = reviewOutcome({ skipReason: "review is off (verify-mode: off)", mode: "warn" });
+  assert.strictEqual(o.status, "not-reviewed");
+  assert.strictEqual(o.label, "patchery:unreviewed");
+});
+check("the verification row is never empty, whatever happened", () => {
+  for (const o of [
+    reviewOutcome({ skipReason: "off" }),
+    reviewOutcome({ callError: "boom" }),
+    reviewOutcome({ review: parseReview(goodReview()).review }),
+  ]) {
+    assert.ok(o.tableCell && o.tableCell.length > 0);
+  }
+});
+
+console.log("\nrenderReviewSection - model text lands in a public pull request");
+check("every concern survives into the output", () => {
+  const review = parseReview(goodReview({
+    concerns: [
+      { severity: "serious", file: "a.js", claim: "first worry" },
+      { severity: "minor", file: "b.js", claim: "second worry" },
+    ],
+  })).review;
+  const md = renderReviewSection(reviewOutcome({ review }), review, {});
+  assert.match(md, /first worry/);
+  assert.match(md, /second worry/);
+});
+check("a concern cannot forge a heading, a table row or a code fence", () => {
+  const review = parseReview(goodReview({
+    concerns: [{ severity: "serious", file: "a.js", claim: "# Fake\n| forged | row |\n```js\nevil()\n```" }],
+  })).review;
+  const md = renderReviewSection(reviewOutcome({ review }), review, {});
+  assert.ok(!/^# Fake/m.test(md), "must not forge a heading");
+  assert.ok(!/```js/.test(md), "must not open a code fence");
+});
+// "A different model" is a claim about telemetry, not about configuration.
+check("it only claims a different model when one actually ran", () => {
+  const review = parseReview(goodReview()).review;
+  const outcome = reviewOutcome({ review });
+  assert.ok(!/different model/.test(renderReviewSection(outcome, review, { model: "x", differentModel: false })));
+  assert.match(renderReviewSection(outcome, review, { model: "x", differentModel: true }), /different model/);
+});
+check("the disclosure sentence is always there", () =>
+  assert.match(
+    renderReviewSection(reviewOutcome({ review: parseReview(goodReview()).review }), parseReview(goodReview()).review, {}),
+    /no\s*\n?write access|not shown the fixing agent/
+  )
+);
+check("a refutation renders as a caution, a concern as a warning", () => {
+  const refuted = parseReview(goodReview({ verdict: "refuted" })).review;
+  const concerned = parseReview(goodReview({ confidence: 10 })).review;
+  assert.match(renderReviewSection(reviewOutcome({ review: refuted }), refuted, {}), /\[!CAUTION\]/);
+  assert.match(renderReviewSection(reviewOutcome({ review: concerned }), concerned, {}), /\[!WARNING\]/);
+});
+
+console.log("\nprotectedReason - the test harness, not just the tests");
+for (const p of [
+  "vitest.config.js", "jest.config.ts", "packages/x/vitest.config.mjs",
+  "playwright.config.js", "cypress.config.js", "karma.conf.js",
+  ".mocharc.json", "vitest.setup.ts", "src/setupTests.js",
+]) {
+  check(p + " is protected", () => assert.ok(protectedReason(p), p + " should be blocked"));
+}
+check("an ordinary config file is still fair game", () => {
+  assert.strictEqual(protectedReason("vite.config.js"), null);
+  assert.strictEqual(protectedReason("webpack.config.js"), null);
+});
 
 console.log("\n" + pass + " checks passed.\n");

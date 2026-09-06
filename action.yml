@@ -93,6 +93,40 @@ inputs:
       deliberately want to cap pure research.
     required: false
     default: "0"
+  verify-mode:
+    description: >-
+      Independent review of the fix by a second, read-only agent. `warn` (the
+      default) always opens the pull request and records the verdict in it.
+      `block` additionally withholds the PR when that reviewer outright refutes
+      the fix - the rejected change is saved as a patch file, never lost. `off`
+      skips it. A review that cannot run never blocks, in any mode.
+    required: false
+    default: "warn"
+  verify-model:
+    description: >-
+      Model for the reviewer. Empty means the same model as the fixer, still in a
+      separate call with no shared context, no sight of the fixer's reasoning and
+      no write access. The pull request only claims "a different model" when the
+      telemetry confirms one actually ran.
+    required: false
+    default: ""
+  verify-min-confidence:
+    description: >-
+      Below this confidence the reviewer's verdict is recorded as a concern rather
+      than acted on - in both directions. The same bar to condemn as to bless.
+    required: false
+    default: "60"
+  verify-max-turns:
+    description: "Turn limit for the reviewer. It reads and searches; it does not need many."
+    required: false
+    default: "12"
+  verify-max-diff-bytes:
+    description: >-
+      Skip the review when the diff is larger than this. There is deliberately no
+      minimum: a two-line error suppression is both the cheapest diff to review and
+      the likeliest to be wrong.
+    required: false
+    default: "60000"
   node-version:
     description: >-
       Node version used to run your tests. Defaults to the current LTS; Node 20
@@ -116,7 +150,8 @@ outputs:
   outcome:
     description: >-
       How the run ended: 'fixed', 'nothing-to-do', 'flaky', 'inconclusive',
-      'no-changes', 'dry-run' or 'failed'. Everything except 'failed' exits 0.
+      'no-changes', 'dry-run', 'blocked-by-review' or 'failed'. Everything except
+      'failed' exits 0.
     value: ${{ steps.run.outputs.outcome }}
   changed:
     description: "Whether the agent actually changed files ('true' / 'false')."
@@ -133,6 +168,14 @@ outputs:
   summary:
     description: "One-line human-readable summary."
     value: ${{ steps.run.outputs.summary }}
+  review-status:
+    description: >-
+      How the independent review ended: not-reviewed, unavailable, not-refuted,
+      concerns or refuted.
+    value: ${{ steps.run.outputs.review_status }}
+  review-label:
+    description: "Suggested PR label for the review outcome, e.g. patchery:reviewed."
+    value: ${{ steps.run.outputs.review_label }}
 
 runs:
   using: "composite"
@@ -169,6 +212,11 @@ runs:
         SMA_STALL_REPEATS: ${{ inputs.stall-repeats }}
         SMA_STALL_STALE_TURNS: ${{ inputs.stall-stale-turns }}
         SMA_STALL_NO_EDIT_TURNS: ${{ inputs.stall-no-edit-turns }}
+        SMA_VERIFY_MODE: ${{ inputs.verify-mode }}
+        SMA_VERIFY_MODEL: ${{ inputs.verify-model }}
+        SMA_VERIFY_MIN_CONFIDENCE: ${{ inputs.verify-min-confidence }}
+        SMA_VERIFY_MAX_TURNS: ${{ inputs.verify-max-turns }}
+        SMA_VERIFY_MAX_DIFF_BYTES: ${{ inputs.verify-max-diff-bytes }}
         ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-auth-token }}
         ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
         ANTHROPIC_MODEL: ${{ inputs.anthropic-model }}
