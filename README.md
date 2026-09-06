@@ -362,6 +362,15 @@ node scripts/agent.mjs
   Deleting a validation check inside a file the agent is entitled to edit walks past
   it. The second agent reads the change, but that is judgement rather than a rule —
   which is exactly what a deterministic guard exists to avoid having to trust.
+- **The fixing agent runs with a shell and no permission prompts.** It gets `Read`,
+  `Edit`, `Write`, `Bash`, `Glob` and `Grep`, in `bypassPermissions` mode, because a
+  headless run has nobody to ask. Inside the runner it can execute commands and reach
+  the network. Nothing is held back *during* the run — everything above happens
+  *after* it, by reading git and re-running your tests, and the whole attempt is
+  reverted if it does not survive. So the containment is your runner's own isolation
+  plus that check, not a restricted toolset. (The reviewing agent is the opposite:
+  `Read`, `Grep`, `Glob`, no shell, and its read-only status is measured against the
+  working tree afterwards rather than assumed.)
 - Whether a break reproduces at all can depend on the runtime. Your `node-version`
   decides which Node the tests run on, and a break that is real on an older one can
   pass on a newer one — we hit exactly that, and the run said "nothing to fix". It
