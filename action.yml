@@ -318,8 +318,13 @@ runs:
       shell: bash
       run: |
         # Installed with the runner's npm, not the project's: an old Node ships an
-        # old npm that cannot read the SDK's package metadata.
-        "$(dirname "${{ steps.node.outputs.ours }}")/npm" install --no-save --no-audit --no-fund "@anthropic-ai/claude-agent-sdk@^0.1.77"
+        # old npm that cannot read the SDK's package metadata. If it is not beside
+        # the runner's node, fall back rather than fail - a working install with
+        # the wrong npm beats no install at all, and the agent runs on our Node
+        # either way.
+        NPM="$(dirname "${{ steps.node.outputs.ours }}")/npm"
+        [ -x "$NPM" ] || NPM=npm
+        "$NPM" install --no-save --no-audit --no-fund "@anthropic-ai/claude-agent-sdk@^0.1.77"
       working-directory: ${{ github.action_path }}
 
     - name: Run the agent and verify
