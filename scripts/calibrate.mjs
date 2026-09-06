@@ -36,6 +36,7 @@ import {
   buildReviewEvidence,
   parseReview,
   confidenceThresholdReport,
+  redactSecrets,
   REVIEW_SCHEMA,
   REVIEW_SYSTEM_PROMPT,
   REVIEW_NO_TOOLS_NOTE,
@@ -296,20 +297,34 @@ if (report.net <= 0) {
 console.log("\nSamples: " + usable.length + " usable, " + (samples.length - usable.length) +
   " errored. Spend: $" + spend.toFixed(4));
 
+// The endpoint is recorded as a hostname, never the full URL. Which provider a
+// number was measured on is the point of recording it; a path or query string is
+// not, and this file is uploaded as a CI artifact, where GitHub's secret masking
+// does not reach. The token is redacted on top of that, belt and braces.
+let endpointHost = "(Anthropic default)";
+try {
+  if (process.env.ANTHROPIC_BASE_URL) endpointHost = new URL(process.env.ANTHROPIC_BASE_URL).host;
+} catch {
+  endpointHost = "(unparseable)";
+}
+
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(
   OUT,
-  JSON.stringify(
-    {
-      model: process.env.ANTHROPIC_MODEL || "(default)",
-      endpoint: process.env.ANTHROPIC_BASE_URL || "(Anthropic default)",
-      tools: USE_TOOLS,
-      maxTurns: MAX_TURNS,
-      samples,
-      report,
-    },
-    null,
-    2
+  redactSecrets(
+    JSON.stringify(
+      {
+        model: process.env.ANTHROPIC_MODEL || "(default)",
+        endpoint: endpointHost,
+        tools: USE_TOOLS,
+        maxTurns: MAX_TURNS,
+        samples,
+        report,
+      },
+      null,
+      2
+    ),
+    [process.env.ANTHROPIC_AUTH_TOKEN, process.env.ANTHROPIC_API_KEY].filter(Boolean)
   ) + "\n",
   "utf8"
 );

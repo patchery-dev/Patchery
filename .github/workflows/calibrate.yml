@@ -1,0 +1,95 @@
+# Measures what `verify-min-confidence` actually buys, by running the real reviewer
+# over calibration/ - 23 changes to the fixture whose correctness is already known.
+#
+# Runs here rather than on anyone's laptop for two reasons: the provider key stays
+# in Secrets where it already lives, and the run that produced a number we publish
+# becomes an artifact anyone can open. A measurement nobody can re-check is just an
+# assertion with a decimal point in it.
+#
+# It costs one review per case. Triggered by hand, never automatically.
+name: Patchery (calibrate)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tools:
+        description: "Give the reviewer Read/Grep/Glob (matches verify-tools: on)"
+        type: boolean
+        required: false
+        default: false
+      max-turns:
+        description: "Turn limit per review"
+        required: false
+        default: "12"
+      only:
+        description: "Substring filter, e.g. 'good-01' - for debugging the harness cheaply"
+        required: false
+        default: ""
+
+# Reads the repository and nothing else. This workflow opens no PR, writes no
+# branch, and touches no issue - it produces a number and an artifact.
+permissions:
+  contents: read
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The harness only imports the SDK when a model will actually be called.
+      - name: Install the agent SDK
+        run: npm install --no-audit --no-fund
+
+      - name: Run the calibration
+        id: run
+        env:
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          # Through the environment, never interpolated into the script. A `${{ }}`
+          # holding a dispatch input is pasted in as shell source before bash sees
+          # it, so `--only "; curl evil"` would simply run. Only someone who can
+          # already push here can dispatch this, but a repository whose whole
+          # subject is "do not trust what came back" should not write that line.
+          TOOLS: ${{ inputs.tools }}
+          MAX_TURNS: ${{ inputs.max-turns }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          set -o pipefail
+          args=(--max-turns "$MAX_TURNS" --out calibration/results.json)
+          # `if`, not `[ ... ] && ...`: the runner's shell is `bash -e`, where a
+          # failing test as the last command of an AND-list ends the whole step.
+          if [ "$TOOLS" = "true" ]; then args+=(--tools); fi
+          if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
+          node scripts/calibrate.mjs "${args[@]}" | tee calibration/run.log
+
+      # The numbers, readable without downloading anything. GitHub masks registered
+      # secrets in this summary the same way it does in the log.
+      - name: Put the report in the summary
+        if: always()
+        run: |
+          {
+            echo "### Patchery — confidence calibration"
+            echo
+            echo '```'
+            cat calibration/run.log || echo "(the run produced no log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # results.json records the endpoint as a hostname and redacts the token: an
+      # artifact is not covered by GitHub's secret masking.
+      - name: Upload the raw samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calibration-results
+          path: |
+            calibration/results.json
+            calibration/run.log
+          if-no-files-found: warn
+          retention-days: 90
