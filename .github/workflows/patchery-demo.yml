@@ -53,7 +53,13 @@ jobs:
           # the no-tools pass anyway. Skipping straight to that pass saves the
           # wasted call; the verdict caps at `concerns`, which it already did.
           verify-tools: "off"
-          erify-base-url: ${{ vars.ALT_BASE_URL }}
+          # The reviewer runs on a different provider from the fixer. Measured over 23
+          # labelled changes: this repo's own model cleared 5 of 12 wrong migrations
+          # with "a second agent tried to refute this and could not" - a false all-clear
+          # is the expensive error, because it ships a wrong fix wearing a reassurance.
+          # DeepSeek cleared none of the 12. It costs more noise on correct fixes
+          # (4 of 11 flagged) and ~10x the tokens, and that is the right trade here.
+          verify-base-url: ${{ vars.ALT_BASE_URL }}
           verify-auth-token: ${{ secrets.ALT_AUTH_TOKEN }}
           verify-model: deepseek-v4-flash
           anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
