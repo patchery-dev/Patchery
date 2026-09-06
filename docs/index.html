@@ -343,7 +343,7 @@ checked, and untouched:
   confidence   72 / 100
   concerns     raised
   cost         $0.3298</code></pre>
-            <figcaption class="scr__note">The reviewer can agree, object, or say it is not sure — and it cannot touch a single file either way. Below a confidence of 60 its verdict is filed as a concern rather than acted on, in both directions: the same bar to condemn as to bless. On this run the review cost $0.3298. The fix it was reviewing cost $0.2251.</figcaption>
+            <figcaption class="scr__note">The reviewer can agree, object, or say it is not sure — and it cannot touch a single file either way. Below a confidence of 60 its verdict is filed as a concern rather than acted on, in both directions: the same bar to condemn as to bless. On this run the review cost $0.3298. The fix it was reviewing cost $0.2251. There is a switch that hands a serious concern back to the fixer for one more turn, and it is off by default: most of what a reviewer raises is <em>I could not check this from here</em>, which is information you are missing rather than code that is wrong — and a model handed criticism will always find something to change.</figcaption>
           </figure>
 
           <!-- 06 -->

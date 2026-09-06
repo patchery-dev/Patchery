@@ -90,6 +90,18 @@ question in this heading is an artifact you can read, not a veto you have to tru
 `verify-mode: block` is there if you want it, and it saves the rejected diff as a
 patch file rather than losing it.
 
+**One repair turn, off by default.** `verify-repair` lets a concern go back
+to the fixing agent for a single extra turn. It is off because most of what a reviewer
+raises is *I could not check this from here* — a hardcoded value nothing validates, a
+test file it was never shown. That is honest, useful to you, and useless to the fixer:
+what is missing is information, not code. Hand it back anyway and a model given
+criticism will find something to change, and every extra change to already-passing code
+is risk. So a concern qualifies only when it is anchored twice — the reviewer named a
+file, **and** at least one of its own checks actually found something rather than coming
+back with no evidence. When it does fire, the guard, your tests and the review all run
+again over the result, so the verdict in the pull request describes the diff in the pull
+request.
+
 **What it is not.** With `verify-model` empty it shares the fixer's weights, so what
 you get is different context, no rationale, no write access and an opposite success
 condition — not true independence. It will not catch a change that is wrong in a way
@@ -218,11 +230,19 @@ and which directory to fix.
 | `allowed-paths` | `""` | Paths outside `target-dir` the run may still change, one per line |
 | `allow-deletions` | `false` | Allow the run to delete tracked files |
 | `verify-mode` | `warn` | Independent review: `warn` records the verdict, `block` withholds a refuted PR, `off` skips it |
+| `verify-base-url` | `""` | Endpoint for the reviewer, if it should run on a different provider entirely |
+| `verify-auth-token` | `""` | Token for that endpoint |
+| `verify-repair` | `false` | Hand an actionable concern back to the fixer for one more turn. Off on purpose — see above |
+| `verify-repair-turns` | `8` | Turn limit for that repair turn |
 | `verify-model` | `""` | Model for the reviewer; empty means the same one, in a separate call |
 | `verify-min-confidence` | `60` | Below this, a verdict is recorded as a concern rather than acted on |
 | `verify-max-turns` | `12` | Turn limit for the reviewer |
 | `verify-max-diff-bytes` | `60000` | Skip the review above this diff size |
 | `max-turns` | `25` | Agent turn limit — your cost brake |
+| `baseline-retries` | `2` | Re-runs of a failing baseline before believing it. Catches a flaky suite before you pay for an agent |
+| `stall-repeats` | `3` | Stop if the same tool call is repeated this many times |
+| `stall-stale-turns` | `5` | Stop after this many turns in a row that turn up nothing the run has not already seen |
+| `stall-no-edit-turns` | `0` | Legacy ceiling on turns without an edit. Off by default: it stopped careful agents mid-research |
 | `extra-instructions` | `""` | Extra instructions for the agent |
 | `require-failing-baseline` | `true` | Skip the agent entirely if tests already pass |
 | `dry-run` | `false` | Only measure the baseline test run |
@@ -235,6 +255,7 @@ and which directory to fix.
 
 | Output | Description |
 | --- | --- |
+| `outcome` | `fixed`, `nothing-to-do`, `flaky`, `inconclusive`, `no-changes`, `dry-run`, `blocked-by-review` or `failed`. Everything but `failed` exits 0 |
 | `changed` | `true` / `false` — whether files actually changed |
 | `tests-passed` | Whether tests passed after the fix |
 | `files` | Changed files, one per line (ready for `add-paths`) |
