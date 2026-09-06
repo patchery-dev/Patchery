@@ -34,6 +34,65 @@ export function protectedReason(relPath) {
 }
 
 /**
+ * Did the run change what `npm test` actually does?
+ *
+ * The whole pipeline rests on step 4: run the test command again and believe the
+ * result. But `npm test` is just a lookup into `scripts` in package.json, so a run
+ * that rewrites `"test": "echo ok"` makes that verification meaningless and every
+ * path rule passes - package.json is not, and must not be, a protected path, because
+ * a dependency migration legitimately bumps a version there.
+ *
+ * So the field is protected by content instead of by path: `scripts` is snapshotted
+ * before the agent runs and compared afterwards. Dependencies, version, everything
+ * else stays editable.
+ *
+ * Fails closed: a package.json that became unreadable is treated as tampering, since
+ * an unparseable manifest can change what the test command resolves to just as well.
+ *
+ * @param {string|null} beforeText package.json before the run, or null if absent
+ * @param {string|null} afterText package.json after the run, or null if absent
+ * @returns {string|null} reason, or null if nothing that decides "passing" moved
+ */
+export function scriptsTamperReason(beforeText, afterText) {
+  if (beforeText == null) return null; // nothing to compare against
+  if (afterText == null) return "package.json was deleted, so the test command no longer resolves";
+
+  const parse = (text) => {
+    try {
+      const o = JSON.parse(String(text));
+      return o && typeof o === "object" ? o : null;
+    } catch {
+      return null;
+    }
+  };
+  const before = parse(beforeText);
+  const after = parse(afterText);
+  if (before == null) return null; // it was already unreadable; not this run's doing
+  if (after == null) return "package.json is no longer valid JSON, so the test command cannot be trusted";
+
+  const beforeScripts = before.scripts && typeof before.scripts === "object" ? before.scripts : {};
+  const afterScripts = after.scripts && typeof after.scripts === "object" ? after.scripts : {};
+  const names = [...new Set([...Object.keys(beforeScripts), ...Object.keys(afterScripts)])].sort();
+  const changed = names.filter((n) => beforeScripts[n] !== afterScripts[n]);
+  if (changed.length === 0) return null;
+
+  return (
+    "the scripts in package.json changed (" +
+    changed
+      .map((n) => {
+        const from = beforeScripts[n];
+        const to = afterScripts[n];
+        if (from === undefined) return "added `" + n + "`";
+        if (to === undefined) return "removed `" + n + "`";
+        return "`" + n + "`: " + JSON.stringify(from) + " -> " + JSON.stringify(to);
+      })
+      .join("; ") +
+    ") - the test command is what decides whether a fix is correct, so it must not " +
+    "change during the run"
+  );
+}
+
+/**
  * Turns `git status --porcelain -uall --no-renames` output into a set of paths.
  *
  * The status field is two characters wide and either half can be a space

@@ -31,6 +31,7 @@ import {
   reviewOutcome,
   renderReviewSection,
   REVIEW_CHECKS,
+  scriptsTamperReason,
 } from "./guard.mjs";
 
 let pass = 0;
@@ -847,6 +848,56 @@ check("a refutation renders as a caution, a concern as a warning", () => {
   assert.match(renderReviewSection(reviewOutcome({ review: refuted }), refuted, {}), /\[!CAUTION\]/);
   assert.match(renderReviewSection(reviewOutcome({ review: concerned }), concerned, {}), /\[!WARNING\]/);
 });
+
+console.log("\nscriptsTamperReason - the definition of 'passing' must not move mid-run");
+const pkg = (scripts, extra = {}) => JSON.stringify({ name: "x", version: "1.0.0", scripts, ...extra });
+// The hole this closes: everything in the pipeline rests on re-running the test
+// command, and `npm test` is only a lookup into this field.
+check("rewriting the test script to something meaningless is caught", () => {
+  const r = scriptsTamperReason(pkg({ test: "node app.test.js" }), pkg({ test: "echo ok" }));
+  assert.match(String(r), /scripts in package\.json changed/);
+  assert.match(String(r), /echo ok/);
+});
+check("removing the test script is caught", () =>
+  assert.match(String(scriptsTamperReason(pkg({ test: "vitest" }), pkg({}))), /removed `test`/)
+);
+check("adding a script is caught too", () =>
+  assert.match(
+    String(scriptsTamperReason(pkg({ test: "vitest" }), pkg({ test: "vitest", posttest: "exit 0" }))),
+    /added `posttest`/
+  )
+);
+// package.json must stay editable: bumping the dependency is often the migration.
+check("bumping a dependency is allowed", () =>
+  assert.strictEqual(
+    scriptsTamperReason(
+      pkg({ test: "vitest" }, { dependencies: { "fake-lib": "^1.0.0" } }),
+      pkg({ test: "vitest" }, { dependencies: { "fake-lib": "^2.0.0" } })
+    ),
+    null
+  )
+);
+check("reformatting package.json without touching scripts is allowed", () =>
+  assert.strictEqual(
+    scriptsTamperReason('{"name":"x","scripts":{"test":"vitest"}}', '{\n  "name": "x",\n  "scripts": {\n    "test": "vitest"\n  }\n}'),
+    null
+  )
+);
+check("deleting package.json is caught", () =>
+  assert.match(String(scriptsTamperReason(pkg({ test: "vitest" }), null)), /deleted/)
+);
+check("breaking package.json into invalid JSON is caught", () =>
+  assert.match(String(scriptsTamperReason(pkg({ test: "vitest" }), "{ not json")), /no longer valid JSON/)
+);
+check("a project with no package.json at all is not a violation", () =>
+  assert.strictEqual(scriptsTamperReason(null, null), null)
+);
+check("an already-unreadable package.json is not blamed on this run", () =>
+  assert.strictEqual(scriptsTamperReason("{ broken", pkg({ test: "vitest" })), null)
+);
+check("a project with no scripts field either side is fine", () =>
+  assert.strictEqual(scriptsTamperReason('{"name":"x"}', '{"name":"x","version":"2"}'), null)
+);
 
 console.log("\nprotectedReason - the test harness, not just the tests");
 for (const p of [

@@ -36,6 +36,7 @@ import {
   REVIEW_SCHEMA,
   REVIEW_SYSTEM_PROMPT,
   REVIEW_NO_TOOLS_NOTE,
+  scriptsTamperReason,
 } from "./guard.mjs";
 
 // ------------------------------------------------------------------ config
@@ -204,6 +205,19 @@ if (filesBefore.size > 0) {
 // Where the agent was told to work, relative to the repo root. "" means the
 // whole repository, which is the default and makes the scope rule a no-op.
 const targetRel = path.relative(repoRoot, TARGET_DIR).replace(/\\/g, "/");
+
+/** The package.json that governs the test command, or null if there is not one. */
+function readTargetPackageJson() {
+  try {
+    return fs.readFileSync(path.join(TARGET_DIR, "package.json"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+// Snapshotted before the agent runs: this is the definition of "passing" that step 4
+// is measured against, so it has to be pinned from the start.
+const packageJsonBefore = readTargetPackageJson();
 
 /** What the agent changed, with status. Anything already dirty before the run does not count. */
 function agentChangedEntries() {
@@ -609,6 +623,24 @@ if (violations.length > 0) {
       "migration apart from an agent going outside its brief. " +
       hints.join(" ")
   );
+}
+
+// Checked BEFORE the tests are re-run, because a run that rewrote `scripts.test`
+// would make that re-run prove nothing at all. package.json is deliberately not a
+// protected path - a migration legitimately bumps a dependency version in it - so
+// the field that decides what "passing" means is protected by content instead.
+{
+  const scriptsReason = scriptsTamperReason(packageJsonBefore, readTargetPackageJson());
+  if (scriptsReason) {
+    log("\n[SAFETY] " + scriptsReason);
+    revertAll();
+    fail(
+      "Blocked and reverted, no PR will be opened: " + scriptsReason + ". Everything else " +
+        "in package.json - dependencies, version - is still fair game; only the scripts are " +
+        "frozen for the length of a run, because they are the definition of correct that " +
+        "the rest of this pipeline is measured against."
+    );
+  }
 }
 
 group("4. Run the tests again myself (do not trust the agent's word)");
