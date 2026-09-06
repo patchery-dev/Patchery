@@ -836,12 +836,33 @@ export function packageBindings(rawText = "", packageName = "") {
  * @param {{packageName: string, files: Array<{relPath: string, beforeText: string, afterText: string}>, allowRemoval: boolean}} a
  * @returns {Array<{kind: "removal"|"subversion", reason: string}>}
  */
+/**
+ * How often a binding is called, and how often the answer is kept.
+ *
+ * A call standing alone on its line is discarded; anything else - assigned,
+ * returned, interpolated, passed on, awaited - is consumed. A call spanning
+ * several lines does not match the bare form and counts as consumed, which is
+ * the safe direction for a check that blocks.
+ */
+function callUsage(text, binding) {
+  const n = escapeRegExp(binding);
+  const call = new RegExp("\\b" + n + "\\s*\\(", "g");
+  const bare = new RegExp("^[ \\t]*" + n + "\\s*\\([^;]*\\)\\s*;?[ \\t]*$");
+  const total = (withoutComments(text).match(call) || []).length;
+  let discarded = 0;
+  for (const line of withoutComments(text).split(/\r?\n/)) {
+    if (bare.test(line)) discarded++;
+  }
+  return { total, discarded, consumed: Math.max(0, total - discarded) };
+}
+
 export function dependencyMisuseReasons({ packageName = "", files = [], allowRemoval = false } = {}) {
   const out = [];
   if (!packageName || !Array.isArray(files) || files.length === 0) return out;
 
   const seen = files.map((f) => ({
     relPath: f?.relPath || "a changed file",
+    beforeText: f?.beforeText || "",
     afterText: f?.afterText || "",
     before: packageBindings(f?.beforeText || "", packageName),
     after: packageBindings(f?.afterText || "", packageName),
@@ -884,6 +905,30 @@ export function dependencyMisuseReasons({ packageName = "", files = [], allowRem
             " from `" + packageName + "` and then never uses it. The import is left " +
             "standing while the work happens somewhere else.",
         });
+      }
+    }
+
+    // 2b. The package is still called, and its answer is now thrown away.
+    //
+    //     Stated as a regression, never as an opinion about what a call is for.
+    //     Plenty of libraries are called purely for their side effects, and this
+    //     check blocks and reverts - so it may not judge whether a result OUGHT to
+    //     be used. It only asks whether it USED to be. If every remaining call is
+    //     a bare statement and at least one was consumed before, the dependency
+    //     has been demoted to decoration while something else produces the answer.
+    if (!allowRemoval) {
+      for (const binding of f.after.bindings) {
+        const was = callUsage(f.beforeText, binding);
+        const now = callUsage(f.afterText, binding);
+        if (was.consumed > 0 && now.total > 0 && now.consumed === 0) {
+          out.push({
+            kind: "removal",
+            reason:
+              name(f) + " still calls `" + binding + "` from `" + packageName + "` but no " +
+              "longer uses what it returns - it did before. The dependency is being " +
+              "called and ignored while the answer comes from somewhere else.",
+          });
+        }
       }
     }
 
