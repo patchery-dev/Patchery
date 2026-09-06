@@ -111,30 +111,8 @@ jobs:
       - name: Decide which Node to use
         id: node
         run: |
-          WANT='${{ inputs.node-version }}'
-          if [ "$WANT" != "auto" ]; then
-            echo "asked for: $WANT"
-          elif [ -f case/.nvmrc ]; then
-            WANT=$(tr -d 'v \r\n' < case/.nvmrc)
-            echo ".nvmrc says: $WANT"
-          else
-            # engines.node is a range (">=22.0.0", "^20 || ^22", ">=18.17.0 <21");
-            # the lowest major named in it is the one the author promises the code
-            # works on. Match whole version strings and take the leading number of
-            # each - matching bare digits reads ">=22.0.0" as 22, 0 and 0, and picks
-            # the zero. That installed Node 0.12.18, from 2015, and the failure
-            # surfaced two steps later as a syntax error inside corepack.
-            WANT=$(node -e "
-              try {
-                const e = require('./case/package.json').engines;
-                const m = String((e && e.node) || '').match(/[0-9]+(?:\.[0-9]+)*/g);
-                const majors = (m || []).map((v) => parseInt(v, 10)).filter((n) => n > 0);
-                process.stdout.write(majors.length ? String(Math.min(...majors)) : '20');
-              } catch { process.stdout.write('20') }
-            ")
-            echo "engines.node says: $WANT"
-          fi
-          echo "version=$WANT" >> "$GITHUB_OUTPUT"
+          VERSION=$(node "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }})
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Use Node ${{ steps.node.outputs.version }}
         uses: actions/setup-node@v4

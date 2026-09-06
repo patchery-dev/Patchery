@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { census, censusHeld } from "./test-census.mjs";
 import { findInstalled } from "./installed-version.mjs";
+import { decideNodeVersion, lowestMajor, fromNvmrc, FALLBACK } from "./node-version.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import {
   protectedReason,
@@ -1886,6 +1887,68 @@ check("a confirmed break lets the agent be graded normally", () => {
     actionOutcome: "refused: the reviewer refuted the fix",
   });
   assert.strictEqual(r.outcome, "REFUSED");
+});
+
+
+// Which Node the tests run on decides what "the tests pass" means, and a wrong
+// answer is invisible - green run, clean summary, wrong version. It has gone
+// wrong in both directions: too low made a healthy repository look broken, too
+// high made a confirmed break disappear.
+check("lowestMajor takes the major, not the lowest digit", () => {
+  assert.strictEqual(lowestMajor(">=22.0.0"), "22");
+  assert.strictEqual(lowestMajor("^20 || ^22"), "20");
+  assert.strictEqual(lowestMajor(">=18.17.0 <21"), "18");
+  assert.strictEqual(lowestMajor("20.x"), "20");
+});
+
+// ">=22.0.0" read as bare digits gives 22, 0, 0 - and setup-node installs Node
+// 0.12.18 from 2015, which fails two steps later inside corepack, naming nothing.
+check("lowestMajor never returns zero", () => {
+  assert.notStrictEqual(lowestMajor(">=22.0.0"), "0");
+  assert.strictEqual(lowestMajor("0.0.0"), null);
+});
+
+check("lowestMajor refuses a range with no numbers", () => {
+  assert.strictEqual(lowestMajor("*"), null);
+  assert.strictEqual(lowestMajor(""), null);
+  assert.strictEqual(lowestMajor(undefined), null);
+});
+
+check("fromNvmrc strips the v and the newline", () => {
+  assert.strictEqual(fromNvmrc("v22.11.0\n"), "22.11.0");
+  assert.strictEqual(fromNvmrc("18\n"), "18");
+  assert.strictEqual(fromNvmrc("lts/hydrogen\n"), null);
+});
+
+const fakeDir = (files) => ({
+  exists: (p) => norm2(p) in files,
+  readFile: (p) => files[norm2(p)],
+});
+const norm2 = (p) => String(p).split("\\").join("/").replace(/^[A-Za-z]:/, "");
+
+check("decideNodeVersion prefers .nvmrc", () => {
+  const r = decideNodeVersion("/w", fakeDir({ "/w/.nvmrc": "v22.11.0\n", "/w/package.json": '{"engines":{"node":">=18"}}' }));
+  assert.strictEqual(r.version, "22.11.0");
+  assert.strictEqual(r.source, ".nvmrc");
+});
+
+check("decideNodeVersion falls back to engines.node", () => {
+  const r = decideNodeVersion("/w", fakeDir({ "/w/package.json": '{"engines":{"node":">=22.0.0"}}' }));
+  assert.strictEqual(r.version, "22");
+  assert.strictEqual(r.source, "engines.node");
+});
+
+// A project that says nothing gets a stated fallback, and the summary says the
+// project said nothing - so the assumption is visible rather than inferred.
+check("decideNodeVersion names its source when the project is silent", () => {
+  const r = decideNodeVersion("/w", fakeDir({ "/w/package.json": "{}" }));
+  assert.strictEqual(r.version, FALLBACK);
+  assert.match(r.source, /does not say/);
+});
+
+check("decideNodeVersion steps over an unusable .nvmrc", () => {
+  const r = decideNodeVersion("/w", fakeDir({ "/w/.nvmrc": "lts/*\n", "/w/package.json": '{"engines":{"node":"^20"}}' }));
+  assert.strictEqual(r.version, "20");
 });
 
 console.log("\n" + pass + " checks passed.\n");

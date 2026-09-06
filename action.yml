@@ -216,11 +216,18 @@ inputs:
     default: "60000"
   node-version:
     description: >-
-      Node version used to run your tests. Defaults to the current LTS; Node 20
-      is end-of-life. Pin this if your project needs a specific version - the
-      version your tests run on decides whether a fix is judged correct.
+      Node version used to run your tests. Defaults to "auto", which reads your
+      own `.nvmrc`, then the lowest major in `engines.node`, and falls back to 20
+      only when your project says nothing. Pin it to override.
+
+      The version your tests run on decides whether a fix is judged correct, so
+      this used to be a fixed 22 and that was wrong: a repository pinned to Node
+      18 had its suite quietly run on 22 instead. On 22 `require()` of an ES
+      module works and on 18 it throws, so a real break disappeared the moment
+      this action started and the run reported, correctly and uselessly, that
+      there was nothing to fix.
     required: false
-    default: "22"
+    default: "auto"
   anthropic-auth-token:
     description: "API key / token. Pass it from GitHub Secrets, never inline."
     required: true
@@ -280,10 +287,22 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Set up Node
+    # Asked before Node is set up, using whatever Node the runner already has.
+    # The chosen version and where it came from are both printed, because an
+    # unstated assumption about the runtime is one nobody can argue with.
+    - name: Decide which Node to run your tests on
+      id: node
+      shell: bash
+      run: |
+        VERSION=$(node "${{ github.action_path }}/scripts/node-version.mjs" \
+          '${{ inputs.node-version }}' \
+          "${{ github.workspace }}/${{ inputs.target-dir }}")
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Node ${{ steps.node.outputs.version }}
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ inputs.node-version }}
+        node-version: ${{ steps.node.outputs.version }}
 
     - name: Install agent dependencies
       shell: bash
