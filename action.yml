@@ -287,14 +287,24 @@ outputs:
 runs:
   using: "composite"
   steps:
-    # Asked before Node is set up, using whatever Node the runner already has.
-    # The chosen version and where it came from are both printed, because an
-    # unstated assumption about the runtime is one nobody can argue with.
+    # Two different runtimes, and conflating them stopped three benchmark runs
+    # before they began.
+    #
+    # Your tests must run on the Node your project uses - that is the whole point
+    # of reading it from your `.nvmrc` and CI. But this action's own code is not
+    # your project: it needs a modern Node, and `node-fetch` asks for Node 12,
+    # where `??` is a syntax error. The agent never started; it failed to parse.
+    #
+    # So the runner's own Node is kept aside for our code, and setup-node is left
+    # to serve yours.
     - name: Decide which Node to run your tests on
       id: node
       shell: bash
       run: |
-        VERSION=$(node "${{ github.action_path }}/scripts/node-version.mjs" \
+        OURS="$(command -v node)"
+        echo "ours=$OURS" >> "$GITHUB_OUTPUT"
+        echo "this action runs on $(node --version)"
+        VERSION=$("$OURS" "${{ github.action_path }}/scripts/node-version.mjs" \
           '${{ inputs.node-version }}' \
           "${{ github.workspace }}/${{ inputs.target-dir }}")
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -306,7 +316,10 @@ runs:
 
     - name: Install agent dependencies
       shell: bash
-      run: npm install --no-save --no-audit --no-fund "@anthropic-ai/claude-agent-sdk@^0.1.77"
+      run: |
+        # Installed with the runner's npm, not the project's: an old Node ships an
+        # old npm that cannot read the SDK's package metadata.
+        "$(dirname "${{ steps.node.outputs.ours }}")/npm" install --no-save --no-audit --no-fund "@anthropic-ai/claude-agent-sdk@^0.1.77"
       working-directory: ${{ github.action_path }}
 
     - name: Run the agent and verify
@@ -351,4 +364,5 @@ runs:
         ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.anthropic-model }}
         ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.anthropic-model }}
         CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.anthropic-model }}
-      run: node "${{ github.action_path }}/scripts/agent.mjs"
+      run: |
+        "${{ steps.node.outputs.ours }}" "${{ github.action_path }}/scripts/agent.mjs"
