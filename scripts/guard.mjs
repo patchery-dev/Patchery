@@ -1155,3 +1155,74 @@ export function renderReviewSection(outcome, review, meta = {}) {
   }
   return lines.join("\n");
 }
+
+/**
+ * Which of the reviewer's concerns are worth another turn?
+ *
+ * Measured on real runs: most of what a reviewer raises is "I could not verify
+ * this from here" - a hardcoded value nothing validates, a test file it was not
+ * shown. Those are honest and useful to a human, and useless to the fixer: the
+ * missing thing is information, not code. Handing them back invites it to change
+ * working code to quiet an unfalsifiable worry, and every extra change is risk.
+ *
+ * So a concern earns a repair turn only when it is anchored twice: the reviewer
+ * named a file, AND at least one of its six checks actually found something
+ * (`refuted_the_fix` or `suspicious`) rather than coming back `no_evidence`.
+ * Minor severities never qualify on their own.
+ *
+ * @param {object|null} review
+ * @returns {Array<{severity: string, file: string, line_hint: string, claim: string}>}
+ */
+export function actionableConcerns(review) {
+  if (!review || !Array.isArray(review.concerns)) return [];
+  const checksFoundSomething = Object.values(review.checks ?? {}).some(
+    (c) => c?.result === "refuted_the_fix" || c?.result === "suspicious"
+  );
+  if (!checksFoundSomething) return [];
+  return review.concerns.filter(
+    (c) => c && (c.severity === "blocking" || c.severity === "serious") && String(c.file ?? "").trim()
+  );
+}
+
+/**
+ * The prompt for the single repair turn.
+ *
+ * Deliberately narrow: the fix already passes the project's own tests and the
+ * mechanical guard, so the default action is to change nothing. Doing nothing is
+ * stated as an acceptable, expected outcome - otherwise a model handed criticism
+ * will find something to change.
+ *
+ * @param {{packageName: string, testCommand: string, concerns: Array<object>}} input
+ * @returns {string}
+ */
+export function buildRepairPrompt({ packageName = "", testCommand = "", concerns = [] } = {}) {
+  return [
+    "You previously migrated call sites for the package \"" + packageName + "\".",
+    "The change is complete and `" + testCommand + "` passes.",
+    "",
+    "An independent reviewer, which could read the repository but not change it, then",
+    "raised the following specific concerns about that change:",
+    "",
+    ...concerns.map(
+      (c, i) =>
+        (i + 1) + ". [" + c.severity + "] " + c.file + (c.line_hint ? " (" + c.line_hint + ")" : "") +
+        "\n   " + c.claim
+    ),
+    "",
+    "Consider each one on its merits. Fix only what is genuinely wrong.",
+    "",
+    "Doing nothing is a perfectly good answer, and often the right one. The change",
+    "already passes the tests and the safety checks; a concern you disagree with, or",
+    "that turns out to be about something outside this migration, should be left alone",
+    "and explained rather than acted on. Do not restructure, rename, add configuration",
+    "or 'improve' anything the reviewer did not name.",
+    "",
+    "The same hard rules as before still apply and are still enforced by code: never",
+    "edit test files, test-runner configuration, node_modules, .github or lockfiles,",
+    "never change the scripts in package.json, and never delete a file. Breaking any",
+    "of them discards this entire run, including the fix you already made.",
+    "",
+    "Run `" + testCommand + "` when you are done, and say briefly what you changed and",
+    "what you deliberately left alone.",
+  ].join("\n");
+}

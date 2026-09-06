@@ -32,6 +32,8 @@ import {
   renderReviewSection,
   REVIEW_CHECKS,
   scriptsTamperReason,
+  actionableConcerns,
+  buildRepairPrompt,
 } from "./guard.mjs";
 
 let pass = 0;
@@ -950,6 +952,77 @@ check("an already-unreadable package.json is not blamed on this run", () =>
 check("a project with no scripts field either side is fine", () =>
   assert.strictEqual(scriptsTamperReason('{"name":"x"}', '{"name":"x","version":"2"}'), null)
 );
+
+console.log("\nactionableConcerns - only what the fixer can actually act on");
+const suspicious = { incomplete_migration: { result: "suspicious", reasoning: "two more call sites" } };
+// The real shape of most concerns, measured: the reviewer could not verify something,
+// which is honest and useful to a human and useless to the fixer - the missing thing
+// is information, not code. Handing it back invites changes to working code.
+check("a concern with no check that found anything is not actionable", () => {
+  const review = parseReview(goodReview({
+    concerns: [{ severity: "serious", file: "app.js", claim: "USD is hardcoded and nothing validates it" }],
+  })).review;
+  assert.deepStrictEqual(actionableConcerns(review), []);
+});
+check("a serious concern backed by a check that found something IS actionable", () => {
+  const review = parseReview(goodReview({
+    checks: suspicious,
+    concerns: [{ severity: "serious", file: "app.js", claim: "another call site is unmigrated" }],
+  })).review;
+  assert.strictEqual(actionableConcerns(review).length, 1);
+});
+check("a blocking concern qualifies too", () => {
+  const review = parseReview(goodReview({
+    checks: suspicious,
+    concerns: [{ severity: "blocking", file: "app.js", claim: "this throws" }],
+  })).review;
+  assert.strictEqual(actionableConcerns(review).length, 1);
+});
+check("a minor concern never triggers a repair on its own", () => {
+  const review = parseReview(goodReview({
+    checks: suspicious,
+    concerns: [{ severity: "minor", file: "app.js", claim: "style" }],
+  })).review;
+  assert.deepStrictEqual(actionableConcerns(review), []);
+});
+check("a concern that names no file is not actionable", () => {
+  const review = parseReview(goodReview({
+    checks: suspicious,
+    concerns: [{ severity: "serious", file: "", claim: "something feels off" }],
+  })).review;
+  assert.deepStrictEqual(actionableConcerns(review), []);
+});
+check("no review at all is not actionable", () => {
+  assert.deepStrictEqual(actionableConcerns(null), []);
+  assert.deepStrictEqual(actionableConcerns({}), []);
+});
+
+console.log("\nbuildRepairPrompt");
+check("it quotes every concern it was given", () => {
+  const p = buildRepairPrompt({
+    packageName: "fake-lib",
+    testCommand: "npm test",
+    concerns: [
+      { severity: "serious", file: "a.js", line_hint: "line 4", claim: "first" },
+      { severity: "blocking", file: "b.js", claim: "second" },
+    ],
+  });
+  assert.match(p, /first/);
+  assert.match(p, /second/);
+  assert.match(p, /a\.js/);
+  assert.match(p, /b\.js/);
+});
+// A model handed criticism will find something to change unless told otherwise, and
+// the change already passes the tests and the guard.
+check("it says doing nothing is an acceptable answer", () =>
+  assert.match(buildRepairPrompt({ concerns: [] }), /Doing nothing is a perfectly good answer/)
+);
+check("it restates the hard rules, which still apply in the second turn", () => {
+  const p = buildRepairPrompt({ concerns: [] });
+  assert.match(p, /never/i);
+  assert.match(p, /test files/);
+  assert.match(p, /scripts in package\.json/);
+});
 
 console.log("\nprotectedReason - the test harness, not just the tests");
 for (const p of [

@@ -132,6 +132,22 @@ inputs:
       than acted on - in both directions. The same bar to condemn as to bless.
     required: false
     default: "60"
+  verify-repair:
+    description: >-
+      When the review raises a concern the fixing agent can act on, give it one more
+      turn to address it. Off by default. Most of what a reviewer raises is "I could
+      not verify this" rather than "this is wrong", and handing that back invites
+      changes to working code - so this only fires on a concern that is serious or
+      blocking, names a file, and is backed by a check that actually found something.
+      When it does fire, the guard and your tests run again over the result, and the
+      review runs again too, so the verdict in the pull request is about the diff in
+      the pull request. It costs a second fixer turn and a second review.
+    required: false
+    default: "false"
+  verify-repair-turns:
+    description: "Turn limit for the repair turn."
+    required: false
+    default: "8"
   verify-max-turns:
     description: "Turn limit for the reviewer. It reads and searches; it does not need many."
     required: false
@@ -233,6 +249,8 @@ runs:
         SMA_VERIFY_BASE_URL: ${{ inputs.verify-base-url }}
         SMA_VERIFY_AUTH_TOKEN: ${{ inputs.verify-auth-token }}
         SMA_VERIFY_MIN_CONFIDENCE: ${{ inputs.verify-min-confidence }}
+        SMA_VERIFY_REPAIR: ${{ inputs.verify-repair }}
+        SMA_VERIFY_REPAIR_TURNS: ${{ inputs.verify-repair-turns }}
         SMA_VERIFY_MAX_TURNS: ${{ inputs.verify-max-turns }}
         SMA_VERIFY_MAX_DIFF_BYTES: ${{ inputs.verify-max-diff-bytes }}
         ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-auth-token }}

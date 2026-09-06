@@ -8,6 +8,8 @@
  *   3. Reads what changed via git -> if a protected file was touched, revert everything.
  *   4. Runs the tests again itself -> never trusts the agent's "tests pass" claim.
  *   5. Asks a second, read-only agent to REFUTE the fix -> advisory, never raises trust.
+ *  5b. Optionally gives an actionable concern back for ONE repair turn, then re-runs
+ *      the guard, the tests and the review, so the published verdict matches the diff.
  *   6. Writes results to GITHUB_OUTPUT / GITHUB_STEP_SUMMARY and a ready-made PR body.
  *
  * Everything is configured through environment variables (action.yml fills them in).
@@ -37,6 +39,8 @@ import {
   REVIEW_SYSTEM_PROMPT,
   REVIEW_NO_TOOLS_NOTE,
   scriptsTamperReason,
+  actionableConcerns,
+  buildRepairPrompt,
 } from "./guard.mjs";
 
 // ------------------------------------------------------------------ config
@@ -93,6 +97,14 @@ const VERIFY_MODEL = env("SMA_VERIFY_MODEL");
 // default - both inputs are empty unless someone sets them deliberately.
 const VERIFY_BASE_URL = env("SMA_VERIFY_BASE_URL");
 const VERIFY_AUTH_TOKEN = env("SMA_VERIFY_AUTH_TOKEN");
+// Give the reviewer's findings back to the fixer for one more turn. Off by default
+// because most of what a reviewer raises is "I could not verify this" rather than
+// "this is wrong", and acting on that invites changes to working code - so this only
+// ever fires on concerns tied to a check that actually found something. It also costs
+// a second fixer turn plus a second review, and the review already costs more than
+// the fix does.
+const VERIFY_REPAIR = bool("SMA_VERIFY_REPAIR", false);
+const VERIFY_REPAIR_TURNS = Math.max(1, Number(env("SMA_VERIFY_REPAIR_TURNS", "8")) || 8);
 // Measured, not guessed: at 6 the reviewer spent every turn reading - one Glob, two
 // Greps for other call sites, five Reads - and ran out before it could answer, which
 // scores as "unavailable" and wastes the whole call.
@@ -514,8 +526,10 @@ if (result.subtype !== "success") {
 }
 
 group("3. What changed? (verified independently with git)");
-const changedEntries = agentChangedEntries();
-const changed = changedEntries.map((e) => e.path);
+// Reassignable: a repair turn can add or change files, and everything downstream -
+// the PR body, the files output, add-paths - must describe what is actually there.
+let changedEntries = agentChangedEntries();
+let changed = changedEntries.map((e) => e.path);
 
 if (changed.length === 0) {
   stop("no-changes", "The agent changed no files. Nothing to open a PR for.", {
@@ -684,7 +698,16 @@ let reviewOutcomeResult = null;
 let review = null;
 let reviewMeta = { model: "", differentModel: false, costUsd: 0, permissionDenials: 0 };
 
-{
+/**
+ * One complete review pass over whatever is currently in the working tree.
+ *
+ * Takes the entries rather than reading the module-level ones because it runs
+ * again after a repair, and a verdict published about a diff that has since
+ * changed would be a lie in the pull request.
+ */
+async function runReviewPass(entries) {
+  const changedEntries = entries;
+  const changed = entries.map((e) => e.path);
   let diffText = "";
   let diffError = null;
   try {
@@ -881,6 +904,92 @@ let reviewMeta = { model: "", differentModel: false, costUsd: 0, permissionDenia
       mode: VERIFY_MODE,
     });
     log("-> review: " + reviewOutcomeResult.status + " (" + reviewOutcomeResult.tableCell + ")");
+  }
+}
+
+await runReviewPass(changedEntries);
+
+// One repair turn, opt-in, and only for concerns the fixer can actually act on.
+//
+// Most of what a reviewer raises is "I could not verify this", not "this is wrong" -
+// measured on real runs. Feeding those back invites the fixer to change working code
+// to quiet an unfalsifiable worry, and every extra change is extra risk. So only
+// concerns tied to a check that actually found something, and naming a file in the
+// diff, are worth a second turn.
+//
+// If the repair happens, the guard and the tests run again over the new state, and
+// the review runs again too: publishing the first verdict next to a diff that has
+// since changed would be exactly the kind of dishonesty this step exists to prevent.
+if (VERIFY_REPAIR && review) {
+  const actionable = actionableConcerns(review);
+  if (reviewOutcomeResult.status === "concerns" && actionable.length > 0) {
+    group("5b. One repair turn (the reviewer found something the fixer can act on)");
+    for (const c of actionable) log("  - " + c.file + ": " + c.claim.slice(0, 120));
+
+    let repairFailed = null;
+    try {
+      for await (const message of query({
+        prompt: buildRepairPrompt({ packageName: PACKAGE, testCommand: TEST_COMMAND, concerns: actionable }),
+        options: {
+          cwd: TARGET_DIR,
+          allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+          permissionMode: "bypassPermissions",
+          maxTurns: VERIFY_REPAIR_TURNS,
+        },
+      })) {
+        if (message.type === "assistant") {
+          for (const block of message.message.content) {
+            if (block.type === "text" && block.text.trim()) log("\n[repair] " + block.text);
+            else if (block.type === "tool_use") log("[repair tool] " + block.name);
+          }
+        }
+      }
+    } catch (err) {
+      repairFailed = "the repair turn crashed: " + (err?.message ?? err);
+    }
+
+    if (repairFailed) {
+      // Keep the verified fix that already passed everything; just say the extra
+      // turn did not happen. Never let an optional improvement cost a good result.
+      log(repairFailed + " - keeping the change that already passed.");
+    } else {
+      group("5c. Re-verify everything the repair could have broken");
+      const afterRepair = agentChangedEntries();
+      const repairViolations = afterRepair
+        .map((e) => [e.path, violationReason(e)])
+        .filter(([, reason]) => reason);
+      const scripts = scriptsTamperReason(packageJsonBefore, readTargetPackageJson());
+
+      if (repairViolations.length > 0 || scripts) {
+        const why = scripts || repairViolations.map(([f, r]) => f + " - " + r).join("; ");
+        log("[SAFETY] the repair turn broke a rule: " + why);
+        revertPaths(afterRepair.map((e) => e.path));
+        fail(
+          "The repair turn produced a change that is not allowed (" + why + "). Everything " +
+            "was reverted - including the fix that had already passed - because there is no " +
+            "safe way to keep half of it. Re-run with `verify-repair: false` to take the " +
+            "original fix without this step."
+        );
+      }
+
+      const retest = runTests();
+      log(retest.output.slice(-2000) || "(no output)");
+      if (!retest.ok) {
+        log("the repair turn broke the tests - reverting everything.");
+        revertPaths(afterRepair.map((e) => e.path));
+        fail(
+          "The repair turn left `" + TEST_COMMAND + "` failing, so nothing was delivered. " +
+            "Re-run with `verify-repair: false` to take the original fix, which passed."
+        );
+      }
+      log("-> still green after the repair.");
+      changedEntries = afterRepair;
+      changed = afterRepair.map((e) => e.path);
+
+      // Re-review, so the verdict in the pull request is about the diff in it.
+      group("5d. Review the repaired change");
+      await runReviewPass(afterRepair);
+    }
   }
 }
 
