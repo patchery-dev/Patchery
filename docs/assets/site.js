@@ -56,7 +56,8 @@
   var nav = $("#nav");
   var folio = $("#folio"), folioNow = $("#folioNow"), folioName = $("#folioName");
   var fillEl = $("#scrollbarFill");
-  var sections = $$("[data-folio]");
+  var sections = $("[data-folio]");
+  var menu = $("#menu");
   var lastY = 0, lastFolio = "";
 
   function chromeUpdate() {
@@ -64,7 +65,7 @@
 
     if (nav) {
       nav.classList.toggle("is-stuck", y > 40);
-      nav.classList.toggle("is-hidden", y > 460 && y > lastY + 4);
+      nav.classList.toggle("is-hidden", y > 460 && y > lastY + 4 && !(menu && menu.open));
     }
     lastY = y;
 
@@ -85,6 +86,26 @@
     var onPaper = here.hasAttribute("data-invert");
     if (nav) nav.classList.toggle("on-paper", onPaper);
     if (folio) folio.classList.toggle("on-paper", onPaper);
+  }
+
+  /* The sections index opens and closes on its own — it is a <details>, and
+     that is deliberate: if this file never loads, it still works. Everything
+     here is convenience laid on top: close it once you have chosen, close it
+     on Escape, close it when you click past it. */
+  if (menu) {
+    menu.addEventListener("click", function (e) {
+      if (e.target.closest(".menu__panel a")) menu.open = false;
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && menu.open) {
+        menu.open = false;
+        var sum = menu.querySelector("summary");
+        if (sum) sum.focus();
+      }
+    });
+    document.addEventListener("click", function (e) {
+      if (menu.open && !menu.contains(e.target)) menu.open = false;
+    });
   }
 
   /* ══════════════════  the vanishing line  ══════════════════

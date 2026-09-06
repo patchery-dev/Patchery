@@ -64,8 +64,27 @@
     <a href="#run">The run</a>
     <a href="#guard">Try to break it</a>
     <a href="#proof">Proof</a>
+    <a href="#stopped">What stopped it</a>
     <a href="#install">Install</a>
+    <a href="#status">Where it stands</a>
   </nav>
+
+  <!-- The same list again, for every screen the header links do not fit on.
+       A <details>, not a scripted menu: it opens with JavaScript switched off,
+       and it carries the section numbers that the margin folio shows on wide
+       screens but hides below 1240px. -->
+  <details class="menu" id="menu">
+    <summary><span>Sections</span><i class="menu__x" aria-hidden="true"></i></summary>
+    <nav class="menu__panel" aria-label="Sections">
+      <a href="#thesis"><i>02</i>The idea</a>
+      <a href="#run"><i>03</i>The run</a>
+      <a href="#guard"><i>04</i>Try to break it</a>
+      <a href="#proof"><i>05</i>Proof</a>
+      <a href="#stopped"><i>06</i>What stopped it</a>
+      <a href="#install"><i>07</i>Install</a>
+      <a href="#status"><i>08</i>Where it stands</a>
+    </nav>
+  </details>
   <a class="nav__gh" href="https://github.com/patchery-dev/Patchery">
     <span>GitHub</span>
     <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg>
@@ -80,7 +99,7 @@
      assistive technology — the real navigation is in the header. -->
 <aside class="folio" id="folio" aria-hidden="true">
   <span class="folio__now" id="folioNow">01</span>
-  <span class="folio__of">/ 08</span>
+  <span class="folio__of">/ 09</span>
   <span class="folio__rule"></span>
   <span class="folio__name" id="folioName">Patchery</span>
 </aside>
@@ -115,7 +134,7 @@
 
     <ul class="strip__facts">
       <li><b>1</b><span>pull request it opened on its own</span></li>
-      <li><b>$0.1213</b><span>what that run cost, end to end</span></li>
+      <li><b>$0.1958</b><span>that run, priced at list rates</span></li>
       <li><b>0</b><span>users, customers, logos</span></li>
       <li><b>MIT</b><span>every line of it public</span></li>
     </ul>
@@ -279,7 +298,7 @@ node_modules/fake-lib/index.js:3
 <i class="t-ln">7</i>  module.exports = { renderCartTotal };</code></pre>
               </div>
             </div>
-            <figcaption class="scr__note">The AI gets a fixed budget and a watchdog. Repeat the same move three times, or spend eight turns changing nothing, and the run is cut off — that watchdog exists because one confused run once spent 25 turns and 88 cents producing nothing at all.</figcaption>
+            <figcaption class="scr__note">The AI gets a fixed budget and a watchdog: repeat the same move three times, or spend fifteen turns changing nothing, and the run is cut off. It is a blunt instrument and it has been wrong — on one real project it stopped the run three times over, each time at the moment the AI was about to start writing.</figcaption>
           </figure>
 
           <!-- 03 -->
@@ -327,8 +346,8 @@ checked, and untouched:
               <ul class="prcard__stats">
                 <li><b>1</b> file</li>
                 <li><b class="t-ok">+1</b> <b class="t-fail">&minus;1</b></li>
-                <li><b>11</b> turns</li>
-                <li><b>$0.1213</b></li>
+                <li><b>10</b> turns</li>
+                <li><b>$0.1958</b></li>
               </ul>
               <p class="prcard__foot">Opened automatically. Never merged automatically.</p>
             </div>
@@ -383,6 +402,7 @@ checked, and untouched:
         <p class="guard__hint">or try one of these</p>
         <div class="guard__chips">
           <button type="button" data-path="src/checkout/cart.ts">src/checkout/cart.ts</button>
+          <button type="button" data-path="src/auth/validate.ts">src/auth/validate.ts</button>
           <button type="button" data-path="lib/query_operations.ts">lib/query_operations.ts</button>
           <button type="button" data-path="test/cart.test.js">test/cart.test.js</button>
           <button type="button" data-path="package-lock.json">package-lock.json</button>
@@ -414,6 +434,24 @@ checked, and untouched:
       anything outside the folder you pointed it at. All of it is covered by a test that runs
       on every change to Patchery itself: offline, in a second, with no AI and no key.
     </p>
+
+    <div class="blind">
+      <span class="spec__k">What this check cannot see</span>
+      <p>
+        It reads <em>which</em> files moved. It never reads what the change did to them. An AI
+        that deleted a validation check inside <code>src/auth/validate.ts</code> — a file it is
+        perfectly entitled to edit — walks straight past everything above. Try that path in the
+        box and watch it be allowed.
+      </p>
+      <p>
+        Two things stand behind the hole, and neither one closes it: your tests are run again
+        afterwards, by Patchery and not by the AI, so a change that breaks them never reaches a
+        pull request; and the pull request goes to a person. That is why there is no auto-merge
+        and should not be. It is written down as a known hole and deliberately left open —
+        there is work ahead of it in the queue. Saying so here is the least we can do about it
+        in the meantime.
+      </p>
+    </div>
   </div>
 </section>
 
@@ -445,12 +483,19 @@ checked, and untouched:
         it had touched, ran the tests again (they passed), and opened this pull request. The
         first human to see it was the reviewer.
       </p>
+      <p class="proofcard__note">
+        Being exact about that last number: it is what those ten turns would cost at Anthropic
+        list prices. The run used a cheaper model, so the amount actually billed was different.
+        The figure comes from the pull request&rsquo;s own text, which anyone can open and read —
+        including us, which is how we found we had been quoting it wrong.
+      </p>
       <ul class="proofcard__stats">
         <li><span>files changed</span><b>1</b></li>
         <li><span>lines</span><b><i class="t-ok">+1</i> <i class="t-fail">&minus;1</i></b></li>
         <li><span>tests</span><b><i class="t-fail">failed</i> → <i class="t-ok">passed</i></b></li>
-        <li><span>AI turns used</span><b>11</b></li>
-        <li><span>total cost</span><b>$0.1213</b></li>
+        <li><span>AI turns used</span><b>10</b></li>
+        <li><span>cost, at list rates</span><b>$0.1958</b></li>
+        <li><span>model</span><b>glm-5.3</b></li>
       </ul>
       <span class="proofcard__go">Open it on GitHub <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg></span>
     </a>
@@ -496,11 +541,188 @@ checked, and untouched:
   </div>
 </section>
 
-<!-- ═══════════════════  06 · INSTALL  ═══════════════════ -->
-<section class="install" id="install" data-folio="06" data-folio-name="Install">
+
+<!-- ═══════════════════  06 · WHAT IT COULD NOT DO  ═══════════════════ -->
+<!-- The section a product page is not supposed to have. Every run below was
+     paid for and produced no pull request. They are here because a page that
+     only shows its wins is quoting half a number — and because the reason
+     each one came back empty is the reason to trust the one that didn't. -->
+<section class="stall" id="stopped" data-folio="06" data-folio-name="What stopped it">
   <div class="shell">
     <div class="sechead">
       <span class="sechead__idx">06</span>
+      <span class="sechead__rule"></span>
+      <span class="sechead__label">The runs that produced nothing</span>
+    </div>
+
+    <p class="plain"><span class="plain__k">In plain terms</span>We pointed it at real projects and it came back with nothing. Here is every run we kept a proper record of, what it spent, and what it wrote.</p>
+
+    <div class="stall__head">
+      <h2 class="display display--sec">
+        <span class="line"><span>Four runs on code</span></span>
+        <span class="line"><span>we don&rsquo;t own. Four</span></span>
+        <span class="line"><span>times it wrote <em class="accent">nothing</em>.</span></span>
+      </h2>
+      <p>
+        Every bar below is one turn of an AI actually thinking, and every one of them was
+        billed. Read the number at the end of each row before you read anything else on
+        this page.
+      </p>
+    </div>
+
+    <ol class="runs">
+
+      <li class="run">
+        <div class="run__id">
+          <span class="run__tag">ran, wrote nothing</span>
+          <a class="run__where" href="https://github.com/giancarloerra/SocratiCode">giancarloerra/SocratiCode</a>
+          <span class="run__what">An old library that hadn&rsquo;t actually broken anything yet</span>
+        </div>
+        <p class="run__story">
+          The tests were red, so it started. It read the failures one at a time and worked
+          out that every one of them was about the machine we were running on, not about the
+          library we had sent it to fix. It checked that the old library really was still
+          installed, checked that nothing was breaking when the code actually ran, and then
+          declined to change anything. It spent the rest of its turns holding that position.
+          The easy move was there the whole time and it didn&rsquo;t take it.
+        </p>
+        <div class="run__meter">
+          <div class="run__track" style="--turns:25" aria-hidden="true"><i></i></div>
+          <dl class="run__nums">
+            <div><dt>turns</dt><dd>25</dd></div>
+            <div><dt>cost</dt><dd>$0.88</dd></div>
+            <div class="run__out"><dt>lines written</dt><dd>0</dd></div>
+          </dl>
+        </div>
+      </li>
+
+      <li class="run">
+        <div class="run__id">
+          <span class="run__tag">ran three times, wrote nothing</span>
+          <a class="run__where" href="https://github.com/dwmkerr/terminal-ai">dwmkerr/terminal-ai</a>
+          <span class="run__what">Not a renamed function — a different idea of where a conversation lives</span>
+        </div>
+        <p class="run__story">
+          We gave it fifteen turns. It read the migration guide, read the files that would have
+          to move, and checked which parts of the new library actually existed — a different,
+          sensible step every turn, never the same one twice. Then <em>Patchery</em> cut it off.
+          Our own watchdog counts turns that change no files, decided this one was going in
+          circles, and fired at the moment it was about to start writing. We raised the limit to
+          twenty-two and it went further, comparing against the project&rsquo;s existing style and
+          working out that the right shape was the one that keeps no state. Cut off again, at
+          the same moment. At forty it went further still — following how a single message
+          travels through the code, then going to look at whether the project&rsquo;s own
+          maintainers had already done this upstream — and finished with nothing written. Three
+          runs, each deeper than the last, not one wasted turn. The job was simply bigger than
+          the shape we had given it.
+        </p>
+        <div class="run__meter">
+          <div class="run__stack">
+            <div class="run__track" style="--turns:15" aria-hidden="true"><i></i></div>
+            <div class="run__track" style="--turns:22" aria-hidden="true"><i></i></div>
+            <div class="run__track" style="--turns:40" aria-hidden="true"><i></i></div>
+          </div>
+          <dl class="run__nums">
+            <div><dt>turns</dt><dd>15 &middot; 22 &middot; 40</dd></div>
+            <div><dt>cost</dt><dd>not recorded</dd></div>
+            <div class="run__out"><dt>lines written</dt><dd>0</dd></div>
+          </dl>
+        </div>
+        <p class="run__note">
+          And each of those three attempts paid to read the same files from the beginning,
+          because nothing is carried from one run to the next. That is a cost bug. So is a
+          watchdog that cannot tell circling from progress. Both are written down as bugs, and
+          neither one is fixed.
+        </p>
+      </li>
+
+      <li class="run">
+        <div class="run__id">
+          <span class="run__tag">ran, never reached the AI</span>
+          <a class="run__where" href="https://github.com/gitroomhq/postiz-agent">gitroomhq/postiz-agent</a>
+          <span class="run__what">A real, reported bug that had already healed on our machine</span>
+        </div>
+        <p class="run__story">
+          Someone had filed it: a library had moved to a newer module format, the old way of
+          loading it threw, and the person who reported it could reproduce it. Patchery runs
+          your tests before it does anything else, and they passed — so it stopped and said
+          there was nothing to fix, which is exactly what it is supposed to do when the tests
+          are green. The reason they were green is that we ran on a newer version of Node than
+          the reporter did. Node began supporting that combination in 22.12; they were on
+          22.11, one release below the line. The bug is real and is still real for them. On our
+          machine it had already healed. Whichever version your tests run on decides what
+          Patchery is able to see, and there is no version we could pick that would be the
+          right one for everybody.
+        </p>
+        <div class="run__meter">
+          <div class="run__track" style="--turns:0" aria-hidden="true"><i></i></div>
+          <dl class="run__nums">
+            <div><dt>AI turns</dt><dd>0</dd></div>
+            <div><dt>cost</dt><dd>$0.00</dd></div>
+            <div class="run__out"><dt>lines written</dt><dd>0</dd></div>
+          </dl>
+        </div>
+      </li>
+
+      <li class="run run--never">
+        <div class="run__id">
+          <span class="run__tag">never started</span>
+          <a class="run__where" href="https://github.com/activepieces/activepieces">activepieces/activepieces</a>
+          <span class="run__what">A real breakage we never got close enough to touch</span>
+        </div>
+        <p class="run__story">
+          It builds with a package manager we didn&rsquo;t have installed, and when we installed
+          only the piece we needed, the shared parts it depends on were left unlinked, so
+          nothing could be checked. Behind both we found that the file we had come to fix has
+          no tests at all — which means Patchery would have had nothing to measure a fix
+          against, and refusing would have been the correct answer anyway. A file-path limit
+          stopped the checkout before any of that, but that one was ours: a Windows setting,
+          fixed in a line, and it cannot happen on the machines this actually runs on.
+        </p>
+        <div class="run__meter">
+          <div class="run__track" style="--turns:0" aria-hidden="true"><i></i></div>
+          <dl class="run__nums">
+            <div><dt>turns</dt><dd>0</dd></div>
+            <div><dt>cost</dt><dd>$0.00</dd></div>
+            <div class="run__out"><dt>lines written</dt><dd>0</dd></div>
+          </dl>
+        </div>
+      </li>
+
+    </ol>
+
+    <div class="stall__foot">
+      <h3 class="display display--sec">Not one of them<br>is a wrong fix.</h3>
+      <div>
+        <p>
+          In every run above there was an obvious way to look productive: write something
+          plausible, get the tests to green, open the pull request. It never did. Worth being
+          exact about why, because the exact answer flatters us less: in these four runs the
+          off-limits check and the second test run never came into it, because nothing was ever
+          written for them to judge. What kept a wrong answer off the screen was the AI
+          declining to guess — and, twice, our own watchdog stopping the run before it could
+          write anything at all, which is not a save we get to claim. The gates further down
+          have only ever been tested on runs that produced something.
+        </p>
+        <p class="stall__aside">
+          Two more never became runs at all. On one, someone had already opened a pull
+          request doing exactly this migration, so we closed the tab. On another, the
+          maintainers had already decided against the change on purpose — so we left them the
+          type-by-type mapping we had prepared as a comment, and no pull request. Checking
+          whether a change is wanted before writing it is the cheapest step in the whole
+          process, and the one an automated system is most likely to skip. A fourth target was
+          tried the same day and also produced nothing; we did not keep a good enough record of
+          that one to write it up here, which is its own kind of answer.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ═══════════════════  07 · INSTALL  ═══════════════════ -->
+<section class="install" id="install" data-folio="07" data-folio-name="Install">
+  <div class="shell">
+    <div class="sechead">
+      <span class="sechead__idx">07</span>
       <span class="sechead__rule"></span>
       <span class="sechead__label">If you want to run it</span>
     </div>
@@ -574,11 +796,11 @@ checked, and untouched:
   </div>
 </section>
 
-<!-- ═══════════════════  07 · STATUS  ═══════════════════ -->
-<section class="status" id="status" data-folio="07" data-folio-name="Where it stands">
+<!-- ═══════════════════  08 · STATUS  ═══════════════════ -->
+<section class="status" id="status" data-folio="08" data-folio-name="Where it stands">
   <div class="shell">
     <div class="sechead">
-      <span class="sechead__idx">07</span>
+      <span class="sechead__idx">08</span>
       <span class="sechead__rule"></span>
       <span class="sechead__label">Where this actually is</span>
     </div>
@@ -594,6 +816,7 @@ checked, and untouched:
           <li>The off-limits check is tested on every change, offline, with no AI.</li>
           <li>Keys and passwords are stripped out before anything is written down.</li>
           <li>Works on JavaScript projects. You decide what counts as a passing test.</li>
+          <li>Four runs on projects we don&rsquo;t own produced nothing — and nothing wrong. It has never invented a fix.</li>
         </ul>
       </div>
       <div class="status__col">
@@ -604,6 +827,8 @@ checked, and untouched:
           <li>No open-source pull request accepted yet — the two below are waiting.</li>
           <li>One library at a time. It won&rsquo;t untangle a chain of breakages.</li>
           <li>Other languages are plausible, but nobody has proven it.</li>
+          <li>The off-limits check reads file names, not changes. Deleting a check inside a file it may edit gets past it.</li>
+          <li>The cheap model it runs on today sends malformed requests that its provider happens to accept. It works; it is not solid ground.</li>
         </ul>
       </div>
     </div>
@@ -633,18 +858,21 @@ checked, and untouched:
     </div>
 
     <p class="status__foot">
-      Every number on this page comes from a run you can open and read for yourself. And one
-      thing worth saying plainly: the AI reads your code. Check what your model provider does
+      Every number in <a class="ilink" href="#run">the run</a> and <a class="ilink" href="#proof">the
+      proof</a> comes from something you can open and read. The numbers in
+      <a class="ilink" href="#stopped">what stopped it</a> do not — those runs happened on a
+      laptop and left no public record, which is exactly why they are written out here in full
+      rather than summarised. And one thing worth saying plainly: the AI reads your code. Check what your model provider does
       with it before you point this at anything private.
-      <a class="ilink" href="https://github.com/patchery-dev/Patchery#limitations-stated-honestly">The full list of limits →</a>
+      <a class="ilink" href="https://github.com/patchery-dev/Patchery#where-this-actually-is">The full list of limits →</a>
     </p>
   </div>
 </section>
 
 </main>
 
-<!-- ═══════════════════  08 · FOOTER  ═══════════════════ -->
-<footer class="foot" data-folio="08" data-folio-name="Patchery">
+<!-- ═══════════════════  09 · FOOTER  ═══════════════════ -->
+<footer class="foot" data-folio="09" data-folio-name="Patchery">
   <div class="marquee" aria-hidden="true"><div class="marquee__row" id="marquee"></div></div>
 
   <div class="shell foot__inner">

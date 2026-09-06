@@ -120,6 +120,39 @@
     },
 
     {
+      id: "proof.turns-and-cost",
+      claim: "The turn count and cost printed here are the ones written in the pull request itself.",
+      run: function () {
+        var shown = document.querySelector("#proof .proofcard--lead .proofcard__stats");
+        if (!shown) return { skip: "the proof section is not on this page" };
+        var text = shown.textContent.replace(/\s+/g, " ");
+        var pageTurns = (text.match(/AI turns used\s*(\d+)/i) || [])[1];
+        var pageCost = (text.match(/\$([\d.]+)/) || [])[1];
+        if (!pageTurns || !pageCost) return { skip: "could not read the figures off this page" };
+
+        return gh("pulls/2").then(function (pr) {
+          var body = pr.body || "";
+          var prTurns = (body.match(/turns:\s*(\d+)/i) || [])[1];
+          // Anchored to the same line as the turn count. The body also quotes a
+          // changelog example containing "$19.90", and a bare match finds that first.
+          var prCost = (body.match(/turns:\s*\d+[^\n]*?\$([\d.]+)/i) || [])[1];
+          if (!prTurns || !prCost) {
+            return { skip: "the pull request body no longer states turns and cost" };
+          }
+          var same = prTurns === pageTurns && prCost === pageCost;
+          return {
+            ok: same,
+            detail: same
+              ? "page says " + pageTurns + " turns · $" + pageCost +
+                "   the pull request says the same"
+              : "PAGE SAYS " + pageTurns + " turns · $" + pageCost +
+                "   THE PULL REQUEST SAYS " + prTurns + " turns · $" + prCost
+          };
+        });
+      }
+    },
+
+    {
       id: "claims.nothing-merged",
       claim: "None of the three pull requests shown on this page has been merged.",
       run: function () {
@@ -245,7 +278,12 @@
       return new Promise(function (res) { setTimeout(res, 260 + i * 300); })
         .then(function () { return c.run(); })
         .then(function (r) {
-          states[i] = { state: r.ok ? "pass" : "fail", detail: r.detail };
+          // A check may report that it could not run. That is not a pass and it
+          // is not a failure either — turning the page red for a check that
+          // never executed would be its own kind of lie.
+          states[i] = (r && r.skip)
+            ? { state: "skip", detail: "could not check — " + r.skip }
+            : { state: r.ok ? "pass" : "fail", detail: r.detail };
         })
         .catch(function (e) {
           // Could not check is its own outcome. It is never counted as a pass.

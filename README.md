@@ -71,9 +71,9 @@ the tests (failed), read the changelog, changed one line in one file, checked th
 diff against the guard, ran the tests again (passed), and opened the pull request.
 The first human to see it was the reviewer.
 
-| files | lines | tests | turns | cost |
+| files | lines | tests | turns | cost at list rates |
 | --- | --- | --- | --- | --- |
-| 1 | +1 −1 | failed → passed | 11 | $0.1213 |
+| 1 | +1 −1 | failed → passed | 10 | $0.1958 |
 
 And the same job by hand, on projects we don't own — no agent involved in either,
 they are here because doing the work manually is how we learned what the automated

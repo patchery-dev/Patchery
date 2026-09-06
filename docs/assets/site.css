@@ -24,6 +24,7 @@
 @property --strike { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
 @property --erase  { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
 @property --note   { syntax: "<number>";     inherits: true; initial-value: 0; }
+@property --wipe   { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
 
 :root {
   --teal:      #00c48c;
@@ -199,6 +200,51 @@ button { font: inherit; cursor: pointer; }
 .nav__links a:hover { color: var(--ink); }
 .nav__links a:hover::after { transform: scaleX(1); transform-origin: left; }
 
+/* ── the sections index ────────────────────────────────────────────────────
+   Below 1080px the header links stop fitting, and below 860px they used to
+   simply vanish, leaving a phone with a logo, a GitHub button and no way to
+   reach anything. This replaces them. It is a <details>: no script opens it,
+   no script can break it, and every row is a 48px target. */
+.menu { display: none; position: relative; }
+.menu > summary {
+  display: inline-flex; align-items: center; gap: 11px;
+  min-height: 44px; padding: 0 14px;
+  border: 1px solid var(--edge);
+  font: 400 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink); cursor: pointer; list-style: none;
+  transition: border-color .2s var(--cut);
+}
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary:hover { border-color: var(--teal); }
+.menu__x { position: relative; width: 11px; height: 11px; flex: none; }
+.menu__x::before, .menu__x::after {
+  content: ""; position: absolute; left: 0; top: 5px; width: 11px; height: 1px;
+  background: currentColor; transition: transform .22s var(--cut);
+}
+.menu__x::after { transform: rotate(90deg); }
+.menu[open] .menu__x::after { transform: rotate(180deg); }
+
+.menu__panel {
+  position: absolute; top: calc(100% + 12px); right: -1px; z-index: 12;
+  display: grid; min-width: 252px;
+  background: var(--bg); border: 1px solid var(--rule);
+}
+.menu__panel a {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 12px;
+  min-height: 48px; padding: 0 16px;
+  font: 400 13px/1.35 var(--mono); color: var(--ink-2);
+  border-bottom: 1px solid var(--rule-soft);
+  transition: color .18s var(--cut), background .18s var(--cut);
+}
+.menu__panel a:last-child { border-bottom: 0; }
+.menu__panel a i { font-style: normal; color: var(--teal); font-variant-numeric: tabular-nums; }
+.menu__panel a:hover, .menu__panel a:focus-visible { color: var(--ink); background: rgba(0, 196, 140, .1); }
+
+.nav.on-paper .menu > summary { color: #12161d; border-color: #a29a89; }
+.nav.on-paper .menu__panel { background: var(--paper); border-color: #d5d0c3; }
+.nav.on-paper .menu__panel a { color: #4a5260; border-bottom-color: #ded9cc; }
+.nav.on-paper .menu__panel a i { color: var(--teal-ink); }
+
 .nav__gh {
   display: inline-flex; align-items: center; gap: 7px; min-height: 40px;
   font: 400 12px/1 var(--mono); color: var(--ink);
@@ -264,7 +310,12 @@ button { font: inherit; cursor: pointer; }
   font: 400 10.5px/1 var(--mono); letter-spacing: .18em;
   text-transform: uppercase; color: var(--teal);
 }
-.spec__k { composes: mono-k; }
+.spec__k {
+  display: block;
+  font: 400 10.5px/1 var(--mono);
+  letter-spacing: .18em; text-transform: uppercase;
+  color: var(--teal);
+}
 .spec__k, .plain__k { font-variant-numeric: tabular-nums; }
 
 /* links that carry an action, as rules rather than buttons */
@@ -641,6 +692,12 @@ button { font: inherit; cursor: pointer; }
 [data-invert] .ilink { color: var(--teal-ink); }
 [data-invert] .plain { border-left-color: var(--teal); }
 
+.blind { margin-top: clamp(28px, 3.2vw, 42px); padding-top: clamp(18px, 2vw, 26px); border-top: 1px solid var(--fail); }
+.blind .spec__k { color: var(--fail); }
+.blind p { margin-top: 14px; max-width: 74ch; font-size: 14.5px; line-height: 1.68; color: var(--ink-2); }
+.blind p + p { margin-top: 12px; color: var(--muted); }
+.blind code { font-family: var(--mono); font-size: .92em; color: var(--fail); }
+
 .proof { padding: clamp(92px, 12vw, 172px) 0; }
 .proof__h { font-family: var(--serif); font-size: clamp(34px, 5.2vw, 80px); line-height: .96; letter-spacing: -.03em; margin-bottom: clamp(32px, 4vw, 52px); }
 
@@ -673,7 +730,73 @@ button { font: inherit; cursor: pointer; }
 .proof__pair { display: grid; }
 .proof__caveat { margin-top: clamp(24px, 3vw, 38px); padding-top: 18px; border-top: 1px solid var(--rule); font: 400 13px/1.7 var(--mono); color: var(--dim); }
 
-/* ═══════════════════════════  06 · install  ═══════════════════════════ */
+/* ═══════════════════════════  06 · what stopped it  ═══════════════════════
+   The turn track is the whole argument of this section: one tick per turn of
+   an AI thinking, and a nought at the end of it. Ticks are drawn by a
+   repeating gradient sized from --turns, so the row is correct with no
+   JavaScript at all; the scroll only decides how much of it is uncovered, and
+   --wipe starts at 0% meaning FULLY DRAWN. A browser that has never heard of
+   scroll-driven animation shows the finished row. */
+
+.stall { padding: clamp(88px, 11vw, 160px) 0; border-top: 1px solid var(--rule-soft); }
+.stall__head { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: clamp(24px, 3.6vw, 60px); align-items: end; margin-bottom: clamp(34px, 4.4vw, 60px); }
+.stall__head p { font-size: 15px; line-height: 1.7; color: var(--muted); max-width: 48ch; }
+
+.runs { border-bottom: 1px solid var(--rule); }
+.run { padding: clamp(24px, 2.8vw, 38px) 0; border-top: 1px solid var(--rule); }
+.run__id { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; font: 400 10.5px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.run__tag { color: var(--fail); }
+.run__where { color: var(--teal); letter-spacing: .1em; text-transform: none; border-bottom: 1px solid transparent; }
+.run__where:hover { border-bottom-color: currentColor; }
+.run__what { flex-basis: 100%; margin-top: 10px; font-family: var(--serif); font-size: clamp(21px, 2.5vw, 32px); line-height: 1.08; letter-spacing: -.02em; text-transform: none; color: var(--ink); }
+.run__story { margin-top: 14px; max-width: 78ch; font-size: 14.5px; line-height: 1.68; color: var(--ink-2); }
+
+.run__meter { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: clamp(20px, 3vw, 48px); align-items: end; margin-top: clamp(20px, 2.4vw, 30px); padding-top: 16px; border-top: 1px solid var(--rule-soft); }
+.run__stack { display: grid; gap: 8px; }
+/* Two layers, on purpose. The ghost is painted by the track itself and is
+   never animated, never clipped, never conditional — so the count of turns is
+   readable in any browser, in any state, with everything else switched off.
+   The bright layer is the only thing scroll touches, and --wipe starts at 0%
+   meaning FULLY DRAWN, so a browser without scroll-driven animation shows the
+   finished row rather than an empty one. Emphasis may animate here. Never
+   information. */
+.run__track {
+  --tick: clamp(5px, .72vw, 10px);
+  position: relative; height: 34px; border-bottom: 1px solid var(--rule);
+  background: repeating-linear-gradient(to right, var(--rule) 0 2px, transparent 2px var(--tick));
+  background-size: calc(var(--turns) * var(--tick)) 100%;
+  background-repeat: no-repeat;
+}
+.run__stack .run__track { height: 17px; }
+.run__track i {
+  display: block; height: 100%; max-width: 100%;
+  width: calc(var(--turns) * var(--tick));
+  background: repeating-linear-gradient(to right, var(--edge) 0 2px, transparent 2px var(--tick));
+  clip-path: inset(0 var(--wipe) 0 0);
+}
+
+.run__nums { display: flex; flex-wrap: wrap; align-items: end; gap: 14px 34px; font-variant-numeric: tabular-nums; }
+.run__nums > div { display: grid; gap: 6px; }
+.run__nums dt { font: 400 10.5px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+.run__nums dd { font: 500 15px/1 var(--mono); color: var(--ink); }
+.run__out dd { font-size: clamp(32px, 3.8vw, 50px); line-height: .78; }
+
+.run__note { margin-top: 18px; padding-left: 16px; border-left: 1px solid var(--rule); max-width: 74ch; font: 400 13px/1.7 var(--mono); color: var(--dim); }
+
+.stall__foot { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(24px, 3.6vw, 60px); margin-top: clamp(40px, 5vw, 70px); }
+.stall__foot p { font-size: 15px; line-height: 1.7; color: var(--ink-2); max-width: 66ch; }
+.stall__aside { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule-soft); font: 400 13px/1.72 var(--mono) !important; color: var(--dim) !important; }
+
+@supports (animation-timeline: view()) {
+  .run__track i {
+    animation: spend linear both;
+    animation-timeline: view();
+    animation-range: entry 25% entry 96%;
+  }
+}
+@keyframes spend { from { --wipe: 100%; } to { --wipe: 0%; } }
+
+/* ═══════════════════════════  07 · install  ═══════════════════════════ */
 
 .install { padding: clamp(88px, 11vw, 160px) 0; }
 .install__grid { display: grid; grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); gap: clamp(28px, 4vw, 66px); align-items: start; }
@@ -702,7 +825,7 @@ button { font: inherit; cursor: pointer; }
 .y-s { color: #c8ae7d; font-style: normal; }
 .y-a { color: var(--ink); font-style: normal; }
 
-/* ═══════════════════════════  07 · where it stands  ═══════════════════════════ */
+/* ═══════════════════════════  08 · where it stands  ═══════════════════════════ */
 
 .status { padding: clamp(88px, 11vw, 160px) 0; border-top: 1px solid var(--rule-soft); }
 .status__h { font-family: var(--serif); font-size: clamp(34px, 5.2vw, 80px); line-height: .96; letter-spacing: -.03em; margin-bottom: clamp(36px, 4.5vw, 60px); }
@@ -798,18 +921,22 @@ button { font: inherit; cursor: pointer; }
 /* ── responsive ───────────────────────────────────────────────────────── */
 
 @media (max-width: 1080px) {
+  .nav__links { display: none; }
+  .menu { display: block; }
   .strip { grid-template-columns: 1fr; }
   .strip__plain, .strip__facts, .strip__go { grid-column: 1; grid-row: auto; }
-  .thesis__grid, .guard__head, .guard__panel, .install__grid { grid-template-columns: 1fr; }
+  .thesis__grid, .guard__head, .guard__panel, .install__grid,
+  .stall__head, .stall__foot { grid-template-columns: 1fr; }
+  .stall__head { align-items: start; }
   .pipe__layout { grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); }
   .pipe__side { min-width: 0; }
   .foot__inner { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 860px) {
-  .nav__links { display: none; }
   .hero { min-height: auto; padding: 96px 0 0; }
   .split, .status__cols, .foot__inner { grid-template-columns: 1fr; }
+  .run__meter { grid-template-columns: 1fr; align-items: start; }
   .strip__facts { grid-template-columns: 1fr 1fr; }
 
   /* the pinned run becomes an ordinary stack */
@@ -827,11 +954,19 @@ button { font: inherit; cursor: pointer; }
 
 @media (max-width: 560px) {
   body { font-size: 15px; }
+  .nav { gap: 14px; }
+  .sechead__label, .plain__k, .spec__k, .mono-k, .tag, .proofcard__meta,
+  .run__id, .run__nums dt { font-size: 11.5px; }
   .strip__facts { grid-template-columns: 1fr; }
   .guard__row { grid-template-columns: 16px minmax(0, 1fr) auto; row-gap: 4px; }
   .guard__row .g-why { grid-column: 2 / -1; }
   .ck { grid-template-columns: 22px minmax(0, 1fr); }
   .ck__claim, .ck__detail { grid-column: 2; }
+}
+
+@media (max-width: 460px) {
+  /* the wordmark goes, the monogram stays — it is the more distinctive half */
+  .nav__brand span { display: none; }
 }
 
 @media (pointer: coarse) {
@@ -841,6 +976,7 @@ button { font: inherit; cursor: pointer; }
   .copy, .nav__gh, .nav__brand, .audit__run { min-height: 44px; }
   .nav__links a { padding-block: 12px; }
   .foot__links a { padding-block: 15px; }
+  .menu > summary { min-height: 46px; }
 }
 
 /* ── reduced motion ────────────────────────────────────────────────────────
@@ -858,4 +994,5 @@ button { font: inherit; cursor: pointer; }
   .vanish__rule { width: 100%; }
   .vanish__note { opacity: 1; }
   .scr { clip-path: none; }
+  .run__track i { animation: none !important; }
 }
