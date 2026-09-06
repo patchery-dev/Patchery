@@ -298,7 +298,7 @@ node_modules/fake-lib/index.js:3
 <i class="t-ln">7</i>  module.exports = { renderCartTotal };</code></pre>
               </div>
             </div>
-            <figcaption class="scr__note">The AI gets a fixed budget and a watchdog: repeat the same move three times, or spend fifteen turns changing nothing, and the run is cut off. It is a blunt instrument and it has been wrong — on one real project it stopped the run three times over, each time at the moment the AI was about to start writing.</figcaption>
+            <figcaption class="scr__note">The AI gets a fixed budget and a watchdog: make the same move three times, or spend five turns in a row turning up nothing it has not already seen, and the run is cut off. Opening a file it has never opened counts as progress even before it writes anything — because the first version of this rule counted turns without an edit instead, and cut three real runs off at the moment the AI was about to start writing.</figcaption>
           </figure>
 
           <!-- 03 -->
@@ -630,9 +630,11 @@ checked, and untouched:
         </div>
         <p class="run__note">
           And each of those three attempts paid to read the same files from the beginning,
-          because nothing is carried from one run to the next. That is a cost bug. So is a
-          watchdog that cannot tell circling from progress. Both are written down as bugs, and
-          neither one is fixed.
+          because nothing is carried from one run to the next. That is a cost bug and it is
+          still open. The watchdog that cut these runs off is not: it has stopped counting
+          turns without an edit and now counts turns that turn up nothing new, so reading four
+          files it has never read is progress rather than idling. These three runs are the
+          reason it changed.
         </p>
       </li>
 
