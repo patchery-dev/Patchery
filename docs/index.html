@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Patchery — when a dependency breaks your code</title>
-<meta name="description" content="When a dependency breaks your code, Patchery fixes it and proves the fix. Writing the fix is the easy part; proving it is the product.">
+<meta name="description" content="When a dependency breaks your code, Patchery fixes it and proves the fix. A GitHub Action that runs in your own CI and refuses to open a pull request it cannot prove.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0e14">
 
@@ -29,766 +29,250 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/site.css?v=3">
+<link rel="stylesheet" href="assets/site.css?v=4">
 </head>
 
-<body class="is-loading">
+<body id="top">
 
-<!-- ───────────────────────────  boot  ─────────────────────────── -->
-<div class="boot" id="boot" aria-hidden="true">
-  <div class="boot__mark">
-    <svg viewBox="0 0 180 180" width="58" height="58" fill="none" aria-hidden="true">
-      <!-- pathLength="1" makes the browser normalise this path to a length of 1,
-           so the dash animation is correct no matter what the geometry is. The
-           previous hand-written 320 was wrong: the real length is 238, so the
-           mark finished drawing at 74% and then sat still. -->
-      <path id="bootPath" pathLength="1"
-            d="M62 140 V56 a13 13 0 0 1 13-13 h31 l24 24 v17 a14 14 0 0 1-14 14 H86"
-            stroke="#00c48c" stroke-width="17" stroke-linecap="square" stroke-linejoin="miter"/>
-      <circle id="bootTip" r="4.5" fill="#00c48c"/>
-    </svg>
-  </div>
-  <div class="boot__bar"><i id="bootBar"></i></div>
-</div>
+<a class="skip" href="#how">Skip to the point</a>
 
-<a class="skip" href="#thesis">Skip to the point</a>
-
-<!-- ───────────────────────────  chrome  ─────────────────────────── -->
-<header class="nav" id="nav">
-  <a class="nav__brand" href="#top" aria-label="Patchery, back to top">
-    <img src="assets/logo.png" width="26" height="26" alt="">
-    <span>Patchery</span>
-  </a>
-  <nav class="nav__links" aria-label="Sections">
-    <a href="#thesis">The idea</a>
-    <a href="#run">The run</a>
-    <a href="#guard">Try to break it</a>
-    <a href="#proof">Proof</a>
-    <a href="#stopped">What stopped it</a>
-    <a href="#install">Install</a>
-    <a href="#status">Where it stands</a>
-  </nav>
-
-  <!-- The same list again, for every screen the header links do not fit on.
-       A <details>, not a scripted menu: it opens with JavaScript switched off,
-       and it carries the section numbers that the margin folio shows on wide
-       screens but hides below 1240px. -->
-  <details class="menu" id="menu">
-    <summary><span>Sections</span><i class="menu__x" aria-hidden="true"></i></summary>
-    <nav class="menu__panel" aria-label="Sections">
-      <a href="#thesis"><i>02</i>The idea</a>
-      <a href="#run"><i>03</i>The run</a>
-      <a href="#guard"><i>04</i>Try to break it</a>
-      <a href="#proof"><i>05</i>Proof</a>
-      <a href="#stopped"><i>06</i>What stopped it</a>
-      <a href="#install"><i>07</i>Install</a>
-      <a href="#status"><i>08</i>Where it stands</a>
+<header class="nav">
+  <div class="shell nav__in">
+    <a class="nav__brand" href="#top" aria-label="Patchery, back to top">
+      <img src="assets/logo.png" width="24" height="24" alt="">
+      <span>Patchery</span>
+    </a>
+    <nav class="nav__links" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#gate">The gate</a>
+      <a href="#evidence">Evidence</a>
+      <a href="#install">Install</a>
     </nav>
-  </details>
-  <a class="nav__gh" href="https://github.com/patchery-dev/Patchery">
-    <span>GitHub</span>
-    <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg>
-  </a>
+    <a class="nav__cta" href="https://github.com/patchery-dev/Patchery">GitHub</a>
+  </div>
 </header>
 
-<div class="scrollbar" aria-hidden="true"><i id="scrollbarFill"></i></div>
 
-<!-- The folio: a live index running down the left margin, the way a page
-     number and running head sit in the margin of a printed book. It tracks
-     which section you are in. Decorative furniture, so it is hidden from
-     assistive technology — the real navigation is in the header. -->
-<aside class="folio" id="folio" aria-hidden="true">
-  <span class="folio__now" id="folioNow">01</span>
-  <span class="folio__of">/ 09</span>
-  <span class="folio__rule"></span>
-  <span class="folio__name" id="folioName">Patchery</span>
-</aside>
+<!-- ─────────────────────────────  hero  ───────────────────────────── -->
+<section class="hero">
+  <div class="shell">
+    <span class="hero__tag"><i aria-hidden="true"></i>GitHub Action · open source · runs in your CI</span>
+    <h1 class="display display--hero">
+      When a dependency breaks your code, Patchery fixes it
+      and <em>proves</em> the fix.
+    </h1>
+    <p class="lede">
+      A major version lands, your test suite goes red, and someone loses an afternoon to it.
+      Patchery reproduces the break, works the fix, and re-runs your tests — then opens a pull
+      request only if it can show the evidence.
+    </p>
+    <div class="hero__acts">
+      <a class="btn btn--go" href="#install">Install it<i aria-hidden="true">→</i></a>
+      <a class="btn btn--out" href="#evidence">See what it opened</a>
+    </div>
+  </div>
+</section>
 
-<main id="top">
 
-<!-- ═══════════════════  01 · HERO  ═══════════════════ -->
-<!-- Three bands separated by full-bleed hairlines. No artwork, no scroll cue,
-     no filled buttons. Exactly one word on this screen is teal — "proves" —
-     because that word is the product. -->
-<section class="hero" id="hero" data-folio="01" data-folio-name="Patchery">
+<!-- ──────────────────────────  how it works  ─────────────────────── -->
+<section id="how" class="pad">
+  <div class="shell">
+    <div class="head">
+      <span class="k">How it works</span>
+      <h2 class="display display--sec">Three steps, and the third one is the product.</h2>
+    </div>
 
-  <p class="hero__slug">
-    <span>Patchery</span><i></i><span>GitHub Action</span><i></i><span>npm</span><i></i><span>MIT</span><i></i><span>early</span>
-  </p>
+    <ol class="steps">
+      <li class="step">
+        <b>01</b>
+        <h3>Reproduce</h3>
+        <p>
+          It pins your repository, applies the upgrade, and runs your test suite. If the failure
+          is not real and repeatable, it stops here — there is nothing to fix.
+        </p>
+      </li>
+      <li class="step">
+        <b>02</b>
+        <h3>Fix</h3>
+        <p>
+          An agent reads the failure and the changelog, and migrates the call sites. It works
+          inside your checkout, with your tests as the only judge of whether it is done.
+        </p>
+      </li>
+      <li class="step">
+        <b>03</b>
+        <h3>Prove</h3>
+        <p>
+          The patch ships with its evidence: the failing run before, the passing run after, the
+          files it touched, and a read-only second agent's review — attached whether it agrees or
+          not. If your tests do not pass, nothing is delivered.
+        </p>
+      </li>
+    </ol>
+  </div>
+</section>
 
-  <h1 class="display display--hero">
-    <span class="line"><span>When a dependency</span></span>
-    <span class="line"><span>breaks your code,</span></span>
-    <span class="line"><span>Patchery fixes it</span></span>
-    <span class="line"><span>and <em class="accent">proves</em> the fix.</span></span>
-  </h1>
 
-  <!-- Specimen strip: facts with units, and not one adjective. -->
-  <div class="strip">
-    <p class="strip__plain">
-      Your project runs on other people&rsquo;s code. When they change how it works, your app
-      stops working. Patchery finds what broke, rewrites the lines that need rewriting, and
-      checks the result against your own tests before it shows you anything — and throws its
-      own work away if that check goes badly.
+<!-- ────────────────────────────  the gate  ────────────────────────── -->
+<section id="gate" class="pad">
+  <div class="shell">
+    <div class="head">
+      <span class="k">The gate</span>
+      <h2 class="display display--sec">Writing the fix is the easy part.</h2>
+    </div>
+
+    <p class="lede gate__lede">
+      Any capable model can produce a patch that looks right. The question is what happens when it
+      is wrong — and the answer most tools give is: it opens the pull request anyway. Patchery ends
+      a run in one of five states, and it would rather end in the second one than guess.
     </p>
 
-    <ul class="strip__facts">
-      <li><b>1</b><span>pull request it opened on its own</span></li>
-      <li><b data-run="cost">$0.2251</b><span>the last run, priced at list rates</span></li>
-      <li><b>0</b><span>users, customers, logos</span></li>
-      <li><b>MIT</b><span>every line of it public</span></li>
+    <ul class="out">
+      <li data-tone="good">
+        <dfn>FIXED</dfn>
+        <p>The break is gone, your tests pass, and the evidence is attached.</p>
+      </li>
+      <li data-tone="good">
+        <dfn>REFUSED</dfn>
+        <p>It found something it could not prove, so it sent nothing and said which check stopped it.</p>
+      </li>
+      <li>
+        <dfn>NO-CHANGE</dfn>
+        <p>The agent finished its turn without touching anything worth sending.</p>
+      </li>
+      <li data-tone="bad">
+        <dfn>WRONG</dfn>
+        <p>It sent a patch that does not hold up. This is the number that has to stay honest.</p>
+      </li>
+      <li>
+        <dfn>BLOCKED</dfn>
+        <p>The run could not get far enough to be measured — a build, a container, an environment.</p>
+      </li>
     </ul>
 
-    <p class="strip__go">
-      <a class="go" href="https://github.com/patchery-dev/Patchery/pull/2">
-        <span>Read the pull request it opened</span>
-        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/></svg>
-      </a>
-      <a class="go go--quiet" href="https://github.com/patchery-dev/Patchery"><span>Read the source</span></a>
-    </p>
+    <div class="note">
+      <h3>REFUSED and WRONG are not the same column.</h3>
+      <p>
+        An agent that declines to send what it cannot prove is doing the job. An agent that sends it
+        anyway is the risk you were trying to remove. A report that merges the two is measuring some
+        other product.
+      </p>
+    </div>
+
+    <div class="note note--quiet">
+      <h3>It cannot shrink the test that judges it.</h3>
+      <p>
+        Tests are counted while the code is still whole — before anything is broken, so nothing the
+        agent does afterwards can move that baseline. They are counted again after its turn. If fewer
+        tests pass than at the start, the run is recorded WRONG, however green it looks.
+      </p>
+    </div>
   </div>
 </section>
 
-<!-- ═══════════════════  02 · THE THESIS  ═══════════════════ -->
-<section class="thesis" id="thesis" data-folio="02" data-folio-name="The idea">
+
+<!-- ───────────────────────────  where it runs  ────────────────────── -->
+<section id="runs" class="pad">
+  <div class="shell runs">
+    <div>
+      <div class="head">
+        <span class="k">Where it runs</span>
+        <h2 class="display display--sec">Your code never leaves your machines.</h2>
+      </div>
+      <p class="lede">
+        Patchery is not a service you send a repository to. It is a file in your project that runs on
+        your own runners, with your own key, against your own checkout. There is no Patchery server
+        for your source to travel to, because there is no Patchery server.
+      </p>
+    </div>
+
+    <dl class="facts">
+      <div><dt>runs as</dt><dd>a GitHub Action</dd></div>
+      <div><dt>runs on</dt><dd>your CI runners</dd></div>
+      <div><dt>model key</dt><dd>yours, in your repo secrets</dd></div>
+      <div><dt>code we host</dt><dd>none</dd></div>
+      <div><dt>starts</dt><dd>when you press the button</dd></div>
+      <div><dt>licence</dt><dd>open source, MIT</dd></div>
+    </dl>
+  </div>
+</section>
+
+
+<!-- ────────────────────────────  evidence  ───────────────────────── -->
+<section id="evidence" class="pad">
   <div class="shell">
-    <div class="sechead">
-      <span class="sechead__idx">02</span>
-      <span class="sechead__rule"></span>
-      <span class="sechead__label">Why this is harder than it looks</span>
+    <div class="head">
+      <span class="k">Evidence</span>
+      <h2 class="display display--sec">Read the run, not the claim.</h2>
     </div>
 
-    <!-- The vanishing line. Scroll strikes the last line through, eats the
-         words left to right, then withdraws the rule and leaves a held blank
-         with one note in the margin. Every custom property involved has an
-         initial value that renders the sentence INTACT, so with no JavaScript
-         and no scroll-driven animation this is simply a headline. -->
-    <h2 class="display display--thesis" id="vanish">
-      <span class="line"><span>Tell an AI to</span></span>
-      <span class="line"><span>make the tests pass.</span></span>
-      <span class="line"><span>It might just</span></span>
-      <span class="line line--vanish">
-        <span class="vanish">
-          <span class="vanish__word">delete them.</span>
-          <i class="vanish__rule" aria-hidden="true"></i>
-        </span>
-        <small class="vanish__note">// 4 tests removed &middot; suite green</small>
-      </span>
-    </h2>
-
-    <div class="thesis__grid">
-      <div class="thesis__col">
-        <span class="spec__k">This is not a hypothetical</span>
-        <p>
-          Deleting the test is the cheapest way to satisfy the instruction, so it is the one an
-          agent reaches for first. Failing that: soften the check, stub out the function, edit
-          the very file that decides what <em>working</em> means. Every one of those makes a
-          broken project look fixed.
-        </p>
-        <p>
-          Which means writing the fix was never the interesting problem. Everything that
-          happens <em>after</em> it is. Patchery never reads the AI&rsquo;s own account of what it
-          did — it looks at the files themselves, throws the whole attempt away if anything
-          off-limits moved, and re-runs your tests itself.
-        </p>
-      </div>
-
-      <div class="thesis__col">
-        <span class="spec__k">Why anyone needs it now</span>
-        <p>
-          The libraries underneath modern software change faster than the teams using them can
-          follow. Tools like Dependabot are good at telling you a newer version exists. They
-          stop exactly where the work starts: the places in your code that used the old way.
-        </p>
-        <p>
-          That gap used to need a person. It stopped needing one somewhere in the last two
-          years — but only if you can trust the result, which is the same problem again.
-        </p>
-      </div>
-    </div>
-
-    <figure class="ticker">
-      <figcaption class="ticker__note">
-        <span class="spec__k">For scale, not for credit</span>
-        Recent breaking major releases, picked to show how ordinary this is. These are
-        <em>not</em> packages Patchery has fixed. Two of them are: <code>openai</code> and
-        <code>@google/generative-ai</code> — both migrated by hand, both linked below.
-      </figcaption>
-      <div class="ticker__strip" aria-hidden="true"><div class="ticker__row" id="ticker"></div></div>
-    </figure>
-  </div>
-</section>
-
-<!-- ═══════════════════  03 · THE RUN  ═══════════════════ -->
-<section class="pipe" id="run" data-folio="03" data-folio-name="The run">
-  <div class="pipe__track" id="pipeTrack">
-    <div class="pipe__stage">
-      <div class="shell pipe__layout">
-
-        <div class="pipe__side">
-          <div class="sechead">
-            <span class="sechead__idx">03</span>
-            <span class="sechead__rule"></span>
-            <span class="sechead__label">One run, six gates</span>
-          </div>
-
-          <p class="plain"><span class="plain__k">In plain terms</span>It tries the fix, then spends four more steps trying to catch itself cheating.</p>
-
-          <h2 class="pipe__h">It has to get<br>past itself first.</h2>
-
-          <ol class="rail" id="rail">
-            <li class="rail__i" data-i="0"><b>01</b><span>Check it&rsquo;s really broken</span><em>If your tests already pass, stop here and charge nothing.</em></li>
-            <li class="rail__i" data-i="1"><b>02</b><span>Read the notes, fix the code</span><em>Find what changed, rewrite the lines that used the old way.</em></li>
-            <li class="rail__i" data-i="2"><b>03</b><span>Look at what changed on disk</span><em>Not what the AI says it did — what the files say it did.</em></li>
-            <li class="rail__i" data-i="3"><b>04</b><span>Run your tests again</span><em>Measure it. Don&rsquo;t ask it.</em></li>
-            <li class="rail__i" data-i="4"><b>05</b><span>Get a second AI to argue with it</span><em>A different call, read-only, that tries to refute the fix.</em></li>
-            <li class="rail__i" data-i="5"><b>06</b><span>Ask a human to approve it</span><em>A change request you read and merge yourself. Never automatic.</em></li>
-          </ol>
-        </div>
-
-        <div class="pipe__screens" id="screens">
-
-          <!-- 01 -->
-          <figure class="scr is-on" data-scr="0" data-num="01">
-            <div class="scr__bar"><span class="scr__tag">step 01</span><span class="scr__path">your test command</span><span class="scr__state fail">failed</span></div>
-            <pre class="term"><code data-type>$ npm test
-
-&gt; toy-project@1.0.0 test
-&gt; node app.test.js
-
-node_modules/fake-lib/index.js:3
-    throw new TypeError("currency is required as of fake-lib@2.0.0");
-    ^
-
-<i class="t-fail">TypeError: formatPrice(amount, currency): currency is required</i>
-    at formatPrice (node_modules/fake-lib/index.js:3:11)
-    at renderCartTotal (app.js:4:20)
-    at Object.&lt;anonymous&gt; (app.test.js:4:16)</code></pre>
-            <figcaption class="scr__note">This is the entry ticket. Patchery runs your own tests before it does anything else, and if they pass it stops — no AI, no cost, no pull request you didn&rsquo;t ask for.</figcaption>
-          </figure>
-
-          <!-- 02 -->
-          <figure class="scr" data-scr="1" data-num="02">
-            <div class="split">
-              <div class="split__col">
-                <div class="scr__bar"><span class="scr__tag">reading</span><span class="scr__path">what the library changed</span></div>
-                <pre class="term term--sm scan"><code><i class="t-dim"># fake-lib changelog</i>
-
-<i class="t-key">## 2.0.0 (breaking)</i>
-
-- <i class="t-fail">Removed</i> formatPrice(amount).
-  Returned a plain number and rounded
-  inconsistently across locales.
-
-- <i class="t-ok">Added</i> formatPrice(amount, currency).
-  Now requires an explicit currency
-  code, e.g. "USD".
-
-<i class="t-dim">### Migration</i>
-  formatPrice(19.9)        <i class="t-dim">// "19.90"</i>
-  formatPrice(19.9,"USD")  <i class="t-dim">// "$19.90"</i></code></pre>
-              </div>
-              <div class="split__col">
-                <div class="scr__bar"><span class="scr__tag">writing</span><span class="scr__path">app.js</span><span class="scr__state">one line</span></div>
-                <pre class="term term--sm"><code><i class="t-ln">1</i>  const { formatPrice } = require("fake-lib");
-<i class="t-ln">2</i>
-<i class="t-ln">3</i>  function renderCartTotal(amount) {
-<i class="t-ln">4</i>    return `Total: ${<span id="rewrite" class="rewrite">formatPrice(amount)</span>}`;
-<i class="t-ln">5</i>  }
-<i class="t-ln">6</i>
-<i class="t-ln">7</i>  module.exports = { renderCartTotal };</code></pre>
-              </div>
-            </div>
-            <figcaption class="scr__note">The AI gets a fixed budget and a watchdog: make the same move three times, or spend five turns in a row turning up nothing it has not already seen, and the run is cut off. Opening a file it has never opened counts as progress even before it writes anything — because the first version of this rule counted turns without an edit instead, and cut three real runs off at the moment the AI was about to start writing.</figcaption>
-          </figure>
-
-          <!-- 03 -->
-          <figure class="scr" data-scr="2" data-num="03">
-            <div class="scr__bar"><span class="scr__tag">step 03</span><span class="scr__path">every file it touched</span><span class="scr__state ok">clean</span></div>
-            <pre class="term"><code>changed on disk:
-<i class="gl" data-gl="0">  app.js                       <b class="t-ok">allowed</b></i>
-
-checked, and untouched:
-<i class="gl" data-gl="1">  your tests                   <b class="t-dim">off-limits</b></i>
-<i class="gl" data-gl="2">  package-lock.json            <b class="t-dim">off-limits</b></i>
-<i class="gl" data-gl="3">  node_modules/                <b class="t-dim">off-limits</b></i>
-<i class="gl" data-gl="4">  your CI configuration        <b class="t-dim">off-limits</b></i>
-
-<i class="gl" data-gl="5"><b class="t-ok">→ nothing off-limits moved. carry on.</b></i></code></pre>
-            <figcaption class="scr__note">This is the step the whole product is built around. If the AI touches even one file on that list, the entire attempt is deleted — the working fix along with it. <a class="ilink" href="#guard">Try to sneak one past it →</a></figcaption>
-          </figure>
-
-          <!-- 04 -->
-          <figure class="scr" data-scr="3" data-num="04">
-            <div class="scr__bar"><span class="scr__tag">step 04</span><span class="scr__path">your test command, again</span><span class="scr__state ok">passed</span></div>
-            <pre class="term"><code data-type>$ npm test
-
-&gt; toy-project@1.0.0 test
-&gt; node app.test.js
-
-<i class="t-ok">PASS: app.test.js</i></code></pre>
-            <figcaption class="scr__note">Same command, same machine, run from scratch a second time. Patchery never asks the AI whether it worked — it re-runs your tests and reads the answer itself.</figcaption>
-          </figure>
-
-          <!-- 05 -->
-          <figure class="scr" data-scr="4" data-num="05">
-            <div class="scr__bar"><span class="scr__tag">step 05</span><span class="scr__path">a second agent, no write access</span><span class="scr__state">concerns</span></div>
-            <pre class="term"><code data-type>$ patchery review --read-only
-
-  reviewing 1 file, 2 lines
-  separate call &middot; cannot edit &middot; never shown
-  the first agent&#39;s reasoning
-
-  verdict      <i class="t-ok">not refuted</i>
-  confidence   72 / 100
-  concerns     raised
-  cost         $0.3298</code></pre>
-            <figcaption class="scr__note">The reviewer can agree, object, or say it is not sure — and it cannot touch a single file either way. Below a confidence of 60 its verdict is filed as a concern rather than acted on, in both directions: the same bar to condemn as to bless. On this run the review cost $0.3298. The fix it was reviewing cost $0.2251. There is a switch that hands a serious concern back to the fixer for one more turn, and it is off by default: most of what a reviewer raises is <em>I could not check this from here</em>, which is information you are missing rather than code that is wrong — and a model handed criticism will always find something to change.</figcaption>
-          </figure>
-
-          <!-- 06 -->
-          <figure class="scr" data-scr="5" data-num="06">
-            <div class="prcard">
-              <div class="prcard__top">
-                <span class="prcard__badge">Open</span>
-                <span class="prcard__repo">patchery-dev/Patchery&nbsp;<b>#2</b></span>
-              </div>
-              <h3 class="prcard__title">fix(deps): migrate fake-lib call sites</h3>
-              <p class="prcard__branch">a change request, waiting for a human</p>
-              <pre class="diff"><code><i class="d-file">app.js</i>
-<i class="d-ctx">  function renderCartTotal(amount) {</i>
-<i class="d-del">−    return `Total: ${formatPrice(amount)}`;</i>
-<i class="d-add">+    return `Total: ${formatPrice(amount, "USD")}`;</i>
-<i class="d-ctx">  }</i></code></pre>
-              <ul class="prcard__stats">
-                <li><b>1</b> file</li>
-                <li><b class="t-ok">+1</b> <b class="t-fail">&minus;1</b></li>
-                <li><b data-run="turns">9</b> turns</li>
-                <li><b data-run="cost">$0.2251</b></li>
-              </ul>
-              <p class="prcard__foot">Opened automatically. Never merged automatically.</p>
-            </div>
-          </figure>
-
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════  04 · THE GUARD  ═══════════════════ -->
-<section class="guard" id="guard" data-folio="04" data-folio-name="Try to break it">
-  <div class="shell">
-    <div class="sechead">
-      <span class="sechead__idx">04</span>
-      <span class="sechead__rule"></span>
-      <span class="sechead__label">The part that matters, in your hands</span>
-    </div>
-
-    <p class="plain"><span class="plain__k">In plain terms</span>Some files are off-limits, and touching one throws away the whole attempt — including a fix that worked.</p>
-
-    <div class="guard__head">
-      <h2>Try to<br>break it.</h2>
+    <div class="ev">
       <div>
+        <span class="k">A pull request it opened</span>
+        <h3>fix(deps): migrate fake-lib call sites</h3>
         <p>
-          The off-limits list is short: your tests, the file that decides which of them run,
-          the file that pins your versions, your build settings, and the installed libraries
-          themselves. Those are the ways an AI can make a broken project look fixed without
-          fixing anything, so none of them may move. Two more rules sit alongside them —
-          nothing may be deleted, and nothing outside the folder you pointed it at may be
-          touched at all.
+          A breaking upgrade in Patchery's own repository, fixed end to end by the action. The pull
+          request carries the test runs from either side of the fix and the second agent's review —
+          which raised concerns, and says so at the top of the page.
         </p>
-        <p class="guard__sub">
-          The box below runs the real check — the same few lines that run inside
-          <a class="ilink" href="https://github.com/patchery-dev/Patchery/blob/main/scripts/guard.mjs">Patchery&rsquo;s source</a>,
-          copied character for character, not a demo of it. Give it any file path and see what
-          it decides.
-        </p>
-      </div>
-    </div>
-
-    <div class="guard__panel">
-      <div class="guard__io">
-        <form class="guard__form" id="guardForm" autocomplete="off">
-          <label class="guard__prompt" for="guardInput">Pretend the AI changed this file</label>
-          <div class="guard__field">
-            <span class="guard__caret">+</span>
-            <input id="guardInput" type="text" placeholder="src/checkout/cart.ts" spellcheck="false" aria-label="A file path to check against the guard">
-            <button type="submit">check</button>
-          </div>
-        </form>
-        <p class="guard__hint">or try one of these</p>
-        <div class="guard__chips">
-          <button type="button" data-path="src/checkout/cart.ts">src/checkout/cart.ts</button>
-          <button type="button" data-path="src/auth/validate.ts">src/auth/validate.ts</button>
-          <button type="button" data-path="lib/query_operations.ts">lib/query_operations.ts</button>
-          <button type="button" data-path="test/cart.test.js">test/cart.test.js</button>
-          <button type="button" data-path="package-lock.json">package-lock.json</button>
-          <button type="button" data-path="node_modules/fake-lib/index.js">node_modules/fake-lib/index.js</button>
-          <button type="button" data-path=".github/workflows/ci.yml">.github/workflows/ci.yml</button>
-          <button type="button" data-path="__mocks__/api.js">__mocks__/api.js</button>
-          <button type="button" data-path="src/utils.spec.tsx">src/utils.spec.tsx</button>
-        </div>
+        <dl class="facts">
+          <div><dt>turns</dt><dd><b data-run="turns">11</b></dd></div>
+          <div><dt>cost, at list price</dt><dd><b data-run="cost">$0.3236</b></dd></div>
+          <div><dt>model</dt><dd><b data-run="model">glm-5.3-flash</b></dd></div>
+          <div><dt>test files changed</dt><dd>0 — enforced by CI</dd></div>
+        </dl>
+        <a class="link" href="https://github.com/patchery-dev/Patchery/pull/2">Open pull request #2<i aria-hidden="true">→</i></a>
       </div>
 
-      <div class="guard__out">
-        <div class="scr__bar">
-          <span class="scr__tag">the check</span>
-          <span class="scr__path">files the AI touched</span>
-          <span class="scr__state" id="guardCount">0 files</span>
-        </div>
-        <ul class="guard__list" id="guardList"></ul>
-        <p class="guard__empty" id="guardEmpty">Nothing here yet. Add a file and the verdict appears below.</p>
-        <div class="guard__verdict" id="guardVerdict" data-verdict="idle">
-          <span class="guard__verdict-k">verdict</span>
-          <span class="guard__verdict-v" id="guardVerdictText">waiting</span>
-        </div>
-      </div>
-    </div>
-
-    <p class="guard__src">
-      Six rules on the off-limits list, in the order they run — installed libraries, test
-      files, test folders, build settings, test-harness configuration, version-lock files —
-      plus a ban on deletions and on anything outside the folder you pointed it at. All of it
-      is covered by a test that runs on every change to Patchery itself: offline, in a second,
-      with no AI and no key.
-    </p>
-
-    <div class="blind">
-      <span class="spec__k">What this check cannot see</span>
-      <p>
-        It reads <em>which</em> files moved. It never reads what the change did to them. An AI
-        that deleted a validation check inside <code>src/auth/validate.ts</code> — a file it is
-        perfectly entitled to edit — walks straight past everything above. Try that path in the
-        box and watch it be allowed.
-      </p>
-      <p>
-        Three things stand behind the hole. Your tests are run again afterwards, by Patchery
-        and not by the AI, so a change that breaks them never reaches a pull request. A second
-        agent then reads the diff and tries to refute the fix — it gets no write access, no
-        sight of the first agent&rsquo;s reasoning, and a separate call, so it is reviewing the
-        change rather than agreeing with itself. And the pull request still goes to a person:
-        there is no auto-merge and there should not be.
-      </p>
-      <p>
-        None of that closes the hole. Reading a diff is judgement, and judgement is the thing
-        this check exists to avoid having to trust. The rule above is deterministic and the
-        review is not, which is why the review is a second line and never the only one.
-      </p>
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════  05 · PROOF  ═══════════════════ -->
-<!-- This one section inverts to paper. Everything here is evidence you can go
-     and check, so it is set as a printed sheet rather than another dark panel. -->
-<section class="proof" id="proof" data-folio="05" data-folio-name="Proof" data-invert>
-  <div class="shell">
-    <div class="sechead">
-      <span class="sechead__idx">05</span>
-      <span class="sechead__rule"></span>
-      <span class="sechead__label">Evidence, not adjectives</span>
-    </div>
-
-    <p class="plain"><span class="plain__k">In plain terms</span>Everything below is a link you can open and check for yourself, right now.</p>
-
-    <h2 class="proof__h">It has done this<br>with nobody watching.</h2>
-
-    <a class="proofcard proofcard--lead" href="https://github.com/patchery-dev/Patchery/pull/2">
-      <div class="proofcard__meta">
-        <span class="tag tag--auto">no human involved</span>
-        <span class="proofcard__repo">patchery-dev/Patchery #2</span>
-      </div>
-      <h3>One line, in one file, in a real repository</h3>
-      <p>
-        A library called <code>fake-lib</code> went from version 1 to version 2 and made an
-        argument required that used to be optional. Patchery ran the tests (they failed), read
-        what the library had changed, rewrote the one line that needed it, checked which files
-        it had touched, ran the tests again (they passed), and opened this pull request. The
-        first human to see it was the reviewer.
-      </p>
-      <p class="proofcard__note">
-        Two things about those numbers. The cost is what those turns would come to at Anthropic
-        list prices; the run used a cheaper model, so the amount actually billed was different.
-        And they are the <em>latest</em> run, not the only one: the broken fixture is committed
-        broken on purpose so the demo can be run again, and each run replaces the same branch.
-        Four have succeeded so far. The figures are read out of the pull request itself when
-        this page loads, so they cannot quietly go stale — they already did once, which is why
-        they are read rather than typed.
-      </p>
-      <ul class="proofcard__stats">
-        <li><span>files changed</span><b>1</b></li>
-        <li><span>lines</span><b><i class="t-ok">+1</i> <i class="t-fail">&minus;1</i></b></li>
-        <li><span>tests</span><b><i class="t-fail">failed</i> → <i class="t-ok">passed</i></b></li>
-        <li><span>AI turns used</span><b data-run="turns">9</b></li>
-        <li><span>cost, at list rates</span><b data-run="cost">$0.2251</b></li>
-        <li><span>model</span><b data-run="model">glm-5.3</b></li>
-      </ul>
-      <span class="proofcard__go">Open it on GitHub <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg></span>
-    </a>
-
-    <div class="proof__sep">
-      <span class="sechead__rule"></span>
-      <p>
-        And here is the same job done <b>by hand</b>, on two projects we don&rsquo;t own. No AI was
-        involved in either — they are here because doing this work manually is how we learned
-        what the automated version has to survive.
-      </p>
-    </div>
-
-    <div class="proof__pair">
-      <a class="proofcard" href="https://github.com/ianarawjo/ChainForge/pull/416">
-        <div class="proofcard__meta">
-          <span class="tag">written by hand</span>
-          <span class="proofcard__repo">ianarawjo/ChainForge #416</span>
-        </div>
-        <h3>An SDK that moved on without them</h3>
-        <p>The project was still built on a three-year-old way of calling OpenAI, long since
-        replaced. Three places in one file had to be rewritten, along with how errors and
-        responses are read back.</p>
-        <span class="proofcard__go">Open <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg></span>
-      </a>
-
-      <a class="proofcard" href="https://github.com/ToolJet/ToolJet/pull/17829">
-        <div class="proofcard__meta">
-          <span class="tag">written by hand</span>
-          <span class="proofcard__repo">ToolJet/ToolJet #17829</span>
-        </div>
-        <h3>A library that reached its end of life</h3>
-        <p>Their Gemini integration depended on a Google library that stopped being supported
-        on 30 November 2025. Setting up the client and both ways of querying it had to move to
-        the replacement.</p>
-        <span class="proofcard__go">Open <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 9.5 9.5 2.5M4 2.5h5.5V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"/></svg></span>
-      </a>
-    </div>
-
-    <p class="proof__caveat">
-      All three are still open. None has been merged. We will change this sentence the day that changes.
-    </p>
-  </div>
-</section>
-
-
-<!-- ═══════════════════  06 · WHAT IT COULD NOT DO  ═══════════════════ -->
-<!-- The section a product page is not supposed to have. Every run below was
-     paid for and produced no pull request. They are here because a page that
-     only shows its wins is quoting half a number — and because the reason
-     each one came back empty is the reason to trust the one that didn't. -->
-<section class="stall" id="stopped" data-folio="06" data-folio-name="What stopped it">
-  <div class="shell">
-    <div class="sechead">
-      <span class="sechead__idx">06</span>
-      <span class="sechead__rule"></span>
-      <span class="sechead__label">The runs that produced nothing</span>
-    </div>
-
-    <p class="plain"><span class="plain__k">In plain terms</span>We pointed it at real projects and it came back with nothing. Here is every run we kept a proper record of, what it spent, and what it wrote.</p>
-
-    <div class="stall__head">
-      <h2 class="display display--sec">
-        <span class="line"><span>Four runs on code</span></span>
-        <span class="line"><span>we don&rsquo;t own. Four</span></span>
-        <span class="line"><span>times it wrote <em class="accent">nothing</em>.</span></span>
-      </h2>
-      <p>
-        Every bar below is one turn of an AI actually thinking, and every one of them was
-        billed. Read the number at the end of each row before you read anything else on
-        this page.
-      </p>
-    </div>
-
-    <ol class="runs">
-
-      <li class="run">
-        <div class="run__id">
-          <span class="run__tag">ran, wrote nothing</span>
-          <a class="run__where" href="https://github.com/giancarloerra/SocratiCode">giancarloerra/SocratiCode</a>
-          <span class="run__what">An old library that hadn&rsquo;t actually broken anything yet</span>
-        </div>
-        <p class="run__story">
-          The tests were red, so it started. It read the failures one at a time and worked
-          out that every one of them was about the machine we were running on, not about the
-          library we had sent it to fix. It checked that the old library really was still
-          installed, checked that nothing was breaking when the code actually ran, and then
-          declined to change anything. It spent the rest of its turns holding that position.
-          The easy move was there the whole time and it didn&rsquo;t take it.
-        </p>
-        <div class="run__meter">
-          <div class="run__track" style="--turns:25" aria-hidden="true"><i></i></div>
-          <dl class="run__nums">
-            <div><dt>turns</dt><dd>25</dd></div>
-            <div><dt>cost</dt><dd>$0.88</dd></div>
-            <div class="run__out"><dt>lines written</dt><dd>0</dd></div>
-          </dl>
-        </div>
-      </li>
-
-      <li class="run">
-        <div class="run__id">
-          <span class="run__tag">ran three times, wrote nothing</span>
-          <a class="run__where" href="https://github.com/dwmkerr/terminal-ai">dwmkerr/terminal-ai</a>
-          <span class="run__what">Not a renamed function — a different idea of where a conversation lives</span>
-        </div>
-        <p class="run__story">
-          We gave it fifteen turns. It read the migration guide, read the files that would have
-          to move, and checked which parts of the new library actually existed — a different,
-          sensible step every turn, never the same one twice. Then <em>Patchery</em> cut it off.
-          Our own watchdog counts turns that change no files, decided this one was going in
-          circles, and fired at the moment it was about to start writing. We raised the limit to
-          twenty-two and it went further, comparing against the project&rsquo;s existing style and
-          working out that the right shape was the one that keeps no state. Cut off again, at
-          the same moment. At forty it went further still — following how a single message
-          travels through the code, then going to look at whether the project&rsquo;s own
-          maintainers had already done this upstream — and finished with nothing written. Three
-          runs, each deeper than the last, not one wasted turn. The job was simply bigger than
-          the shape we had given it.
-        </p>
-        <div class="run__meter">
-          <div class="run__stack">
-            <div class="run__track" style="--turns:15" aria-hidden="true"><i></i></div>
-            <div class="run__track" style="--turns:22" aria-hidden="true"><i></i></div>
-            <div class="run__track" style="--turns:40" aria-hidden="true"><i></i></div>
-          </div>
-          <dl class="run__nums">
-            <div><dt>turns</dt><dd>15 &middot; 22 &middot; 40</dd></div>
-            <div><dt>cost</dt><dd>not recorded</dd></div>
-            <div class="run__out"><dt>lines written</dt><dd>0</dd></div>
-          </dl>
-        </div>
-        <p class="run__note">
-          And each of those three attempts paid to read the same files from the beginning,
-          because nothing is carried from one run to the next. That is a cost bug and it is
-          still open. The watchdog that cut these runs off is not: it has stopped counting
-          turns without an edit and now counts turns that turn up nothing new, so reading four
-          files it has never read is progress rather than idling. These three runs are the
-          reason it changed.
-        </p>
-      </li>
-
-      <li class="run">
-        <div class="run__id">
-          <span class="run__tag">ran, never reached the AI</span>
-          <a class="run__where" href="https://github.com/gitroomhq/postiz-agent">gitroomhq/postiz-agent</a>
-          <span class="run__what">A real, reported bug that had already healed on our machine</span>
-        </div>
-        <p class="run__story">
-          Someone had filed it: a library had moved to a newer module format, the old way of
-          loading it threw, and the person who reported it could reproduce it. Patchery runs
-          your tests before it does anything else, and they passed — so it stopped and said
-          there was nothing to fix, which is exactly what it is supposed to do when the tests
-          are green. The reason they were green is that we ran on a newer version of Node than
-          the reporter did. Node began supporting that combination in 22.12; they were on
-          22.11, one release below the line. The bug is real and is still real for them. On our
-          machine it had already healed. Whichever version your tests run on decides what
-          Patchery is able to see, and there is no version we could pick that would be the
-          right one for everybody.
-        </p>
-        <div class="run__meter">
-          <div class="run__track" style="--turns:0" aria-hidden="true"><i></i></div>
-          <dl class="run__nums">
-            <div><dt>AI turns</dt><dd>0</dd></div>
-            <div><dt>cost</dt><dd>$0.00</dd></div>
-            <div class="run__out"><dt>lines written</dt><dd>0</dd></div>
-          </dl>
-        </div>
-      </li>
-
-      <li class="run run--never">
-        <div class="run__id">
-          <span class="run__tag">never started</span>
-          <a class="run__where" href="https://github.com/activepieces/activepieces">activepieces/activepieces</a>
-          <span class="run__what">A real breakage we never got close enough to touch</span>
-        </div>
-        <p class="run__story">
-          It builds with a package manager we didn&rsquo;t have installed, and when we installed
-          only the piece we needed, the shared parts it depends on were left unlinked, so
-          nothing could be checked. Behind both we found that the file we had come to fix has
-          no tests at all — which means Patchery would have had nothing to measure a fix
-          against, and refusing would have been the correct answer anyway. A file-path limit
-          stopped the checkout before any of that, but that one was ours: a Windows setting,
-          fixed in a line, and it cannot happen on the machines this actually runs on.
-        </p>
-        <div class="run__meter">
-          <div class="run__track" style="--turns:0" aria-hidden="true"><i></i></div>
-          <dl class="run__nums">
-            <div><dt>turns</dt><dd>0</dd></div>
-            <div><dt>cost</dt><dd>$0.00</dd></div>
-            <div class="run__out"><dt>lines written</dt><dd>0</dd></div>
-          </dl>
-        </div>
-      </li>
-
-    </ol>
-
-    <div class="stall__foot">
-      <h3 class="display display--sec">Not one of them<br>is a wrong fix.</h3>
       <div>
+        <span class="k">The benchmark</span>
+        <h3>Real breakages, in well-known repositories.</h3>
         <p>
-          In every run above there was an obvious way to look productive: write something
-          plausible, get the tests to green, open the pull request. It never did. Worth being
-          exact about why, because the exact answer flatters us less: in these four runs the
-          off-limits check and the second test run never came into it, because nothing was ever
-          written for them to judge. What kept a wrong answer off the screen was the AI
-          declining to guess — and, twice, our own watchdog stopping the run before it could
-          write anything at all, which is not a save we get to claim. The gates further down
-          have only ever been tested on runs that produced something.
+          Candidate upgrades are pulled from public projects, each one confirmed to actually turn the
+          test suite red before Patchery is allowed near it. The verified cases are running now.
         </p>
-        <p class="stall__aside">
-          Two more never became runs at all. On one, someone had already opened a pull
-          request doing exactly this migration, so we closed the tab. On another, the
-          maintainers had already decided against the change on purpose — so we left them the
-          type-by-type mapping we had prepared as a comment, and no pull request. Checking
-          whether a change is wanted before writing it is the cheapest step in the whole
-          process, and the one an automated system is most likely to skip. One more was dropped
-          before it ever became a run: a real break nobody had fixed, one open issue, no pull
-          request against it — and, in five hundred and fifty-nine files, not one real test.
-          Patchery decides whether a fix worked by running your tests. Where a project has none
-          there is nothing to measure against, so it has nothing to offer and walking away is
-          the correct answer. That is now twice on this page, and it is the most common thing
-          that stops it.
+        <p class="small">
+          The results table goes here when the run finishes — every case, including the ones it could
+          not fix and what stopped it. Until then there is no number on this page, because there is
+          no number yet.
         </p>
+        <span class="pending"><i aria-hidden="true"></i>benchmark in progress</span>
       </div>
     </div>
   </div>
 </section>
-<!-- ═══════════════════  07 · INSTALL  ═══════════════════ -->
-<section class="install" id="install" data-folio="07" data-folio-name="Install">
+
+
+<!-- ─────────────────────────────  install  ───────────────────────── -->
+<section id="install" class="pad">
   <div class="shell">
-    <div class="sechead">
-      <span class="sechead__idx">07</span>
-      <span class="sechead__rule"></span>
-      <span class="sechead__label">If you want to run it</span>
+    <div class="head">
+      <span class="k">Install</span>
+      <h2 class="display display--sec">One file, and nothing runs until you say so.</h2>
     </div>
 
-    <p class="plain"><span class="plain__k">In plain terms</span>You copy one file into your project, and nothing happens until you press a button.</p>
-
-    <div class="install__grid">
-      <div class="install__side">
-        <h2>One file in,<br>one workflow out.</h2>
-        <p class="install__lede">
-          Patchery is not a service you sign up for. It is a file you put in your own project,
-          running on your own machines, with your own key — which is also why there is nothing
-          for us to charge you for yet.
-        </p>
-        <ol class="steps">
-          <li><b>01</b><span>Put your AI key in the repository&rsquo;s secrets, as <code>ANTHROPIC_AUTH_TOKEN</code>.</span></li>
-          <li><b>02</b><span>Save the file on the right as <code>.github/workflows/patchery.yml</code>.</span></li>
-          <li><b>03</b><span>Start it from the Actions tab. You choose which library it works on.</span></li>
+    <div class="install">
+      <div>
+        <ol class="ol">
+          <li>Add your model key to the repository's secrets as <code>ANTHROPIC_AUTH_TOKEN</code>.</li>
+          <li>Save this file as <code>.github/workflows/patchery.yml</code>.</li>
+          <li>Start it from the Actions tab, and choose which package it works on.</li>
         </ol>
-        <p class="muted">
-          No scheduler, no background scanning. Nothing runs unless you press the button — that
-          is deliberate, and it is the next thing to change.
+        <p class="small" style="margin-top:20px">
+          No scheduler and no background scanning: it runs when you dispatch it. Scheduled runs are
+          the next thing on the list.
         </p>
-        <a class="go go--quiet" href="https://github.com/patchery-dev/Patchery#setup"><span>Full setup guide</span></a>
+        <p style="margin-top:18px">
+          <a class="link" href="https://github.com/patchery-dev/Patchery#setup">Full setup guide<i aria-hidden="true">→</i></a>
+        </p>
       </div>
 
-      <div class="install__code">
-        <div class="scr__bar">
-          <span class="scr__tag">yaml</span>
-          <span class="scr__path">.github/workflows/patchery.yml</span>
+      <div class="code">
+        <div class="code__bar">
+          <span>.github/workflows/patchery.yml</span>
           <button class="copy" id="copyBtn" type="button">copy</button>
         </div>
-        <pre class="term term--yaml"><code><i class="y-k">name</i>: Patchery
+<pre><code><i class="y-k">name</i>: Patchery
 
 <i class="y-k">on</i>:
   <i class="y-k">workflow_dispatch</i>:
@@ -810,7 +294,7 @@ checked, and untouched:
       - <i class="y-k">run</i>: npm ci
         <i class="y-k">working-directory</i>: <i class="y-e">${{ inputs.target-dir }}</i>
 
-      - <i class="y-k">id</i>: sma
+      - <i class="y-k">id</i>: patchery
         <i class="y-k">uses</i>: <i class="y-a">patchery-dev/Patchery@v0</i>
         <i class="y-k">with</i>:
           <i class="y-k">package</i>:              <i class="y-e">${{ inputs.package }}</i>
@@ -818,123 +302,60 @@ checked, and untouched:
           <i class="y-k">test-command</i>:         <i class="y-e">${{ inputs.test-command }}</i>
           <i class="y-k">anthropic-auth-token</i>: <i class="y-e">${{ secrets.ANTHROPIC_AUTH_TOKEN }}</i>
 
-      - <i class="y-k">if</i>: <i class="y-e">steps.sma.outputs.changed == 'true'</i>
+      - <i class="y-k">if</i>: <i class="y-e">steps.patchery.outputs.changed == 'true'</i>
         <i class="y-k">uses</i>: peter-evans/create-pull-request@v7
         <i class="y-k">with</i>:
           <i class="y-k">branch</i>:    patchery/<i class="y-e">${{ inputs.package }}</i>
-          <i class="y-k">body-path</i>: <i class="y-e">${{ steps.sma.outputs.pr-body-file }}</i>
-          <i class="y-k">add-paths</i>: <i class="y-e">${{ steps.sma.outputs.files }}</i></code></pre>
+          <i class="y-k">body-path</i>: <i class="y-e">${{ steps.patchery.outputs.pr-body-file }}</i>
+          <i class="y-k">add-paths</i>: <i class="y-e">${{ steps.patchery.outputs.files }}</i></code></pre>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ═══════════════════  08 · STATUS  ═══════════════════ -->
-<section class="status" id="status" data-folio="08" data-folio-name="Where it stands">
+
+<!-- ─────────────────────────────  status  ────────────────────────── -->
+<section id="status" class="pad">
   <div class="shell">
-    <div class="sechead">
-      <span class="sechead__idx">08</span>
-      <span class="sechead__rule"></span>
-      <span class="sechead__label">Where this actually is</span>
+    <div class="head">
+      <span class="k">Where it stands</span>
+      <h2 class="display display--sec">Early, and specific about it.</h2>
     </div>
 
-    <h2 class="status__h">We&rsquo;d rather you audit us<br>than trust us.</h2>
-
-    <div class="status__cols">
-      <div class="status__col">
-        <h3><i class="mark mark--yes"></i>True today</h3>
-        <ul class="ledger ledger--yes">
-          <li>Anyone can install it right now, and read every line of it. MIT licensed.</li>
-          <li>One pull request opened start to finish with no human in the loop.</li>
-          <li>The off-limits check is tested on every change, offline, with no AI.</li>
-          <li>Keys and passwords are stripped out before anything is written down.</li>
-          <li>Works on JavaScript projects. You decide what counts as a passing test.</li>
-          <li>Four runs on projects we don&rsquo;t own produced nothing — and nothing wrong. It has never invented a fix.</li>
-          <li>A second agent reviews every fix before it ships. It cannot write, and it does not see the first one&rsquo;s reasoning.</li>
+    <div class="status__grid">
+      <div>
+        <h3>True today</h3>
+        <ul class="ticks ticks--yes">
+          <li>It fixes JavaScript and TypeScript projects with a test command.</li>
+          <li>It has opened a real pull request, with the evidence attached.</li>
+          <li>A second agent reviews every patch without write access.</li>
+          <li>The code is open, and the checks are in the repository, not in a brochure.</li>
         </ul>
       </div>
-      <div class="status__col">
-        <h3><i class="mark mark--no"></i>Not yet</h3>
-        <ul class="ledger ledger--no">
-          <li>Nothing hosted. It runs on your machines, not ours.</li>
-          <li>No revenue, no users, no logo wall. Nobody is paying for this.</li>
-          <li>No open-source pull request accepted yet — the two below are waiting.</li>
-          <li>One library at a time. It won&rsquo;t untangle a chain of breakages.</li>
-          <li>Other languages are plausible, but nobody has proven it.</li>
-          <li>The off-limits check still reads file names, not changes. The second agent reads the change, but that is judgement, not a rule.</li>
-          <li>The cheap model it runs on today sends malformed requests that its provider happens to accept. It works; it is not solid ground.</li>
+      <div>
+        <h3>Not yet</h3>
+        <ul class="ticks">
+          <li>No scheduled runs — you dispatch it by hand.</li>
+          <li>One ecosystem. Other languages are unproven, not supported.</li>
+          <li>No benchmark ratio to quote until the current run finishes.</li>
+          <li>No users to point at. There is nothing to sign up for.</li>
         </ul>
       </div>
     </div>
-
-    <div class="audit" id="audit">
-      <div class="audit__head">
-        <div>
-          <span class="spec__k">Live, in your browser, right now</span>
-          <h3>So here is the page checking itself.</h3>
-          <p>
-            Everything below is written as something that can <em>fail</em>. They run against
-            the real files and the real GitHub API, not against a recording. If one of them
-            ever turns red on this page, the page is wrong — and it will be the first to say so.
-          </p>
-        </div>
-        <button class="audit__run" id="auditRun" type="button">run</button>
-      </div>
-
-      <div class="audit__panel">
-        <div class="scr__bar">
-          <span class="scr__tag">patchery</span>
-          <span class="scr__path">audit --self</span>
-        </div>
-        <ul class="audit__list" id="auditList"></ul>
-        <div class="audit__sum" id="auditSummary"></div>
-      </div>
-    </div>
-
-    <p class="status__foot">
-      Every number in <a class="ilink" href="#run">the run</a> and <a class="ilink" href="#proof">the
-      proof</a> comes from something you can open and read. The numbers in
-      <a class="ilink" href="#stopped">what stopped it</a> do not — those runs happened on a
-      laptop and left no public record, which is exactly why they are written out here in full
-      rather than summarised. And one thing worth saying plainly: the AI reads your code. Check what your model provider does
-      with it before you point this at anything private.
-      <a class="ilink" href="https://github.com/patchery-dev/Patchery#where-this-actually-is">The full list of limits →</a>
-    </p>
   </div>
 </section>
 
-</main>
 
-<!-- ═══════════════════  09 · FOOTER  ═══════════════════ -->
-<footer class="foot" data-folio="09" data-folio-name="Patchery">
-  <div class="marquee" aria-hidden="true"><div class="marquee__row" id="marquee"></div></div>
-
-  <div class="shell foot__inner">
-    <div class="foot__brand">
-      <img src="assets/logo.png" width="36" height="36" alt="">
-      <div>
-        <b>Patchery</b>
-        <span>When a dependency breaks your code, Patchery fixes it and proves the fix.</span>
-      </div>
-    </div>
-
-    <nav class="foot__links" aria-label="Footer">
-      <a href="https://github.com/patchery-dev/Patchery">Repository</a>
-      <a href="https://github.com/patchery-dev/Patchery/pull/2">The pull request</a>
-      <a href="https://github.com/patchery-dev/Patchery/blob/main/scripts/guard.mjs">The off-limits check</a>
-      <a href="https://github.com/patchery-dev/Patchery/blob/main/LICENSE">MIT License</a>
-    </nav>
-
-    <p class="foot__fine">
-      Patchery is early, and all of it is public — read it before you trust it.<br>
-      No analytics, no cookies, nothing tracked on this page.
-    </p>
+<footer class="foot">
+  <div class="shell foot__in">
+    <a href="https://github.com/patchery-dev/Patchery">Repository</a>
+    <a href="https://github.com/patchery-dev/Patchery/pull/2">Pull request #2</a>
+    <a href="https://github.com/patchery-dev/Patchery#setup">Setup</a>
+    <a href="https://github.com/patchery-dev/Patchery/blob/main/LICENSE">MIT licence</a>
+    <span class="foot__c">Patchery · <span id="yr">2026</span> · no tracking on this page</span>
   </div>
 </footer>
 
-<div class="grain" aria-hidden="true"></div>
-
-<script src="assets/site.js?v=3"></script>
-<script src="assets/audit.js?v=3"></script>
+<script src="assets/site.js?v=4"></script>
 </body>
 </html>
