@@ -29,7 +29,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/site.css?v=5">
+<link rel="stylesheet" href="assets/site.css?v=6">
 </head>
 
 <body id="top">
@@ -79,7 +79,7 @@
   <div class="shell">
     <div class="head">
       <span class="k">How it works</span>
-      <h2 class="display display--sec">Three steps, and the third one is the product.</h2>
+      <h2 class="display display--sec">Four steps, and the last two are the product.</h2>
     </div>
 
     <ol class="steps">
@@ -106,6 +106,16 @@
           The patch ships with its evidence: the failing run before, the passing run after, the
           files it touched, and a read-only second agent's review — attached whether it agrees or
           not. If your tests do not pass, nothing is delivered.
+        </p>
+      </li>
+      <li class="step">
+        <b>04</b>
+        <h3>Hand over</h3>
+        <p>
+          Some breaks have no fix at the call site. A dependency that starts shipping as an ES
+          module renames nothing — your code is fine and can no longer load it. Patchery reports
+          which call sites are affected, why the obvious fix does not apply, and which decision
+          would unblock it. That report is the deliverable.
         </p>
       </li>
     </ol>
