@@ -79,6 +79,11 @@ jobs:
           body-path: ${{ steps.sma.outputs.pr-body-file }}
           add-paths: ${{ steps.sma.outputs.files }}
           commit-message: "fix(deps): migrate ${{ inputs.package }} call sites"
+          # A fix nothing could prove should not look like one that was proved.
+          # This is 'true' when the suite passed before the change as well, so
+          # passing after it shows no regression rather than a working fix -
+          # nothing ever ran the thing that changed.
+          draft: ${{ steps.sma.outputs.draft }}
           # The last label is the independent review's verdict: patchery:reviewed,
           # patchery:needs-attention, patchery:refuted or patchery:unreviewed. By
           # default a refuted fix still opens a PR - this is what makes that visible

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>When a dependency breaks your code, Patchery fixes it — and proves the fix before you see it.</strong>
+  <strong>When a dependency breaks your code, Patchery fixes it — and proves the fix, or says plainly that it could not.</strong>
 </p>
 
 ---
@@ -52,6 +52,15 @@ whether it agrees or not — and with `verify-mode: block` it stops the pull
 request from opening at all.
 
 The first three are gates: fail any of them and the attempt is discarded whole.
+
+**And proof has levels, so the pull request says which one it reached.** The
+strongest is a suite that was red and is now green. But when the break never
+turned your suite red — a proactive migration, or a change your tests do not
+exercise — a green run shows no regression; it does not show the fix works,
+because nothing ever ran the thing that changed. Patchery does not quietly
+count that as proof: the pull request is headed *Not verified* and says why, and
+the `draft` output opens it as a draft — the example workflow wires that up. The
+level is decided by the same code that runs the gates, never by a model.
 
 ## When it cannot patch it, it hands you the analysis
 

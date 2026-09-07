@@ -253,6 +253,23 @@ outputs:
   tests-passed:
     description: "Whether the tests passed after the fix."
     value: ${{ steps.run.outputs.tests_passed }}
+  proof-rung:
+    description: >-
+      Which rung of proof this run reached: '1' the suite was red and is now
+      green, '2' one of your own mechanical checks was red and is now green,
+      '3' a patch exists but nothing proved it, '4' analysis only, no patch.
+    value: ${{ steps.run.outputs.proof_rung }}
+  proof-verified:
+    description: >-
+      'true' only for rungs 1 and 2 - the rungs where something mechanical
+      actually demonstrated the fix. Never set by a model.
+    value: ${{ steps.run.outputs.proof_verified }}
+  draft:
+    description: >-
+      'true' when the fix could not be proved and the pull request should open
+      as a draft. Feed it straight into `draft:` on create-pull-request; a
+      change nobody proved should not look like one that was.
+    value: ${{ steps.run.outputs.draft }}
   files:
     description: "Changed files, one per line - ready to feed into add-paths."
     value: ${{ steps.run.outputs.files }}

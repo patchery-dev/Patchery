@@ -77,6 +77,9 @@ jobs:
           # Commit only what the agent actually changed, so install leftovers
           # (node_modules and friends) can never leak into the PR.
           add-paths: ${{ steps.sma.outputs.files }}
+          # Our own demo holds itself to the same rule it documents: an unproved
+          # fix opens as a draft.
+          draft: ${{ steps.sma.outputs.draft }}
           commit-message: |
             fix(deps): migrate ${{ inputs.package }} call sites
 
