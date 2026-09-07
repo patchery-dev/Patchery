@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Patchery — when a dependency breaks your code</title>
-<meta name="description" content="When a dependency breaks your code, Patchery fixes it and proves the fix. A GitHub Action that runs in your own CI and refuses to open a pull request it cannot prove.">
+<title>Patchery — the layer above Dependabot</title>
+<meta name="description" content="Dependabot tells you a dependency changed. Patchery works out what that means for your code, and will not claim a fix it cannot prove. A GitHub Action that runs in your own CI.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0e14">
 
@@ -14,17 +14,17 @@
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="Patchery">
-<meta property="og:description" content="When a dependency breaks your code, Patchery fixes it and proves the fix.">
+<meta property="og:description" content="Dependabot tells you a dependency changed. Patchery works out what that means for your code.">
 <meta property="og:url" content="https://patchery.dev/">
 <link rel="canonical" href="https://patchery.dev/">
 <meta property="og:image" content="https://patchery.dev/assets/og.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
-<meta property="og:image:alt" content="Patchery — when a dependency breaks your code, Patchery fixes it and proves the fix.">
+<meta property="og:image:alt" content="Patchery — the layer above Dependabot: it works out what a dependency change means for your code.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://patchery.dev/assets/og.png">
 <meta name="twitter:title" content="Patchery">
-<meta name="twitter:description" content="When a dependency breaks your code, Patchery fixes it and proves the fix.">
+<meta name="twitter:description" content="Dependabot tells you a dependency changed. Patchery works out what that means for your code.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -58,13 +58,18 @@
   <div class="shell">
     <span class="hero__tag"><i aria-hidden="true"></i>GitHub Action · source available · runs in your CI</span>
     <h1 class="display display--hero">
-      When a dependency breaks your code, Patchery fixes it
-      and <em>proves</em> the fix.
+      Dependabot tells you a dependency changed.
+      Patchery works out what that <em>means</em> for your code.
     </h1>
     <p class="lede">
-      A major version lands, your test suite goes red, and someone loses an afternoon to it.
-      Patchery reproduces the break, works the fix, and re-runs your tests — then opens a pull
-      request that carries the evidence and says how far it goes.
+      Dependabot and Renovate do one job well: notice the new version, open the bump. By design
+      they never read your code — so when that bump turns the suite red, the pull request just
+      sits there. Patchery starts exactly there. It reproduces the break, works the fix, re-runs
+      your tests, and then grades its own evidence — publishing how far the proof actually goes,
+      and refusing to ship a change it could not prove.
+    </p>
+    <p class="small" style="margin-top:14px">
+      Keep Dependabot. This is the layer above it.
     </p>
     <div class="hero__acts">
       <a class="btn btn--go" href="#install">Install it<i aria-hidden="true">→</i></a>
@@ -250,17 +255,27 @@
 
       <div>
         <span class="k">The benchmark</span>
-        <h3>Real breakages, in well-known repositories.</h3>
+        <h3>14 real breaks, 9 repositories, none of them ours.</h3>
         <p>
-          Candidate upgrades are pulled from public projects, each one confirmed to actually turn the
-          test suite red before Patchery is allowed near it. The verified cases are running now.
+          Candidate upgrades are pulled from public projects, and each one is confirmed to actually
+          turn that project's own suite red before Patchery is allowed near it. That list is in the
+          repository, not in a slide.
         </p>
         <p class="small">
-          The results table goes here when the run finishes — every case, including the ones it could
-          not fix and what stopped it. Until then there is no number on this page, because there is
-          no number yet.
+          <b>Still no success ratio here, deliberately.</b> The first batch ran while the rules for
+          what counts as a failure of the <i>product</i> versus a failure of <i>our harness</i> were
+          still being fixed — and a number produced under rules that changed mid-run is not a
+          measurement. The full table goes here when a set has run under one set of rules: every
+          case, including the ones it could not fix and what stopped it.
         </p>
-        <span class="pending"><i aria-hidden="true"></i>benchmark in progress</span>
+        <p class="small">
+          What is already measured is the shape of the problem: <b>11 of the 14 are packaging
+          breaks, only 3 are changed signatures.</b> "Did the suite break" is a trigger that selects
+          for packaging — <code>express</code> v4&nbsp;→&nbsp;v5 is one of the best-known breaking
+          changes in the ecosystem, and across five repositories that depend on it, not one suite
+          noticed.
+        </p>
+        <span class="pending"><i aria-hidden="true"></i>ratio pending a clean full run</span>
       </div>
     </div>
   </div>
@@ -350,18 +365,20 @@
       <div>
         <h3>True today</h3>
         <ul class="ticks ticks--yes">
-          <li>It fixes JavaScript and TypeScript projects with a test command.</li>
+          <li>It works on JavaScript projects with a test command.</li>
           <li>It has opened a real pull request, with the evidence attached.</li>
           <li>A second agent reviews every patch without write access.</li>
+          <li>14 real breaks in 9 repositories we do not own are confirmed and queued.</li>
           <li>Every check is in the repository and readable, not described in a brochure.</li>
         </ul>
       </div>
       <div>
         <h3>Not yet</h3>
         <ul class="ticks">
-          <li>No scheduled runs — you dispatch it by hand.</li>
+          <li>No scheduled runs — you dispatch it by hand, so today it only reacts to a red build.</li>
           <li>One ecosystem. Other languages are unproven, not supported.</li>
-          <li>No benchmark ratio to quote until the current run finishes.</li>
+          <li>No success ratio to quote until a full set runs under one set of rules.</li>
+          <li>Most of what it has met is packaging; changed signatures are the thinner half of the evidence.</li>
           <li>No users to point at. There is nothing to sign up for.</li>
         </ul>
       </div>
