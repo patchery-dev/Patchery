@@ -308,27 +308,54 @@ jobs:
           "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/final.log > /tmp/census-after.json
           cat /tmp/census-after.json
 
+      # Every value arrives through the environment, never through ${{ }} inside
+      # the shell. One of these - the action summary - is written by a language
+      # model, and pasted into a command line it is code. It cost two legs of a
+      # benchmark before it was noticed:
+      #
+      #   syntax error near unexpected token `('
+      #
+      # A summary containing an apostrophe ("the agent didn't change any files
+      # (22 turns)") closed the quote, and the rest of the sentence became shell.
+      # That is the harmless version. The same hole runs whatever a summary says,
+      # on a runner holding the repository's token.
       - name: Outcome
         if: always()
         run: |
-          "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/benchmark-outcome.mjs" \
+          "$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/benchmark-outcome.mjs" \
             --before /tmp/census-before.json \
             --after /tmp/census-after.json \
-            --baseline-exit '${{ steps.baseline.outputs.exit }}' \
-            --broken-exit '${{ steps.broken.outputs.exit }}' \
-            --final-exit '${{ steps.recount.outputs.exit }}' \
-            --action-outcome '${{ steps.patchery.outputs.outcome }}' \
-            --step-outcome '${{ steps.patchery.outcome }}' \
-            --action-summary '${{ steps.patchery.outputs.summary }}' \
-            --changed '${{ steps.patchery.outputs.changed }}' \
-            --review '${{ steps.patchery.outputs.review-status }}' \
-            --files '${{ steps.patchery.outputs.files }}' \
-            --repo '${{ inputs.repo }}' \
-            --package '${{ inputs.package }}' \
-            --version '${{ inputs.breaking-version }}' \
-            --installed '${{ steps.bump.outputs.installed }}' \
-            --model '${{ inputs.model }}' \
+            --baseline-exit "$BASELINE_EXIT" \
+            --broken-exit "$BROKEN_EXIT" \
+            --final-exit "$FINAL_EXIT" \
+            --action-outcome "$ACTION_OUTCOME" \
+            --step-outcome "$STEP_OUTCOME" \
+            --action-summary "$ACTION_SUMMARY" \
+            --changed "$CHANGED" \
+            --review "$REVIEW" \
+            --files "$FILES" \
+            --repo "$IN_REPO" \
+            --package "$IN_PACKAGE" \
+            --version "$IN_VERSION" \
+            --installed "$INSTALLED" \
+            --model "$IN_MODEL" \
             --out /tmp/benchmark.json | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          OURS_NODE: ${{ steps.ours.outputs.node }}
+          BASELINE_EXIT: ${{ steps.baseline.outputs.exit }}
+          BROKEN_EXIT: ${{ steps.broken.outputs.exit }}
+          FINAL_EXIT: ${{ steps.recount.outputs.exit }}
+          ACTION_OUTCOME: ${{ steps.patchery.outputs.outcome }}
+          STEP_OUTCOME: ${{ steps.patchery.outcome }}
+          ACTION_SUMMARY: ${{ steps.patchery.outputs.summary }}
+          CHANGED: ${{ steps.patchery.outputs.changed }}
+          REVIEW: ${{ steps.patchery.outputs.review-status }}
+          FILES: ${{ steps.patchery.outputs.files }}
+          IN_REPO: ${{ inputs.repo }}
+          IN_PACKAGE: ${{ inputs.package }}
+          IN_VERSION: ${{ inputs.breaking-version }}
+          INSTALLED: ${{ steps.bump.outputs.installed }}
+          IN_MODEL: ${{ inputs.model }}
 
       - name: Keep everything this run produced
         if: always()
