@@ -346,7 +346,7 @@ jobs:
       # The full logs, so a verdict can be argued with rather than trusted.
       - name: Keep the result and the logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: case-${{ steps.slug.outputs.slug }}
           path: |

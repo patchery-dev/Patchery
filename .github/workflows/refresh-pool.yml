@@ -48,7 +48,7 @@ jobs:
         run: node scripts/pool-summary.mjs /tmp/candidates.json benchmark/candidates.json
 
       - name: Keep the pool even if it is not committed
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: candidates
           path: /tmp/candidates.json

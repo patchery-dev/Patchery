@@ -264,12 +264,19 @@ function fail(message) {
  * The name matters beyond this repository: benchmark-outcome.mjs reads it and
  * files anything matching refuse/reject/block as REFUSED, which is the column
  * this belongs in.
+ *
+ * Exits 0, for the same reason stop() does: this is an intended outcome, not an
+ * error. Routed through fail() it exited 1, and a run where the guard did its
+ * job painted a red cross in the run list beside runs where the tool actually
+ * broke. Nothing downstream reads the exit code - the pull request step is gated
+ * on `changed` - so the only thing the 1 communicated was alarm, at the moment
+ * the product was working.
  */
 function refuse(message) {
   console.error("\n[BLOCKED] " + clean(message));
   writeOutputs({ outcome: "blocked-by-guard", changed: "false", tests_passed: "false", summary: message });
   writeStepSummary("### Patchery\n\nBlocked by the guard: " + message);
-  process.exit(1);
+  process.exit(0);
 }
 
 /**
