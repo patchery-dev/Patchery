@@ -954,7 +954,46 @@ if (changed.length === 0) {
   // concluded in its own words, and which choice is theirs to make. Pointing at
   // a file for the important half wastes the run.
   const readCount = s.keys.filter((k) => k.startsWith("read:")).length;
-  const handover = ["### Patchery found no change it could make", ""];
+  // A run that ends without a patch is not the same as a run that ends with
+  // nothing, and this block used to say both in the same words.
+  //
+  // In benchmark #9 the body-parser case produced the best output this project
+  // has ever seen from an agent: it classified the break, found the single call
+  // site and the two lines that use it, noticed that a sibling package escaped
+  // the same break only because it resolved to its own nested CommonJS copy,
+  // reproduced it on the exact Node version, and named the two decisions that
+  // unblock it. The banner over all of that read "Patchery found no change it
+  // could make ... Nothing was delivered because nothing could be proved."
+  //
+  // That is the deliverable the README, the site and action.yml all promise,
+  // described as an absence. Worse, it is ambiguous in the direction that costs
+  // most: a reader cannot tell whether the tool found nothing or was not able to
+  // do it - and "not able to do it" is the reading people default to.
+  //
+  // So the two cases are separated. The test is what actually came out of the
+  // run - a break class from classifyFailure, which is a regex over the test
+  // output rather than the model's opinion, plus notes the agent actually wrote.
+  // Neither is something a stuck agent can award itself.
+  // And it leads with what was FOUND, never with what was not produced. The
+  // first draft of this said "an analysis, not a patch", which is accurate and
+  // still weak: opening on a negation invites the reader to supply the missing
+  // half themselves, and the half people supply is "it could not do it".
+  //
+  // Nothing here is softened to achieve that. Where classifyFailure's regex has
+  // established that no code change can fix the break, saying so plainly is both
+  // stronger and more true than reporting it as our shortfall - the tool that
+  // "fixes" an EBADENGINE is either lying or breaking the project's own users.
+  // Where that is not established, the header claims only the work that was
+  // actually done: the break was traced.
+  const isVerdict = Boolean(classification.kind) && Boolean(notes);
+  const handover = [
+    !isVerdict
+      ? "### Patchery found no change it could make"
+      : classification.inScope === false
+      ? "### Patchery found the cause - and no code change fixes this one"
+      : "### Patchery traced the break to its call sites",
+    "",
+  ];
   if (classification.kind) {
     handover.push("**What broke.** " + classification.what + ".");
     if (classification.evidence) handover.push("", "```", classification.evidence, "```");
@@ -970,9 +1009,23 @@ if (changed.length === 0) {
     handover.push("**What the agent concluded.**", "", notes.slice(0, 1500), "");
   }
   if (classification.next) handover.push("**What would unblock it.** " + classification.next, "");
+  // The closing line is where the old wording did the most damage, because it is
+  // the last thing read: "Nothing was delivered because nothing could be proved"
+  // sat under a page of delivered analysis.
+  //
+  // The replacement still refuses to overclaim. A fix is machine-checked - the
+  // suite went red to green and the census held - and an analysis is not checked
+  // at all, so it is handed over as a diagnosis to be read, not a result to be
+  // trusted. That limit is stated because it is real, and stating it is what
+  // makes the rest of the report worth believing.
   handover.push(
-    "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) and changed none. " +
-      "Nothing was delivered because nothing could be proved."
+    isVerdict
+      ? "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) and shipped no patch, " +
+        "because on this break a patch would be the wrong deliverable - it would encode a decision " +
+        "that is yours, in a place you would not look for it. The analysis above is the deliverable. " +
+        "Unlike a fix, none of it has been machine-checked: read it as a diagnosis and check its claims."
+      : "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) and changed none. " +
+        "Nothing was delivered because nothing could be proved."
   );
   const message = handover.join("\n");
   log("\n" + message);
