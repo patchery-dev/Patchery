@@ -239,9 +239,9 @@ function writeStepSummary(md) {
   if (file) fs.appendFileSync(file, clean(md) + "\n");
 }
 
-function fail(message) {
+function fail(message, outcome = "failed") {
   console.error("\n[ERROR] " + clean(message));
-  writeOutputs({ outcome: "failed", changed: "false", tests_passed: "false", summary: message });
+  writeOutputs({ outcome, changed: "false", tests_passed: "false", summary: message });
   writeStepSummary("### Patchery\n\nFailed: " + message);
   process.exit(1);
 }
@@ -791,11 +791,21 @@ if (result.subtype === "error_max_turns") {
   );
 }
 
+// The SDK stopped before the agent reached a conclusion. Its own outcome,
+// because it is our harness failing rather than the agent having nothing.
+//
+// On mozilla/treeherder this was MaxFileReadTokenExceededError: a source file of
+// 38,424 tokens against a 25,000 limit, three times over. The agent never got to
+// think about the break. Filed as a plain failure it became NO-CHANGE in the
+// benchmark - "Patchery had nothing to offer" - about a run that was never
+// allowed to start. Running out of turns is handled above and is a different
+// thing: that is a budget WE set, and it stays in the denominator.
 if (result.subtype !== "success") {
   fail(
     "The agent did not finish successfully: " +
       result.subtype +
-      (result.errors ? " - " + result.errors.join("; ") : "")
+      (result.errors ? " - " + result.errors.join("; ") : ""),
+    "harness-error"
   );
 }
 

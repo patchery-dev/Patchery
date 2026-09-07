@@ -144,6 +144,18 @@ export function benchmarkOutcome({
   //
   // So the test is emptiness across every field the action sets, not the value
   // of any one of them.
+  // The SDK stopped before the agent reached a conclusion. On treeherder that
+  // was a source file of 38,424 tokens against a 25,000 limit - the agent never
+  // read the code, let alone failed to fix it. Ours, so it is out of the
+  // denominator; EXHAUSTED is the other shape and stays in, because the turn
+  // budget is a number we chose and the run did happen.
+  if (/harness-error/i.test(actionOutcome)) {
+    return {
+      outcome: "BLOCKED",
+      detail: "the agent runtime stopped before a conclusion - a limit of our harness, not a verdict on the fix",
+    };
+  }
+
   const killed = /cancel|skip/i.test(stepOutcome);
   const silent = !actionOutcome && !review && !actionSummary && changed === "";
   if (killed || silent) {

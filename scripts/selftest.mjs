@@ -2646,6 +2646,28 @@ check("the outcome the agent emits for a guard block is one REFUSED matches", ()
   );
 });
 
+// treeherder: a source file of 38,424 tokens against the SDK's 25,000 limit. The
+// agent never read the code, and the row said Patchery had nothing to offer.
+check("the agent runtime stopping is BLOCKED, not NO-CHANGE", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
+    actionOutcome: "harness-error",
+    actionSummary: "MaxFileReadTokenExceededError: File content (38424 tokens) exceeds maximum allowed tokens (25000)",
+  });
+  assert.strictEqual(r.outcome, "BLOCKED");
+  assert.match(r.detail, /our harness/);
+});
+
+// The two look alike and belong in different columns: one is a limit of the
+// harness, the other is a budget we chose, on a run that really happened.
+check("running out of turns is not a harness error", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
+    actionOutcome: "inconclusive - max turns reached",
+  });
+  assert.strictEqual(r.outcome, "EXHAUSTED");
+});
+
 check("a genuine crash is still not a refusal", () => {
   const r = benchmarkOutcome({
     baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
