@@ -15,7 +15,15 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { census, censusHeld } from "./test-census.mjs";
 import { findInstalled } from "./installed-version.mjs";
-import { decideNodeVersion, lowestMajor, fromNvmrc, ciNodeVersions, FALLBACK } from "./node-version.mjs";
+import {
+  decideNodeVersion,
+  lowestMajor,
+  fromNvmrc,
+  ciNodeVersions,
+  usableCiMajor,
+  OLDEST_USABLE,
+  FALLBACK,
+} from "./node-version.mjs";
 import { classifyFailure, briefing } from "./classify-break.mjs";
 import { testScriptUsable } from "./find-bumps.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
@@ -2913,6 +2921,46 @@ check("a missing output path fails loudly instead of writing somewhere else", ()
 // The point of these checks is the one case the product gets wrong today: a
 // suite that was green before and green after proves no regression, not a fix.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// The floor under "the lowest version CI runs".
+//
+// Found in a real batch: expressjs/cors tests every major from 0.10 to 25, so
+// the lowest was Node 1, setup-node could not install it, and three candidates
+// died before measuring anything - two of them express v4 -> v5.
+// ---------------------------------------------------------------------------
+
+console.log("\nnode-version.usableCiMajor");
+
+check("a long compatibility matrix does not drag us down to Node 1", () => {
+  const cors = [1, 2, 3, 4, 5, 10, 14, 16, 17, 18, 19, 20, 22, 24, 25];
+  assert.strictEqual(usableCiMajor(cors), 18);
+});
+
+check("the lowest modern version still wins - a break matters most on the oldest", () => {
+  assert.strictEqual(usableCiMajor([22, 20, 18]), 18);
+  assert.strictEqual(usableCiMajor([24, 22]), 22);
+});
+
+// Not FALLBACK: running an old project on a newer Node can heal the very break
+// being measured, which is how a real ESM failure once vanished mid-run.
+check("a genuinely old project gets its own highest, not our fallback", () => {
+  assert.strictEqual(usableCiMajor([14, 16]), 16);
+  assert.strictEqual(usableCiMajor([8, 10, 12]), 12);
+  assert.notStrictEqual(String(usableCiMajor([14, 16])), FALLBACK);
+});
+
+check("zeros and junk never become a version", () => {
+  assert.strictEqual(usableCiMajor([0, 0, 20]), 20);
+  assert.strictEqual(usableCiMajor([0]), null);
+  assert.strictEqual(usableCiMajor([]), null);
+  assert.strictEqual(usableCiMajor(null), null);
+  assert.strictEqual(usableCiMajor([NaN, 18]), 18);
+});
+
+check("the floor is a real Node version, not an arbitrary number", () => {
+  assert.ok(OLDEST_USABLE >= 14 && OLDEST_USABLE <= 22, "floor is " + OLDEST_USABLE);
+});
 
 console.log("\nguard.proofLevel");
 

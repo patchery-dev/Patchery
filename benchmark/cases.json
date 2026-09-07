@@ -1,5 +1,44 @@
 [
   {
+    "repo": "bcoe/yargs",
+    "commit": "fb9c05598a9bda583333c28c4ae85ab66e6bcb01",
+    "package": "which",
+    "breaking-version": "7",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 11511,
+    "_bump": "which v2 -> v7",
+    "_class": "api",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
+  },
+  {
+    "repo": "expressjs/body-parser",
+    "commit": "555d4b866b49ce23c235384fb15fd327cacce26f",
+    "package": "content-type",
+    "breaking-version": "3",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 5500,
+    "_bump": "content-type v2 -> v3",
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
+  },
+  {
+    "repo": "expressjs/body-parser",
+    "commit": "555d4b866b49ce23c235384fb15fd327cacce26f",
+    "package": "raw-body",
+    "breaking-version": "4",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 5500,
+    "_bump": "raw-body v3 -> v4",
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
+  },
+  {
     "repo": "expressjs/express",
     "commit": "023767fe9872e029271df1418f73401bff20ff40",
     "package": "content-disposition",
@@ -7,10 +46,10 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 69452,
+    "_stars": 69453,
     "_bump": "content-disposition v2 -> v3",
-    "_note": "",
-    "_runtime": true
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
   },
   {
     "repo": "expressjs/express",
@@ -20,23 +59,49 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 69452,
+    "_stars": 69453,
     "_bump": "content-type v2 -> v3",
-    "_note": "",
-    "_runtime": true
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
   },
   {
-    "repo": "node-fetch/node-fetch",
-    "commit": "8b3320d2a7c07bce4afc6b2bf6c3bbddda85b01f",
-    "package": "data-uri-to-buffer",
-    "breaking-version": "8",
+    "repo": "expressjs/multer",
+    "commit": "a53296bbd6d57349bcf56da3b2de5111e1c87c54",
+    "package": "append-field",
+    "breaking-version": "2",
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 8857,
-    "_bump": "data-uri-to-buffer v4 -> v8",
-    "_note": "",
-    "_runtime": true
+    "_stars": 12083,
+    "_bump": "append-field v1 -> v2",
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
+  },
+  {
+    "repo": "jquense/yup",
+    "commit": "ff31eee8a2b10c938bb3a22544d9e33957a8cf01",
+    "package": "type-fest",
+    "breaking-version": "5",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 23669,
+    "_bump": "type-fest v2 -> v5",
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
+  },
+  {
+    "repo": "mozilla/treeherder",
+    "commit": "e5bc18f7919fdc75b162e09a221f03d180b9714f",
+    "package": "@fortawesome/fontawesome-svg-core",
+    "breaking-version": "7",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 275,
+    "_bump": "@fortawesome/fontawesome-svg-core v6 -> v7",
+    "_class": "api",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
   },
   {
     "repo": "node-fetch/node-fetch",
@@ -48,8 +113,8 @@
     "node-version": "auto",
     "_stars": 8857,
     "_bump": "fetch-blob v3 -> v4",
-    "_note": "",
-    "_runtime": true
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
   },
   {
     "repo": "node-fetch/node-fetch",
@@ -61,8 +126,21 @@
     "node-version": "auto",
     "_stars": 8857,
     "_bump": "formdata-node v4 -> v6",
-    "_note": "",
-    "_runtime": false
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
+  },
+  {
+    "repo": "nodemailer/nodemailer",
+    "commit": "c5dba6e2c6e3705d046a26663fef0e4bda13c0fa",
+    "package": "proxy",
+    "breaking-version": "4",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 17667,
+    "_bump": "proxy v1 -> v4",
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
   },
   {
     "repo": "winstonjs/winston",
@@ -74,8 +152,8 @@
     "node-version": "auto",
     "_stars": 24519,
     "_bump": "is-stream v2 -> v4",
-    "_note": "",
-    "_runtime": true
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
   },
   {
     "repo": "winstonjs/winston",
@@ -87,8 +165,8 @@
     "node-version": "auto",
     "_stars": 24519,
     "_bump": "readable-stream v3 -> v4",
-    "_note": "",
-    "_runtime": true
+    "_class": "api",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
   },
   {
     "repo": "winstonjs/winston",
@@ -100,46 +178,7 @@
     "node-version": "auto",
     "_stars": 24519,
     "_bump": "through2 v4 -> v5",
-    "_note": "",
-    "_runtime": false
-  },
-  {
-    "repo": "bcoe/yargs",
-    "commit": "fb9c05598a9bda583333c28c4ae85ab66e6bcb01",
-    "package": "which",
-    "breaking-version": "7",
-    "test-command": "npm test",
-    "target-dir": ".",
-    "node-version": "auto",
-    "_stars": 11510,
-    "_bump": "which v2 -> v7",
-    "_note": "",
-    "_runtime": false
-  },
-  {
-    "repo": "mozilla/treeherder",
-    "commit": "9e3979b7ae033a6475517b72d1d5e2b5144fdaeb",
-    "package": "query-string",
-    "breaking-version": "9",
-    "test-command": "npm test",
-    "target-dir": ".",
-    "node-version": "auto",
-    "_stars": 275,
-    "_bump": "query-string v7 -> v9",
-    "_note": "",
-    "_runtime": true
-  },
-  {
-    "repo": "mozilla/treeherder",
-    "commit": "9e3979b7ae033a6475517b72d1d5e2b5144fdaeb",
-    "package": "@fortawesome/fontawesome-svg-core",
-    "breaking-version": "7",
-    "test-command": "npm test",
-    "target-dir": ".",
-    "node-version": "auto",
-    "_stars": 275,
-    "_bump": "@fortawesome/fontawesome-svg-core v6 -> v7",
-    "_note": "",
-    "_runtime": true
+    "_class": "packaging",
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
   }
 ]

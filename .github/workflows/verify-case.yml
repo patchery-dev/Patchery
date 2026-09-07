@@ -138,8 +138,13 @@ jobs:
       - name: Decide which Node to use
         id: node
         run: |
-          LIST=$("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }} --list)
-          echo "candidates: $LIST"
+          # head -1: --list prints the versions on the first line and an
+          # explanation under it. Without this, awk reads every line and writes a
+          # multi-line value into GITHUB_OUTPUT, which is a step output that is
+          # silently not what anyone intended.
+          FULL=$("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }} --list)
+          echo "$FULL"
+          LIST=$(echo "$FULL" | head -1)
           echo "first=$(echo "$LIST" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "last=$(echo "$LIST" | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
 

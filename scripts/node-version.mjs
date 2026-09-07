@@ -48,6 +48,42 @@ import path from "node:path";
 export const FALLBACK = "20";
 
 /**
+ * The oldest Node a measurement can honestly be made on.
+ *
+ * "The lowest version CI runs" is the right instinct - a break matters most on
+ * the oldest environment the project supports - and it is wrong on the tail.
+ * expressjs/cors runs its suite on every major from 0.10 to 25, so the lowest is
+ * Node 1 (2015). setup-node cannot install it, the leg died before measuring
+ * anything, and the batch lost three candidates that way - two of them the
+ * express v4 -> v5 cases the whole pool was rebuilt to find.
+ *
+ * A matrix that long is a compatibility smoke test, not the suite the
+ * maintainers develop against. Below 18, npm and the rest of the toolchain stop
+ * working well enough that a red run says more about our runner than about the
+ * break - and a measurement about our own setup is exactly what this pipeline
+ * exists to avoid reporting as a finding.
+ */
+export const OLDEST_USABLE = 18;
+
+/**
+ * The CI major to actually measure on: the lowest at or above the floor, and if
+ * every version CI names is older than that, the highest of them.
+ *
+ * The fallback is deliberately the project's own highest rather than FALLBACK.
+ * A repository whose CI tops out at 16 is genuinely old, and running its suite
+ * on 20 instead can heal the very break being measured - which has happened:
+ * `require()` of an ES module throws on 18 and works on 22, so a real break
+ * vanished and the run reported, correctly and uselessly, that there was
+ * nothing to fix.
+ */
+export function usableCiMajor(majors) {
+  const list = (majors || []).filter((n) => Number.isFinite(n) && n > 0);
+  if (!list.length) return null;
+  const modern = list.filter((n) => n >= OLDEST_USABLE);
+  return modern.length ? Math.min(...modern) : Math.max(...list);
+}
+
+/**
  * The lowest major named in a range like ">=22.0.0", "^20 || ^22", ">=18.17 <21".
  *
  * Matches whole version strings and takes the leading number of each. Matching
@@ -141,8 +177,9 @@ export function decideNodeVersion(dir, { readFile, exists, listDir } = {}) {
         // A file we cannot read contributes nothing.
       }
     }
-    if (majors.length) {
-      return { version: String(Math.min(...majors)), source: "the versions CI runs the tests on" };
+    const pick = usableCiMajor(majors);
+    if (pick !== null) {
+      return { version: String(pick), source: "the versions CI runs the tests on" };
     }
   }
 
@@ -204,7 +241,9 @@ export function nodeVersionCandidates(dir, deps = {}) {
     }
   }
 
-  for (const major of [...new Set(majors)].sort((a, b) => a - b)) {
+  // Same floor as the first choice: a retry on Node 1 is not a second chance,
+  // it is a second way to fail before measuring anything.
+  for (const major of [...new Set(majors)].filter((n) => n >= OLDEST_USABLE).sort((a, b) => a - b)) {
     if (seen.has(String(major))) continue;
     seen.add(String(major));
     out.push({ version: String(major), source: "also run by CI" });
