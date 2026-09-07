@@ -38,6 +38,20 @@ export function poolShape(rows) {
     api: count((x) => x._apiOnly),
     packaging: count((x) => x._apiOnly === false),
     typescript: count((x) => x._ts),
+    // Candidates that live somewhere other than the repository root - i.e. the
+    // monorepo half of the ecosystem, which until now produced rows that all
+    // said "." and a note asking a human to fix it. This is the number that says
+    // whether that changed.
+    //
+    // null, not 0, for a pool generated before target-dir was resolved: nothing
+    // in it recorded the reasoning, and "we did not measure this" must not
+    // render as "we measured it and it was none". The node column and the guard
+    // count each had to learn this separately; this is the third time.
+    inWorkspace: r.some((x) => x._dir_why) ? count((x) => x["target-dir"] && x["target-dir"] !== ".") : null,
+    // And of those, how many had both signals point the same way. One signal is
+    // an answer; two agreeing is a different level of confidence, and collapsing
+    // them into one count would hide which we have.
+    bothSignals: r.some((x) => x._dir_why) ? count((x) => x._dir_agreed === true) : null,
   };
 }
 
@@ -52,13 +66,20 @@ export function renderShape(now, before) {
     ["API breaks", "api"],
     ["packaging breaks", "packaging"],
     ["TypeScript projects", "typescript"],
+    ["in a workspace, not the root", "inWorkspace"],
+    ["...both signals agreed", "bothSignals"],
   ];
   const out = ["| | new | was | change |", "|---|---|---|---|"];
   for (const [label, key] of rows) {
     const a = now[key];
     const b = before ? before[key] : null;
-    const d = b === null ? "-" : a - b > 0 ? "+" + (a - b) : String(a - b);
-    out.push("| " + label + " | " + a + " | " + (b === null ? "-" : b) + " | " + d + " |");
+    // A dimension neither pool recorded has no difference to report, and
+    // subtracting null would print it as one.
+    const d = a === null || b === null ? "-" : a - b > 0 ? "+" + (a - b) : String(a - b);
+    out.push(
+      "| " + label + " | " + (a === null ? "not recorded" : a) +
+        " | " + (b === null ? "-" : b) + " | " + d + " |"
+    );
   }
   return out.join("\n");
 }

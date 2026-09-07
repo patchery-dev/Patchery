@@ -27,7 +27,12 @@ permissions:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Was 30, and 30 is no longer enough. Reading a monorepo means fetching every
+    # workspace manifest and then asking npm about the union of what they all
+    # depend on, which is several times the work of reading one root file. A job
+    # that hits the limit uploads nothing - the artifact step never runs - so the
+    # whole crawl would be lost rather than merely truncated.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
 

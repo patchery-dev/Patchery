@@ -3808,4 +3808,33 @@ check("an inherited property is not a declaration", () => {
   assert.deepStrictEqual(workspacesDeclaring("constructor", [{ dir: ".", deps: {} }]), []);
 });
 
+check("the pool summary counts workspace candidates and signal agreement", () => {
+  const s = poolShape([
+    { repo: "a/b", "target-dir": ".", _dir_why: "single package", _dir_agreed: false },
+    { repo: "a/b", "target-dir": "packages/core", _dir_why: "declared there", _dir_agreed: true },
+    { repo: "c/d", "target-dir": "packages/cli", _dir_why: "declared there", _dir_agreed: false },
+  ]);
+  assert.strictEqual(s.inWorkspace, 2);
+  assert.strictEqual(s.bothSignals, 1, "one signal is an answer, two agreeing is not the same thing");
+});
+
+// A pool written before target-dir was resolved carries no such field, and a 0
+// there is the absence of a measurement, not a measurement of zero - the same
+// mistake the node column and the guard count each had to be taught once.
+check("an older pool reports null, not a zero that reads as a measurement", () => {
+  const s = poolShape([{ repo: "a/b" }, { repo: "c/d" }]);
+  assert.strictEqual(s.inWorkspace, null);
+  assert.strictEqual(s.bothSignals, null);
+  const text = renderShape(s, null);
+  assert.match(text, /in a workspace, not the root \| not recorded/);
+  assert.ok(!/\| 0 \| - \| -/.test(text.split("\n").find((l) => l.includes("workspace"))), "must not print 0");
+});
+
+check("a new pool compared against an old one shows no bogus difference", () => {
+  const now = poolShape([{ repo: "a/b", "target-dir": "packages/core", _dir_why: "x", _dir_agreed: true }]);
+  const text = renderShape(now, poolShape([{ repo: "a/b" }]));
+  const line = text.split("\n").find((l) => l.includes("in a workspace"));
+  assert.match(line, /\| 1 \| - \| - \|/, "1 minus 'not measured' is not +1");
+});
+
 console.log("\n" + pass + " checks passed.\n");
