@@ -303,6 +303,22 @@ const NOT_THE_PRODUCT = new Set([
   "template", "templates", "scaffold",
   "playground", "sandbox",
   "website", "docs", "doc", "documentation",
+  // The repository's own plumbing. Storybook and remix both declare a real
+  // `scripts` workspace with a real test script, and the first pool built with
+  // monorepo support duly offered `danger`, `@google-cloud/bigquery` and
+  // `@octokit/request` from them. Upgrading a release bot proves nothing about
+  // Storybook, and a FIXED there would license the sentence "we fixed a break in
+  // Storybook" - which would be false in the way that matters.
+  "scripts", "script", "ci",
+  "tools", "tool", "tooling",
+  "build", "internal",
+  // One repository's invented name, patched rather than generalised. A rule for
+  // "anything starting with test-" would catch this and also delete test-utils
+  // and test-runner, which are packages people actually install. The two errors
+  // are not symmetric: a fixture we wrongly keep shows up in the pool and gets
+  // caught by eye, while a real package we wrongly drop never appears at all.
+  // Keep the mistakes on the visible side.
+  "test-storybooks",
 ]);
 
 /**
@@ -337,11 +353,17 @@ async function workspaceManifests(full, sha) {
   } catch {
     return { manifests: [], truncated: true };
   }
-  const paths = (tree.tree || [])
+  const found = (tree.tree || [])
     .filter((n) => n.type === "blob" && n.path.endsWith("/package.json"))
-    .map((n) => n.path)
+    .map((n) => n.path);
+  const paths = found
     .filter(isProductWorkspace)
     .sort((a, b) => a.split("/").length - b.split("/").length);
+  // Counted and reported, never silently dropped. The exclusion list is a
+  // judgement call about what a repository is for, and a judgement that leaves
+  // no trace is one nobody can check - "9 workspace(s) read" beside a repo with
+  // 30 of them would read as a complete scan.
+  const excluded = found.length - paths.length;
 
   // A tree GitHub itself truncated, or one deeper than the cap, means the list
   // below is incomplete - and an incomplete manifest list makes "only one
@@ -366,7 +388,11 @@ async function workspaceManifests(full, sha) {
     }
     await sleep(80);
   }
-  return { manifests, truncated: truncated || manifests.length < Math.min(paths.length, MAX_MANIFESTS) };
+  return {
+    manifests,
+    excluded,
+    truncated: truncated || manifests.length < Math.min(paths.length, MAX_MANIFESTS),
+  };
 }
 
 async function inspectRepo(full) {
@@ -412,6 +438,7 @@ async function inspectRepo(full) {
     out.note =
       found.manifests.length
         ? "monorepo - " + found.manifests.length + " workspace(s) read" +
+          (found.excluded ? ", " + found.excluded + " skipped as not the product" : "") +
           (found.truncated ? ", list incomplete" : "")
         : "monorepo - could not read its workspaces";
   }

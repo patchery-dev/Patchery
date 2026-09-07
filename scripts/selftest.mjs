@@ -3975,6 +3975,38 @@ check("an excluded word inside a longer directory name is not a match", () => {
   assert.strictEqual(isProductWorkspace("packages/documentation-parser/package.json"), true);
 });
 
+// The second live pool: storybook offered danger, @google-cloud/bigquery and
+// ejs, and remix offered @octokit/request, all from a `scripts` workspace that
+// really does declare a test script. Those are release plumbing. A FIXED there
+// would license "we fixed a break in Storybook", which is false in the way that
+// matters, so the repository's own tooling is excluded like its demos are.
+check("the repository's own tooling is not the product", () => {
+  assert.strictEqual(isProductWorkspace("scripts/package.json"), false);
+  assert.strictEqual(isProductWorkspace("ci/package.json"), false);
+  assert.strictEqual(isProductWorkspace("tools/package.json"), false);
+  assert.strictEqual(isProductWorkspace("build/package.json"), false);
+  assert.strictEqual(isProductWorkspace("internal/package.json"), false);
+  assert.strictEqual(isProductWorkspace("packages/core/scripts/package.json"), false);
+});
+
+// Same rule as test-utils above, and it matters more here: "toolkit" and
+// "build-utils" are names real published packages carry.
+// storybook's sandbox storybooks, offered as react@19 by the first pool that
+// excluded `scripts`. Patched by name on purpose: the broad rule that would
+// catch it also deletes the two names below, which are real packages.
+check("a named fixture directory is excluded without a broad test- rule", () => {
+  assert.strictEqual(isProductWorkspace("test-storybooks/mcp/package.json"), false);
+  assert.strictEqual(isProductWorkspace("packages/test-utils/package.json"), true);
+  assert.strictEqual(isProductWorkspace("packages/test-runner/package.json"), true);
+});
+
+check("a tooling word inside a longer package name still ships", () => {
+  assert.strictEqual(isProductWorkspace("packages/toolkit/package.json"), true);
+  assert.strictEqual(isProductWorkspace("packages/build-utils/package.json"), true);
+  assert.strictEqual(isProductWorkspace("packages/scripting/package.json"), true);
+  assert.strictEqual(isProductWorkspace("packages/internal-api/package.json"), true);
+});
+
 check("the repository root itself is always the product", () => {
   assert.strictEqual(isProductWorkspace("package.json"), true);
 });
