@@ -2621,6 +2621,39 @@ check("a review verdict alone proves the action ran", () => {
   assert.strictEqual(r.outcome, "REFUSED");
 });
 
+// The guard catching a bad fix is the product working, and it was landing in the
+// column that says the product had no ideas. Seen on body-parser: the agent
+// defined a local contentType where the file used to import one, so the calls
+// resolved, the tests passed, and the package was never reached. Reverted - and
+// filed NO-CHANGE.
+check("a change the guard reverted is REFUSED, not NO-CHANGE", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
+    actionOutcome: "blocked-by-guard",
+    actionSummary: "Blocked and reverted, no PR will be opened. lib/read.js defines a local contentType",
+  });
+  assert.strictEqual(r.outcome, "REFUSED");
+});
+
+// The word the agent emits and the word the benchmark looks for have to stay
+// joined; they live in different files and nothing else connects them.
+check("the outcome the agent emits for a guard block is one REFUSED matches", () => {
+  const emitted = "blocked-by-guard";
+  assert.match(emitted, /refus|reject|block/i);
+  assert.strictEqual(
+    benchmarkOutcome({ baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false", actionOutcome: emitted }).outcome,
+    "REFUSED"
+  );
+});
+
+check("a genuine crash is still not a refusal", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
+    actionOutcome: "failed", actionSummary: "npm install exploded",
+  });
+  assert.notStrictEqual(r.outcome, "REFUSED");
+});
+
 check("a real NO-CHANGE still reads as NO-CHANGE", () => {
   const r = benchmarkOutcome({
     baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",

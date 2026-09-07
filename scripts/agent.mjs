@@ -247,6 +247,32 @@ function fail(message) {
 }
 
 /**
+ * The guard stopped a change and reverted it. Not the same thing as a failure.
+ *
+ * Both used to exit through fail(), so both reported `outcome: failed`, and the
+ * benchmark could not tell them apart: a run where the guard caught an agent
+ * abandoning the dependency it was sent to migrate came out as NO-CHANGE -
+ * "Patchery had nothing to offer". It had something to offer and correctly
+ * refused to ship it, which is the entire product.
+ *
+ * Seen on body-parser with content-type@3: the agent defined a local
+ * `contentType` where the file used to import one, so the calls still resolved,
+ * the tests still passed, and the package was no longer reached at all. A green
+ * suite proving nothing. The guard reverted it - and the row said the agent had
+ * no ideas.
+ *
+ * The name matters beyond this repository: benchmark-outcome.mjs reads it and
+ * files anything matching refuse/reject/block as REFUSED, which is the column
+ * this belongs in.
+ */
+function refuse(message) {
+  console.error("\n[BLOCKED] " + clean(message));
+  writeOutputs({ outcome: "blocked-by-guard", changed: "false", tests_passed: "false", summary: message });
+  writeStepSummary("### Patchery\n\nBlocked by the guard: " + message);
+  process.exit(1);
+}
+
+/**
  * A run that produced nothing but is not an error: nothing was broken, the agent
  * got stuck, or a human needs to look. Exits 0 so the workflow stays green - the
  * PR step is gated on `changed`, not on the exit code.
@@ -947,7 +973,7 @@ if (violations.length > 0) {
       "\n```\n\n" +
       hints.join(" ")
   );
-  fail(
+  refuse(
     "Blocked and reverted, no PR will be opened. " +
       violations.map(([f, reason]) => f + " - " + reason).join("; ") +
       ". The diffs above show exactly what was changed, so you can tell a legitimate " +
@@ -965,7 +991,7 @@ if (violations.length > 0) {
   if (scriptsReason) {
     log("\n[SAFETY] " + scriptsReason);
     revertAll();
-    fail(
+    refuse(
       "Blocked and reverted, no PR will be opened: " + scriptsReason + ". Everything else " +
         "in package.json - dependencies, version - is still fair game; only the scripts are " +
         "frozen for the length of a run, because they are the definition of correct that " +
@@ -1002,7 +1028,7 @@ for (const entry of changedEntries) {
   if (!reason) continue;
   log("\n[SAFETY] " + entry.path + ": " + reason);
   revertAll();
-  fail(
+  refuse(
     "Blocked and reverted, no PR will be opened. `" + entry.path + "` - " + reason +
       " Changing how a dependency is compiled is a legitimate migration and is allowed; " +
       "changing what the runner looks at is not."
@@ -1045,7 +1071,7 @@ for (const entry of changedEntries) {
   if (depReasons.length > 0) {
     for (const r of depReasons) log("[SAFETY] " + r);
     revertAll();
-    fail(
+    refuse(
       "Blocked and reverted, no PR will be opened. " + depReasons.join(" ") + " " +
         "These changes pass your tests - that is why they are checked here rather than " +
         "left to the test run - and a reviewing model cleared this class of change as " +
@@ -1141,7 +1167,7 @@ if (!after.ok) {
 if (censusVerdict.ok === false) {
   log("\n[SAFETY] " + censusVerdict.why);
   revertAll();
-  fail(
+  refuse(
     "Blocked and reverted, no PR will be opened. " + censusVerdict.why + " A change that " +
       "makes the suite pass by running less of it has not been proved by that suite - it has " +
       "been excused by it."
