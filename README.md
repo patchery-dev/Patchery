@@ -9,14 +9,22 @@
 </p>
 
 <p align="center">
-  <strong>When a dependency breaks your code, Patchery fixes it — and proves the fix, or says plainly that it could not.</strong>
+  <strong>Dependabot tells you a dependency changed. Patchery works out what that means for your code — and will not claim a fix it cannot prove.</strong>
 </p>
 
 ---
 
-Dependabot bumps the version and hands you a red build. Patchery takes the next
-step: it reads the changelog, migrates the call sites, runs your tests, and opens
-a pull request **only when those tests pass**.
+**This is not an alternative to Dependabot or Renovate. It starts where they
+stop.** They do one job well: notice a new version and open the bump. By design
+they do not read your code, so when that bump turns your suite red they have
+nothing more to offer, and the pull request sits there until a human picks it up.
+
+Patchery picks it up. It reproduces the break, reads the changelog, migrates the
+call sites, re-runs your tests — and then does the part that actually decides
+whether any of it was worth anything: it grades its own evidence, publishes the
+level of proof it reached, and refuses to ship a change it could not prove.
+
+Keep Dependabot. Patchery is the layer above it.
 
 It runs as a GitHub Action, inside your own CI. Your code is never uploaded
 anywhere.
@@ -144,36 +152,72 @@ people change:
 
 ## Where it is today
 
-Patchery migrates **call sites in JavaScript and TypeScript projects** when a
-dependency's API changes, and it is judged by your own test suite. Where the break
-is not a call-site problem, it reports rather than patches.
+*Last measured 2026-09-07.*
 
-It is being measured against real breaks in repositories we do not own — express,
-node-fetch, winston, yargs and others — with the losses reported alongside the
-wins. That benchmark is public and reproducible: the case list lives in
-[`benchmark/`](benchmark) and the workflows that run it are in
-[`.github/workflows`](.github/workflows). Numbers will be published here when the
-full set has run, and one thing already measured is worth saying: a great deal of
-what breaks a build in 2026 is packaging rather than a changed signature, which is
-why the report is not a consolation prize.
+Patchery works on **JavaScript projects with a test command**, and it is judged by
+your own suite. It is measured on real breaks in repositories we do not own, and
+most of what it has met so far is packaging rather than a changed signature.
+Where the break is not a call-site problem, it reports rather than patches.
+
+The benchmark is public and reproducible: the case list is in
+[`benchmark/cases.json`](benchmark/cases.json), the workflows that run it are in
+[`.github/workflows`](.github/workflows). **14 breaks in 9 repositories we do not
+own** are confirmed real — each one verified to turn that project's own suite red
+before Patchery is allowed near it.
+
+**There is no ratio on this page yet, and the reason is not a bad one.** The
+first batch has run once, but not every case reached a verdict — some runs died
+to a model that stopped answering, some to our own harness — and the rules for
+which of those belong in the denominator are exactly what we were fixing while
+that run was in flight. A number produced under rules that changed mid-run is not
+a measurement, and one we would have to caveat is not a number. It gets published
+here when a full set has run under one set of rules, win or lose.
+
+**What is measured, and is not in dispute, is the shape of the problem.** Of the
+14 confirmed breaks, **11 are packaging** — a dependency that now ships as an ES
+module and a `require()` that no longer works — and only **3 are changed
+signatures**. That is why the report is not a consolation prize: for most of what
+actually breaks a build in 2026, the honest answer at the call site is *this is
+not a call-site problem*, and saying so with the evidence beats guessing.
+
+There is a structural finding behind that split, and it is the most useful thing
+this benchmark has produced: **"did the test suite break" is a trigger that selects
+for packaging.** A packaging break explodes at import time, so everyone's suite
+goes red. A changed signature is only visible if a test happens to exercise that
+exact call — and a library's tests exercise its own code, not its dependency's
+changed paths. Measured directly: `express` v4 → v5 is one of the best-known
+breaking changes in the ecosystem, and across **five** repositories that depend
+on it, not one suite noticed. Closing that gap needs a second trigger that does
+not wait for red, which is the next thing being built.
 
 The engine has 474 offline checks covering the guard, the census and the outcome
 rules. None of them need an API key: `node scripts/selftest.mjs`.
 
 ## Where it is going
 
-**Breaks that are not API changes.** Much of what actually breaks a build in 2026
-is packaging, not signatures — a dependency shipping as an ES module and your
-`require()` no longer working. The census makes it safe to let the agent touch
-build configuration, which brings that class into range.
+All four of these come from the same gap, stated once: **something outside your
+dependency tree changed, and your tests are not going to tell you.**
 
-**Changes that do not break anything.** A new version can quietly make your
-workaround unnecessary. Nothing goes red, so nobody notices. The same machinery
-reads a changelog and proposes the adoption, with the same proof standard.
+**A trigger that does not wait for red.** Today Patchery wakes up when a suite
+breaks, and the measurement above shows what that misses. A scheduled watcher
+reads the list of things you already depend on — `package.json`, no new
+configuration from you — and asks whether they changed, instead of waiting to be
+told by a failure. Nothing is hosted: the "what have I seen already" state is a
+small file in your own repository.
 
-**Beyond npm.** A REST API removing a field breaks you without changing a single
-line of your `package.json`. The engine already takes a changelog as input; the
-work is in noticing.
+**Changes that break nothing at all.** A new version can quietly make your
+workaround unnecessary, or quietly deprecate the path you are on. Nothing goes
+red, so nobody notices — and *nobody noticed* is how most of this damage actually
+happens. The same machinery reads the changelog, finds the call sites, and says
+"these six places", with the same proof standard and no pretence that a green
+suite proved anything.
+
+**Beyond npm.** A REST API removing a field breaks you without changing a line of
+your `package.json`, and your tests talk to a mock that still returns the old
+answer. Both of the things Patchery stands on — a changed file, a red test —
+are missing there. The honest target is deliberately weaker than the npm one:
+*find the call sites and open a pull request with the analysis; prove it too,
+where a type check or a published schema makes proof possible.*
 
 **Beyond one file.** When an upgrade touches several call sites that must move
 together, they should move in one verified change rather than a sequence of
