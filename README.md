@@ -2,7 +2,7 @@
   <img src="assets/logo.png" width="64" height="64" alt="Patchery logo">
 </p>
 
-<h1 align="center">Patchery</h1>
+<h1 align="center">Patchery&trade;</h1>
 
 <p align="center">
   <a href="https://patchery.dev">patchery.dev</a>
@@ -202,3 +202,7 @@ what is current, never on what is old.
 
 Versions published before 2026-09-07 were released under MIT and remain
 available under it. That grant is not revoked; the LICENSE file carries both.
+
+**Patchery™** is a trademark of Ugur (ugursku), first used in commerce on
+2026-09-05. The licence covers the code and grants no rights in the name: a
+fork is free to exist, under its own name.
