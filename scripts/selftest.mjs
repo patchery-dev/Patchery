@@ -2685,6 +2685,39 @@ check("a review verdict alone proves the action ran", () => {
   assert.strictEqual(r.outcome, "REFUSED");
 });
 
+// `review` is the review-status output, an enum, and an unanchored /refut/ read
+// the reviewer's APPROVAL as its refusal: "not-refuted" contains "refut". The
+// run was then filed REFUSED, detail "a fix was written and then withheld:
+// not-refuted" - crediting a run the reviewer was happy with as a principled
+// refusal, in the column this product is proudest of.
+check("not-refuted is the reviewer approving, and must not read as REFUSED", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
+    actionOutcome: "", review: "not-refuted",
+  });
+  assert.strictEqual(r.outcome, "NO-CHANGE");
+});
+
+check("every review status that is not a refusal stays out of REFUSED", () => {
+  // The full vocabulary reviewOutcome can emit. Anything new added there and
+  // not thought about here should show up as a failure, not as a free REFUSED.
+  for (const review of ["not-refuted", "concerns", "not-reviewed", "unavailable", ""]) {
+    const r = benchmarkOutcome({
+      baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
+      actionOutcome: "", review,
+    });
+    assert.strictEqual(r.outcome, "NO-CHANGE", "review=" + JSON.stringify(review));
+  }
+});
+
+check("a refusal still counts however it is spaced or cased", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
+    actionOutcome: "", review: "  REFUTED  ",
+  });
+  assert.strictEqual(r.outcome, "REFUSED");
+});
+
 // The guard catching a bad fix is the product working, and it was landing in the
 // column that says the product had no ideas. Seen on body-parser: the agent
 // defined a local contentType where the file used to import one, so the calls

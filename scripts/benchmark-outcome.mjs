@@ -184,7 +184,27 @@ export function benchmarkOutcome({
 
   if (!shipped) {
     // The action distinguishes these itself, and the distinction is the product.
-    if (/refus|reject|block/i.test(actionOutcome) || /refut/i.test(review)) {
+    // `review` is not prose: it is the review-status output, and reviewOutcome
+    // emits exactly one of not-refuted | concerns | refuted | not-reviewed |
+    // unavailable. An unanchored /refut/ therefore matched "not-refuted" - the
+    // reviewer's APPROVAL, its rank-0 verdict - and filed the run as REFUSED,
+    // detail "a fix was written and then withheld: not-refuted".
+    //
+    // That error ran in our favour, which is why it is worth the anchor.
+    // REFUSED is the column this product is proud of - a fix withheld because
+    // it could not be proved - while the alternative here is NO-CHANGE,
+    // "produced nothing". A run the reviewer was happy with, that shipped
+    // nothing, was being credited as a principled refusal.
+    //
+    // Anchored the same way batch-report.mjs reads the same field. Note the two
+    // files disagreed until now, which is what pointed at this.
+    //
+    // "concerns" is deliberately NOT added here. It is a real objection and
+    // batch-report counts it as one, so arguably a withheld fix the reviewer had
+    // concerns about is REFUSED too - but that change would move cases INTO the
+    // flattering column, and it is not this pass's call to make. Left as
+    // NO-CHANGE, and written up for the founder.
+    if (/refus|reject|block/i.test(actionOutcome) || /^refuted$/i.test(String(review || "").trim())) {
       return {
         outcome: "REFUSED",
         detail: "a fix was written and then withheld: " + (actionOutcome || review || "unproven"),
