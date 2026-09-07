@@ -278,6 +278,46 @@ async function latestMajor(pkg, haveMajor) {
 const MAX_MANIFESTS = 60;
 
 /**
+ * Directories whose package.json is not the product.
+ *
+ * Found by running the crawl rather than by imagining it: nestjs/nest reported
+ * 49 workspaces, and the candidate it produced was `sample/22-graphql-prisma` -
+ * a demo application shipped inside a library repository. It passed every gate
+ * honestly (it declares prisma, it has a real jest script), and it is still
+ * worthless: nobody maintains it, and fixing a dependency there says nothing
+ * about nest. The original list had `examples` and missed `sample`, which is the
+ * kind of near-miss a word list always has - hence a test rather than a guess.
+ *
+ * The bias is deliberately toward excluding: a missed workspace costs one
+ * candidate out of a pool of 135, while a demo app admitted as a candidate costs
+ * a whole benchmark row that looks real and measures nothing.
+ */
+const NOT_THE_PRODUCT = new Set([
+  "node_modules",
+  "__fixtures__", "fixtures", "fixture",
+  "example", "examples",
+  "sample", "samples",
+  "demo", "demos",
+  "test", "tests", "__tests__", "e2e", "integration",
+  "benchmark", "benchmarks", "bench",
+  "template", "templates", "scaffold",
+  "playground", "sandbox",
+  "website", "docs", "doc", "documentation",
+]);
+
+/**
+ * Is this package.json part of the thing the repository is for?
+ *
+ * Any excluded segment anywhere in the path disqualifies it - a manifest under
+ * `packages/core/test/` belongs to the tests whatever sits above it.
+ */
+export function isProductWorkspace(path) {
+  const segs = String(path || "").split("/");
+  // The last segment is "package.json" itself; the rest are directories.
+  return !segs.slice(0, -1).some((s) => NOT_THE_PRODUCT.has(s.toLowerCase()));
+}
+
+/**
  * Every package.json in the repository, one HTTP call for the listing plus one
  * per file.
  *
@@ -300,7 +340,7 @@ async function workspaceManifests(full, sha) {
   const paths = (tree.tree || [])
     .filter((n) => n.type === "blob" && n.path.endsWith("/package.json"))
     .map((n) => n.path)
-    .filter((p) => !/(^|\/)(node_modules|__fixtures__|fixtures|examples?|test|tests|e2e|benchmarks?|templates?)\//.test(p))
+    .filter(isProductWorkspace)
     .sort((a, b) => a.split("/").length - b.split("/").length);
 
   // A tree GitHub itself truncated, or one deeper than the cap, means the list

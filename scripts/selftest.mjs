@@ -25,7 +25,7 @@ import {
   FALLBACK,
 } from "./node-version.mjs";
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
-import { testScriptUsable, projectKind, parseRepoLine } from "./find-bumps.mjs";
+import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace } from "./find-bumps.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
@@ -3806,6 +3806,32 @@ check("a missing package name never yields a directory", () => {
 // through the prototype chain and report a declaration nobody wrote.
 check("an inherited property is not a declaration", () => {
   assert.deepStrictEqual(workspacesDeclaring("constructor", [{ dir: ".", deps: {} }]), []);
+});
+
+// The real path from the first live crawl. nestjs/nest reported 49 workspaces
+// and offered a demo app as a candidate, because the exclusion list said
+// "examples" and nest says "sample".
+check("a demo app inside a library repository is not a workspace", () => {
+  assert.strictEqual(isProductWorkspace("sample/22-graphql-prisma/package.json"), false);
+  assert.strictEqual(isProductWorkspace("packages/core/package.json"), true);
+});
+
+check("the excluded directory counts anywhere in the path, not only at the front", () => {
+  assert.strictEqual(isProductWorkspace("packages/core/test/fixtures/package.json"), false);
+  assert.strictEqual(isProductWorkspace("packages/core/e2e/package.json"), false);
+  assert.strictEqual(isProductWorkspace("a/b/node_modules/c/package.json"), false);
+});
+
+// The exclusions are whole directory names. A package legitimately called
+// "test-utils" or "website-builder" is the product and must survive.
+check("an excluded word inside a longer directory name is not a match", () => {
+  assert.strictEqual(isProductWorkspace("packages/test-utils/package.json"), true);
+  assert.strictEqual(isProductWorkspace("packages/website-builder/package.json"), true);
+  assert.strictEqual(isProductWorkspace("packages/documentation-parser/package.json"), true);
+});
+
+check("the repository root itself is always the product", () => {
+  assert.strictEqual(isProductWorkspace("package.json"), true);
 });
 
 check("the pool summary counts workspace candidates and signal agreement", () => {
