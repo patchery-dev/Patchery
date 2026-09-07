@@ -2534,4 +2534,32 @@ check("a refusal survives a summary that mentions minutes", () => {
   assert.strictEqual(r.outcome, "REFUSED");
 });
 
+
+// The most common outcome, and the one that was saying least. A run that changes
+// nothing has still read the changelog and the call sites; the row should carry
+// what it concluded, not just the word "no-changes".
+check("a NO-CHANGE row carries the reason when there is one", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0",
+    brokenExit: "1",
+    changed: "false",
+    actionOutcome: "no-changes",
+    actionSummary:
+      "The agent finished without changing any files. It was looking at an `esm-require` break - the package now ships only as an ES module.",
+  });
+  assert.strictEqual(r.outcome, "NO-CHANGE");
+  assert.match(r.detail, /esm-require/);
+});
+
+check("a NO-CHANGE row still says something when there is no summary", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0",
+    brokenExit: "1",
+    changed: "false",
+    actionOutcome: "no-changes",
+  });
+  assert.strictEqual(r.outcome, "NO-CHANGE");
+  assert.match(r.detail, /no-changes/);
+});
+
 console.log("\n" + pass + " checks passed.\n");

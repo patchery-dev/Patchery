@@ -768,9 +768,56 @@ let changedEntries = agentChangedEntries();
 let changed = changedEntries.map((e) => e.path);
 
 if (changed.length === 0) {
-  stop("no-changes", "The agent changed no files. Nothing to open a PR for.", {
-    tests_passed: "false",
+  // The most common outcome, and until now the least useful one. A run that
+  // finishes without editing anything has still read the changelog, opened the
+  // call sites and formed a view - on express it spent twenty-six turns doing
+  // exactly that - and all of it was thrown away with one sentence about there
+  // being no PR to open.
+  //
+  // Nothing here changes the decision: no files changed, so nothing ships. It
+  // decides what is handed back.
+  const s = stallDetector.inspect();
+  const notes = agentText.length ? agentText[agentText.length - 1].trim() : "";
+  const diagnosisFile = writeDiagnosis({
+    packageName: PACKAGE,
+    targetRel: targetRel || ".",
+    testCommand: TEST_COMMAND,
+    reason: "the agent finished without changing any files",
+    outcome: "no-changes",
+    baselineOutput: baseline.output,
+    changelog: CHANGELOG,
+    turns: s.toolTurns,
+    edits: s.edits,
+    spend: renderSpend({
+      modelUsage: result.modelUsage,
+      costUsd: result.total_cost_usd,
+      customEndpoint: usingCustomEndpoint,
+    }),
+    discovered: s.keys,
+    agentNotes: notes,
+    classification,
   });
+  if (notes) log("\nWhat it concluded:\n" + notes);
+  stop(
+    "no-changes",
+    [
+      "The agent finished without changing any files, so there is nothing to open a PR for.",
+      classification.kind
+        ? "It was looking at a `" + classification.kind + "` break - " + classification.what + "."
+        : "",
+      classification.inScope === false
+        ? "That class cannot be fixed by editing call sites, so no run of this agent will fix it."
+        : "",
+      "It read " +
+        s.keys.filter((k) => k.startsWith("read:")).length +
+        " file(s) over " +
+        s.toolTurns +
+        " turn(s); its own account of why is in the diagnosis file.",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    { tests_passed: "false", diagnosis_file: diagnosisFile }
+  );
 }
 
 log(changed.map((f) => "  " + f).join("\n"));

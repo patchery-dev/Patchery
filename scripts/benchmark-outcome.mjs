@@ -152,9 +152,14 @@ export function benchmarkOutcome({
         detail: "the turn budget ran out before a fix was verified: " + actionOutcome,
       };
     }
+    // The action's summary says which break it was looking at and how far it got.
+    // "no fix produced: no-changes" is a shrug; the row should carry the reason,
+    // because this is the most common outcome and a table full of shrugs teaches
+    // nobody anything.
+    const said = String(actionSummary || "").trim();
     return {
       outcome: "NO-CHANGE",
-      detail: actionOutcome ? "no fix produced: " + actionOutcome : "no fix produced",
+      detail: said || (actionOutcome ? "no fix produced: " + actionOutcome : "no fix produced"),
     };
   }
 
