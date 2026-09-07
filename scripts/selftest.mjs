@@ -61,6 +61,7 @@ import {
   chainedFailureMessage,
   normalizeModelTimeout,
   timeoutReason,
+  harnessCrash,
   confidenceThresholdReport,
   shouldReview,
   truncateEvidence,
@@ -1494,6 +1495,51 @@ check("nonsense is an error, not a silent default", () => {
 check("the message says what to do about it", () =>
   assert.match(timeoutReason("reviewer", 20), /model-timeout-minutes/)
 );
+
+console.log("\nharnessCrash - a dead runtime is not an agent with no ideas");
+// Three benchmark cases sat in NO-CHANGE because the SDK's child process died
+// and the message went out as a plain failure. NO-CHANGE is a sentence about the
+// product; the agent was never alive long enough for one to be true.
+check("the SDK's own wording for a dead child process is caught", () =>
+  assert.ok(harnessCrash(new Error("Claude Code process exited with code 1")))
+);
+check("a plain string is read the same as an Error", () =>
+  assert.ok(harnessCrash("process exited with code 143"))
+);
+check("killed from outside counts - OOM and cancellation both land here", () => {
+  assert.ok(harnessCrash("child process terminated by SIGKILL"));
+  assert.ok(harnessCrash(new Error("FATAL ERROR: JavaScript heap out of memory")));
+});
+check("a runtime that was never there counts too", () =>
+  assert.ok(harnessCrash("spawn claude ENOENT"))
+);
+// The narrowness is the point: everything that leaves the denominator has to
+// earn it, and a bug in our own loop is a real failure that should stay counted.
+check("an ordinary throw from our own code is NOT a harness crash", () => {
+  assert.strictEqual(harnessCrash(new Error("Cannot read properties of undefined")), null);
+  assert.strictEqual(harnessCrash("the model refused to answer"), null);
+});
+check("nothing thrown is not a diagnosis", () => {
+  assert.strictEqual(harnessCrash(null), null);
+  assert.strictEqual(harnessCrash(""), null);
+  assert.strictEqual(harnessCrash(new Error("   ")), null);
+});
+check("the message keeps the raw error and says why it is out of the ratio", () => {
+  const m = harnessCrash("Claude Code process exited with code 1");
+  assert.match(m, /process exited with code 1/);
+  assert.match(m, /harness-error/);
+});
+// The two files are joined by nothing but this word, exactly as with
+// blocked-by-guard above.
+check("what the agent emits for a dead runtime is what the benchmark blocks on", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
+    actionOutcome: "harness-error",
+    actionSummary: harnessCrash("Claude Code process exited with code 1"),
+  });
+  assert.strictEqual(r.outcome, "BLOCKED");
+});
+
 
 console.log("\nrenderSpend - never call another provider's bill a cost");
 const usage = (o = {}) => ({

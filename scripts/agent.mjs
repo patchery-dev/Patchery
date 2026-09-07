@@ -37,6 +37,7 @@ import {
   renderSpend,
   normalizeModelTimeout,
   timeoutReason,
+  harnessCrash,
   shouldReview,
   buildReviewEvidence,
   parseReview,
@@ -667,6 +668,11 @@ try {
   // crashed" sends someone reading a stack trace, "it stopped answering" sends
   // them to the provider.
   if (agentDeadline.expired()) fail(timeoutReason("fixing agent", MODEL_TIMEOUT_MIN));
+  // A dead child process is our runtime, not the agent declining to answer. Filed
+  // as a plain failure it became NO-CHANGE - "Patchery had nothing to offer" - for
+  // three runs where the agent never got to have an offer.
+  const runtimeDeath = harnessCrash(err);
+  if (runtimeDeath) fail(runtimeDeath, "harness-error");
   fail("The agent crashed: " + (err?.message ?? err));
 } finally {
   agentDeadline.done();
