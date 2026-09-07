@@ -157,7 +157,7 @@ full set has run, and one thing already measured is worth saying: a great deal o
 what breaks a build in 2026 is packaging rather than a changed signature, which is
 why the report is not a consolation prize.
 
-The engine has 388 offline checks covering the guard, the census and the outcome
+The engine has 474 offline checks covering the guard, the census and the outcome
 rules. None of them need an API key: `node scripts/selftest.mjs`.
 
 ## Where it is going
