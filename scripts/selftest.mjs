@@ -2589,6 +2589,53 @@ check("outcome BLOCKED when the model stalled rather than answered", () => {
 });
 
 // It must not swallow the results that ARE about the product.
+// From a real cancelled batch: four legs killed seven minutes in came out
+// "NO-CHANGE - no fix produced", and the table said "0 fixed of 4 cases it was
+// able to attempt" about runs that had attempted none of them.
+check("a cancelled run is BLOCKED, not an agent with no ideas", () => {
+  const base = { baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "", actionOutcome: "" };
+  for (const stepOutcome of ["cancelled", "Cancelled", "skipped"]) {
+    const r = benchmarkOutcome({ ...base, stepOutcome });
+    assert.strictEqual(r.outcome, "BLOCKED", stepOutcome);
+    assert.match(r.detail, /nothing here is about the fix/);
+  }
+});
+
+check("an action that wrote no outputs at all is BLOCKED too", () => {
+  // Every path out of agent.mjs writes its outputs, its error path included, so
+  // nothing at all means the process was stopped before it got there.
+  const r = benchmarkOutcome({ baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "", actionOutcome: "" });
+  assert.strictEqual(r.outcome, "BLOCKED");
+  assert.match(r.detail, /never reported an outcome/);
+});
+
+// The line between the two: "false" is an answer, "" is a silence.
+check("changed:false is a reported result, not a missing one", () => {
+  const r = benchmarkOutcome({ baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false", actionOutcome: "" });
+  assert.strictEqual(r.outcome, "NO-CHANGE");
+});
+
+check("a review verdict alone proves the action ran", () => {
+  const r = benchmarkOutcome({ baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "", actionOutcome: "", review: "refuted" });
+  assert.strictEqual(r.outcome, "REFUSED");
+});
+
+check("a real NO-CHANGE still reads as NO-CHANGE", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
+    actionOutcome: "no-changes", actionSummary: "the agent found nothing to change",
+  });
+  assert.strictEqual(r.outcome, "NO-CHANGE");
+});
+
+check("a shipped fix is judged even if the step outcome is missing", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "0", brokenExit: "1", changed: "true",
+    actionOutcome: "", before: 10, after: 10,
+  });
+  assert.notStrictEqual(r.outcome, "BLOCKED");
+});
+
 check("an ordinary failure is still not blamed on the provider", () => {
   const r = benchmarkOutcome({
     baselineExit: "0",

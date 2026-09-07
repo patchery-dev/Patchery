@@ -59,6 +59,7 @@ export function benchmarkOutcome({
   installed = "",
   brokenExit = "",
   actionSummary = "",
+  stepOutcome = "",
 } = {}) {
   if (baselineExit !== "0") {
     return {
@@ -119,6 +120,38 @@ export function benchmarkOutcome({
     return {
       outcome: "BLOCKED",
       detail: "the model stopped answering mid-run and the request was abandoned - not a verdict on the fix",
+    };
+  }
+
+  // An action that never reported is not an agent with no ideas.
+  //
+  // Four legs of a cancelled batch came out "NO-CHANGE - no fix produced", which
+  // is a sentence about the product, from runs that were killed seven minutes in
+  // while the model was still working. The table then read "0 fixed of 4 cases it
+  // was able to attempt", and it had attempted none of them.
+  //
+  // Every path out of agent.mjs writes an outcome, including its error path, so
+  // an empty one means the process never got there: cancelled, timed out, or
+  // killed. That is our side of the fence, so it is BLOCKED and out of the
+  // denominator.
+  // "Never reported" means no trace of the action at all, and the self-test
+  // narrowed this twice:
+  //
+  //   - a review verdict or a summary proves it ran far enough to produce
+  //     something worth judging; a refuted review is REFUSED, not blocked
+  //   - `changed: "false"` is an output. The action wrote it, so it finished and
+  //     said "I changed nothing". Only an EMPTY `changed` means no output at all
+  //
+  // So the test is emptiness across every field the action sets, not the value
+  // of any one of them.
+  const killed = /cancel|skip/i.test(stepOutcome);
+  const silent = !actionOutcome && !review && !actionSummary && changed === "";
+  if (killed || silent) {
+    return {
+      outcome: "BLOCKED",
+      detail: killed
+        ? "the run was " + stepOutcome.toLowerCase() + " before Patchery finished - nothing here is about the fix"
+        : "Patchery never reported an outcome, so it was stopped mid-run (cancelled, timed out or killed) - not a verdict",
     };
   }
 
@@ -232,6 +265,7 @@ if (isMain) {
     baselineExit: a["baseline-exit"],
     finalExit: a["final-exit"],
     actionOutcome: a["action-outcome"],
+    stepOutcome: a["step-outcome"],
     changed: a.changed,
     review: a.review,
     version: a.version,
