@@ -24,7 +24,7 @@ import {
   OLDEST_USABLE,
   FALLBACK,
 } from "./node-version.mjs";
-import { classifyFailure, briefing } from "./classify-break.mjs";
+import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
 import { testScriptUsable, projectKind, parseRepoLine } from "./find-bumps.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
@@ -2762,6 +2762,26 @@ check("every classified break offers a human-facing next step", () => {
     // The two must not be the same text - one addresses a model, the other a person.
     assert.notStrictEqual(c.next, c.strategy, c.kind);
   }
+});
+
+// The switch that makes the briefing measurable rather than assumed.
+console.log("\nclassify-break.normalizeBriefing");
+
+check("on by default, and the obvious words for both sides", () => {
+  assert.strictEqual(normalizeBriefing("").on, true);
+  assert.strictEqual(normalizeBriefing(undefined).on, true);
+  assert.strictEqual(normalizeBriefing(null).on, true);
+  for (const v of ["on", "true", "yes", "1", " ON "]) assert.strictEqual(normalizeBriefing(v).on, true, v);
+  for (const v of ["off", "false", "no", "0", "none", " Off "]) assert.strictEqual(normalizeBriefing(v).on, false, v);
+});
+
+// A typo that silently means "on" would make the experiment measure nothing
+// while looking like it measured something - the same rule as verify-mode.
+check("an unrecognised value is an error, not a guess", () => {
+  const r = normalizeBriefing("of");
+  assert.ok(r.error, "no error for 'of'");
+  assert.match(r.error, /briefing must be on or off/);
+  assert.match(r.error, /"of"/);
 });
 
 // The out-of-scope class has to say plainly that the decision is not ours.

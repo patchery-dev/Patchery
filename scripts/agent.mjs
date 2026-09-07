@@ -19,7 +19,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { classifyFailure, briefing } from "./classify-break.mjs";
+import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
 import { census, censusHeld } from "./test-census.mjs";
 import {
   protectedReason,
@@ -464,7 +464,13 @@ log("\n-> baseline: " + (baseline.ok ? "PASS" : "FAIL (exit " + baseline.code + 
 // roughly half its budget establishing what Node had already stated in the first
 // line of the failure. A null kind means we could not tell, and the agent is
 // told nothing rather than guessed at.
+const briefingMode = normalizeBriefing(env("SMA_BRIEFING"));
+if (briefingMode.error) fail(briefingMode.error);
 const classification = classifyFailure(baseline.output);
+if (!briefingMode.on && classification.kind) {
+  log("[EXPERIMENT] briefing is off - the agent gets the failure output and nothing else. " +
+      "Classified mechanically as " + classification.kind + ", not shown.");
+}
 if (classification.kind) {
   log("-> break looks like: " + classification.kind + " - " + classification.what);
   if (classification.inScope === false) {
@@ -600,7 +606,7 @@ const prompt = [
   // boundary of a legitimate fix is - not to narrow the agent's judgement, but
   // to stop it spending turns rediscovering the diagnosis, and to stop it
   // inventing a way around a decision that is not ours to make.
-  classification.kind ? "\n" + briefing(classification) + "\n" : "",
+  classification.kind && briefingMode.on ? "\n" + briefing(classification) + "\n" : "",
   "Work only inside: " + TARGET_DIR,
 ].join("\n");
 

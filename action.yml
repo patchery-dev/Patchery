@@ -93,6 +93,19 @@ inputs:
       deliberately want to cap pure research.
     required: false
     default: "0"
+  briefing:
+    description: >-
+      Whether the agent is shown the mechanical classification of the failure
+      (on / off). On by default.
+
+      The classification itself always runs - it is a pattern match on the test
+      output, not a model - and it decides what the diagnosis file says either
+      way. This only controls whether the agent is told. Off exists so the
+      briefing can be measured rather than assumed: it was written after the
+      agent on one repository invented its own third option, and "it stopped one
+      bad idea once" is not the same as "it improves the result".
+    required: false
+    default: "on"
   extra-checks:
     description: >-
       Also run the project's own lint and type-check, and refuse a change that
@@ -376,6 +389,7 @@ runs:
         SMA_STALL_STALE_TURNS: ${{ inputs.stall-stale-turns }}
         SMA_STALL_NO_EDIT_TURNS: ${{ inputs.stall-no-edit-turns }}
         SMA_EXTRA_CHECKS: ${{ inputs.extra-checks }}
+        SMA_BRIEFING: ${{ inputs.briefing }}
         SMA_VERIFY_MODE: ${{ inputs.verify-mode }}
         SMA_VERIFY_TOOLS: ${{ inputs.verify-tools }}
         SMA_VERIFY_MODEL: ${{ inputs.verify-model }}

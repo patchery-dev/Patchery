@@ -39,6 +39,36 @@ export function stripAnsi(text) {
  * first - which is also why classification has to be repeated after every
  * fix, rather than decided once.
  */
+/**
+ * Whether the classification is put in front of the agent at all.
+ *
+ * There is a switch here because the briefing has never been measured. It was
+ * written after a real observation - given no boundary, the agent on express
+ * spent its budget transcribing the dependency's source into the project - but
+ * "it stopped one bad idea once" is not "it improves the rate", and the two get
+ * confused easily.
+ *
+ * The first batch gave a reason to doubt it. On body-parser the agent did
+ * exactly what the briefing forbids in as many words, re-implementing the
+ * package locally, and what caught it was the guard, not the advice. That is
+ * one case, which is the same weak evidence in the other direction - hence a
+ * flag, and a run of the same fourteen cases with it off.
+ *
+ * Same rule as verify-mode: an unrecognised value is an error, not a guess. A
+ * silently ignored "of" would make the experiment measure nothing while looking
+ * like it measured something.
+ */
+export function normalizeBriefing(raw) {
+  const v = String(raw == null ? "" : raw).trim().toLowerCase();
+  if (v === "") return { on: true, error: null };
+  if (["on", "true", "yes", "1"].includes(v)) return { on: true, error: null };
+  if (["off", "false", "no", "0", "none"].includes(v)) return { on: false, error: null };
+  return {
+    on: true,
+    error: 'briefing must be on or off - got "' + String(raw).trim() + '"',
+  };
+}
+
 const KINDS = [
   {
     kind: "esm-require",

@@ -31,6 +31,10 @@ on:
         description: "Turn budget for the agent"
         required: false
         default: "45"
+      briefing:
+        description: "Show the agent the mechanical classification (on/off) - off measures whether it helps"
+        required: false
+        default: "on"
 
 permissions:
   contents: read
@@ -77,6 +81,7 @@ jobs:
       node-version: ${{ matrix.case['node-version'] }}
       model: ${{ inputs.model }}
       max-turns: ${{ inputs.max-turns }}
+      briefing: ${{ inputs.briefing }}
 
   report:
     needs: [plan, run]
