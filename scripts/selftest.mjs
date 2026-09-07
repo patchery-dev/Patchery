@@ -1846,6 +1846,33 @@ check("censusHeld says 'cannot tell' rather than 'fine' when it cannot parse", (
 // The OUTCOME is deliberately still FIXED - changing it moves the case across
 // the denominator line the founder is still deciding. What must not happen is
 // it being silent about why.
+// actionSummary is a shared channel. On a real stall it carries guard.mjs's
+// timeoutReason, written by fail(), which also sets outcome `failed`. On an
+// ordinary unproductive run it carries the MODEL's own closing message. An
+// unanchored search of that field let the model move its own failed case out of
+// the denominator by describing a stall in prose.
+check("a real stall, which the harness reports as failed, is still BLOCKED", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false",
+    actionOutcome: "failed",
+    actionSummary: "the agent produced nothing for 20 minutes and was stopped. This is a stalled request, not a slow one",
+  });
+  assert.strictEqual(r.outcome, "BLOCKED");
+});
+
+check("the model describing a stall in its own summary cannot leave the denominator", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false",
+    actionOutcome: "no-changes",
+    actionSummary:
+      "**What the agent concluded.**\n\nI tried three approaches. The second one was " +
+      "a stalled request against the registry, so I gave up.",
+  });
+  // NO-CHANGE is in the denominator. BLOCKED is not, and BLOCKED is the
+  // flattering answer here, which is why this direction is the one to pin.
+  assert.strictEqual(r.outcome, "NO-CHANGE");
+});
+
 check("a FIXED row whose census could not be counted says so", () => {
   const r = benchmarkOutcome({
     baselineExit: "0", brokenExit: "1", finalExit: "0", changed: "true",

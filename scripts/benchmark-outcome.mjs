@@ -129,7 +129,33 @@ export function benchmarkOutcome({
   //
   // Filed with BLOCKED and kept out of the denominator, because it says nothing
   // about whether Patchery can fix the break.
-  if (/stalled request|produced nothing for \d+ minutes/i.test(actionSummary)) {
+  //
+  // The `failed` requirement is load-bearing and was missing. `actionSummary`
+  // is a shared channel: on a real stall it carries guard.mjs's timeoutReason,
+  // written by fail(), which also sets outcome `failed`. But on an ordinary
+  // unproductive run it carries the MODEL's own closing message - agent.mjs
+  // takes the last 1500 characters of it into the handover and stops with
+  // `no-changes`. So an agent that wrote "the second one was a stalled request
+  // against the registry, so I gave up" moved its own failed case from
+  // NO-CHANGE (in the denominator) to BLOCKED (outside it). Measured.
+  //
+  // That is the model marking its own homework, in our favour, and 200 lines
+  // below this one the same file states the rule it was breaking: "a summary is
+  // written by the model, and a model that learned this phrase would have
+  // learned an excuse."
+  //
+  // Requiring `failed` closes it, because the model-authored path stops with
+  // `no-changes` and can never set it. Nothing legitimate is lost: a stall with
+  // no outcome at all still lands in the "never reported" branch below, which
+  // is BLOCKED anyway.
+  //
+  // The real fix is for the stall to travel as its own output slug rather than
+  // as prose sharing a channel with the model. Written up; this is the gate in
+  // the meantime.
+  const stalled =
+    /^failed$/i.test(String(actionOutcome || "").trim()) &&
+    /stalled request|produced nothing for \d+ minutes/i.test(actionSummary);
+  if (stalled) {
     return {
       outcome: "BLOCKED",
       detail: "the model stopped answering mid-run and the request was abandoned - not a verdict on the fix",
