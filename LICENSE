@@ -15,9 +15,15 @@ Additional Use Grant: You may use, copy, modify, and redistribute the Licensed
 
                         (b) personal, academic, research, or non-commercial use;
 
-                        (c) evaluating the Licensed Work, including running it
-                            against your own private repositories to decide
-                            whether to subscribe.
+                        (c) evaluating the Licensed Work against your own
+                            private repositories, for the first three runs in
+                            which it changes code in them.
+
+                            The bound is three runs rather than a number of
+                            days because the Licensed Work only acts when
+                            something breaks, and a month can pass without that
+                            happening. A trial that expires before the tool has
+                            done anything is not a trial.
 
                       Running the Licensed Work in production against a private
                       repository of a commercial organisation, beyond

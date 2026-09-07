@@ -188,7 +188,9 @@ that edits your code.
 
 - any repository whose source is publicly readable, including every open source project
 - personal, academic, research and non-commercial use
-- evaluating it against your own private repositories
+- trying it on your own private repositories, for the first three runs that
+  change code — a tool that only acts when something breaks needs a trial
+  measured in fixes, not in days
 
 **Requires a subscription:** running it in production against a private
 repository of a commercial organisation.
