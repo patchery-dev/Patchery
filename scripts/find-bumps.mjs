@@ -149,12 +149,56 @@ export function isOutOfScope(name) {
   return null;
 }
 
-async function latestMajor(pkg) {
+/**
+ * Whether a break is about the API or about how the package is delivered.
+ *
+ * Both are real breaks and both deserve fixing, but they are not the same work
+ * and the benchmark was accidentally full of one of them: eight of the first
+ * eleven confirmed cases were packaging. Nobody chose that - most new majors in
+ * 2026 are ESM migrations, so a finder that asks only "is there a new major"
+ * collects them.
+ *
+ * The signal is cheap. If the version the project has and the version npm now
+ * publishes are both CommonJS, delivery did not change - so whatever broke is in
+ * the API, which is the class this tool most directly claims.
+ */
+function moduleFormat(manifest) {
+  if (!manifest) return "unknown";
+  if (manifest.type === "module") return "esm";
+  // An `exports` map with no `require` condition is ESM-only in practice, whatever
+  // `type` says.
+  const e = manifest.exports;
+  if (e && typeof e === "object" && !Array.isArray(e)) {
+    const flat = JSON.stringify(e);
+    if (/"import"/.test(flat) && !/"require"/.test(flat)) return "esm";
+  }
+  return "cjs";
+}
+
+async function latestMajor(pkg, haveMajor) {
   const meta = await api("https://registry.npmjs.org/" + encodeURIComponent(pkg).replace("%40", "@"), {
     raw: true,
   });
   const latest = meta["dist-tags"]?.latest;
-  return latest ? { major: rangeMajor(latest), version: latest } : null;
+  if (!latest) return null;
+
+  const after = moduleFormat(meta.versions?.[latest]);
+  // The newest release of the major the project is actually on, so the comparison
+  // is between what they have and what they would get.
+  let before = "unknown";
+  const onTheirMajor = Object.keys(meta.versions || {})
+    .filter((v) => rangeMajor(v) === haveMajor)
+    .sort()
+    .pop();
+  if (onTheirMajor) before = moduleFormat(meta.versions[onTheirMajor]);
+
+  return {
+    major: rangeMajor(latest),
+    version: latest,
+    format: after,
+    formatChanged: before !== "unknown" && after !== "unknown" && before !== after,
+    apiOnly: before === "cjs" && after === "cjs",
+  };
 }
 
 async function inspectRepo(full) {
@@ -196,20 +240,38 @@ async function inspectRepo(full) {
     if (!have) continue;
     let latest;
     try {
-      latest = await latestMajor(name);
+      latest = await latestMajor(name, have);
     } catch {
       continue;
     }
     if (!latest || !latest.major || latest.major <= have) continue;
-    bumps.push({ package: name, from: have, to: latest.major, version: latest.version, runtime: runtime.has(name) });
+    bumps.push({
+      package: name,
+      from: have,
+      to: latest.major,
+      version: latest.version,
+      runtime: runtime.has(name),
+      format: latest.format,
+      apiOnly: latest.apiOnly,
+    });
     await sleep(120);
   }
 
-  // Runtime dependencies first: those are the ones the repository's own source
-  // calls, so a break in them lands where Patchery works. Then biggest jump, on
-  // the theory that the further apart the majors, the more likely a signature
-  // changed somewhere in between.
-  bumps.sort((a, b) => Number(b.runtime) - Number(a.runtime) || b.to - b.from - (a.to - a.from));
+  // API-only breaks first. Eight of the first eleven confirmed cases turned out
+  // to be packaging - nobody chose that, it is what "has a new major" collects in
+  // 2026 - and the class this tool most directly claims was left untested. A bump
+  // where the package was CommonJS before and after cannot be a delivery problem,
+  // so whatever broke is the API.
+  //
+  // Then runtime dependencies, whose breaks land in the project's own source, and
+  // then the biggest version jump, on the theory that the further apart the
+  // majors the more likely a signature moved somewhere between them.
+  bumps.sort(
+    (a, b) =>
+      Number(b.apiOnly) - Number(a.apiOnly) ||
+      Number(b.runtime) - Number(a.runtime) ||
+      b.to - b.from - (a.to - a.from)
+  );
   out.bumps = bumps.slice(0, MAX_PER_REPO);
   if (!out.bumps.length) return { ...out, reject: "every dependency is already on its latest major" };
   return out;
@@ -251,6 +313,8 @@ if (isMain) {
           _bump: b.package + " v" + b.from + " -> v" + b.to,
           _note: r.note || "",
           _runtime: b.runtime,
+        _format: b.format,
+        _apiOnly: b.apiOnly,
         });
       }
       console.error("  " + r.bumps.length + " bump(s): " + r.bumps.map((b) => b.package + " " + b.from + "->" + b.to).join(", "));
