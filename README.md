@@ -70,7 +70,7 @@ count that as proof: the pull request is headed *Not verified* and says why, and
 the `draft` output opens it as a draft — the example workflow wires that up. The
 level is decided by the same code that runs the gates, never by a model.
 
-## When it cannot patch it, it hands you the analysis
+## When no fix exists at the call site
 
 Some breaks have no fix at the call site. A dependency that starts shipping as an
 ES module does not rename anything — your code is fine and can no longer load it.
@@ -90,7 +90,8 @@ that a build transform would only paint this repository's CI green while leaving
 every downstream consumer broken — and two options, one of which it verified by
 running the alternative version and comparing the output byte for byte.
 
-It made no code change, and said so. That report is the deliverable.
+It made no code change, and said so. Where the fix does not exist at the call
+site, that report is what is left — a fallback, not the thing Patchery is for.
 
 A tool that is right most of the time, and says plainly what it found when it is
 not, is worth more than one that is confident every time.
@@ -190,7 +191,7 @@ breaking changes in the ecosystem, and across **five** repositories that depend
 on it, not one suite noticed. Closing that gap needs a second trigger that does
 not wait for red, which is the next thing being built.
 
-The engine has 512 offline checks covering the guard, the census and the outcome
+The engine has 554 offline checks covering the guard, the census and the outcome
 rules. None of them need an API key: `node scripts/selftest.mjs`.
 
 ## Where it is going
