@@ -66,6 +66,8 @@ import {
   detectExtraChecks,
   extraCheckRegressions,
   buildDiagnosis,
+  proofLevel,
+  proofBanner,
 } from "./guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -2903,6 +2905,82 @@ check("the verdict file is written, and survives a value with quotes in it", () 
 check("a missing output path fails loudly instead of writing somewhere else", () => {
   const r = spawnSync(process.execPath, [path.join(root, "scripts", "write-result.mjs")]);
   assert.notStrictEqual(r.status, 0);
+});
+
+// ---------------------------------------------------------------------------
+// The proof ladder.
+//
+// The point of these checks is the one case the product gets wrong today: a
+// suite that was green before and green after proves no regression, not a fix.
+// ---------------------------------------------------------------------------
+
+console.log("\nguard.proofLevel");
+
+check("red suite that goes green is rung 1, and the only rung that ships proud", () => {
+  const l = proofLevel({ hasPatch: true, baselineRed: true, testsPassed: true });
+  assert.strictEqual(l.rung, 1);
+  assert.strictEqual(l.verified, true);
+  assert.strictEqual(l.draft, false);
+});
+
+// The whole reason this function exists.
+check("green before and green after is NOT rung 1 - it proves no regression only", () => {
+  const l = proofLevel({ hasPatch: true, baselineRed: false, testsPassed: true });
+  assert.strictEqual(l.rung, 3);
+  assert.strictEqual(l.verified, false);
+  assert.strictEqual(l.draft, true, "an unproven fix must open as a draft");
+  assert.match(l.claim, /never exercised/);
+});
+
+check("a mechanical check that was red and is now green is rung 2", () => {
+  const l = proofLevel({ hasPatch: true, baselineRed: false, testsPassed: true, checkWasRed: true, checkPassed: true });
+  assert.strictEqual(l.rung, 2);
+  assert.strictEqual(l.verified, true);
+  assert.strictEqual(l.draft, false);
+});
+
+check("a check that was already red and still is does not earn rung 2", () => {
+  assert.strictEqual(proofLevel({ hasPatch: true, testsPassed: true, checkWasRed: true, checkPassed: false }).rung, 3);
+});
+
+check("a check that was green all along proves nothing either", () => {
+  assert.strictEqual(proofLevel({ hasPatch: true, testsPassed: true, checkWasRed: false, checkPassed: true }).rung, 3);
+});
+
+check("no patch is rung 4 - analysis, and it never claims to be a fix", () => {
+  const l = proofLevel({ hasPatch: false, baselineRed: true });
+  assert.strictEqual(l.rung, 4);
+  assert.strictEqual(l.verified, false);
+});
+
+check("a failing suite is not a rung at all", () => {
+  const l = proofLevel({ hasPatch: true, baselineRed: true, testsPassed: false });
+  assert.strictEqual(l.rung, null);
+  assert.strictEqual(l.verified, false);
+});
+
+check("only rungs 1 and 2 are ever verified, across every combination", () => {
+  for (const hasPatch of [true, false]) {
+    for (const baselineRed of [true, false]) {
+      for (const testsPassed of [true, false]) {
+        for (const checkWasRed of [true, false]) {
+          for (const checkPassed of [true, false]) {
+            const l = proofLevel({ hasPatch, baselineRed, testsPassed, checkWasRed, checkPassed });
+            if (l.verified) assert.ok(l.rung === 1 || l.rung === 2, "rung " + l.rung + " claimed verification");
+            // And nothing that claims verification may also be a draft.
+            if (l.verified) assert.strictEqual(l.draft, false);
+          }
+        }
+      }
+    }
+  }
+});
+
+check("the banner never says verified for an unproven rung", () => {
+  assert.match(proofBanner(proofLevel({ hasPatch: true, baselineRed: true, testsPassed: true })), /Proof: the test suite/);
+  assert.match(proofBanner(proofLevel({ hasPatch: true, testsPassed: true })), /Not verified/);
+  assert.match(proofBanner(proofLevel({ hasPatch: false })), /No patch/);
+  assert.match(proofBanner(proofLevel({ hasPatch: true, baselineRed: true, testsPassed: false })), /Not delivered/);
 });
 
 console.log("\n" + pass + " checks passed.\n");

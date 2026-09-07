@@ -56,6 +56,8 @@ import {
   detectExtraChecks,
   extraCheckRegressions,
   buildDiagnosis,
+  proofLevel,
+  proofBanner,
 } from "./guard.mjs";
 
 // ------------------------------------------------------------------ config
@@ -1561,8 +1563,28 @@ try {
 
 const explanation = agentText.length ? agentText[agentText.length - 1].trim() : "(the agent wrote no summary)";
 
+// Which rung of the proof ladder this run actually reached. Computed here from
+// facts this process observed, never asked of a model - and it is allowed to be
+// less flattering than the old header, which called a green-to-green run
+// "verified" when nothing had ever exercised the change.
+//
+// Rung 2 is deliberately not claimed yet. It needs "this check was red before
+// and is green now", and today we only record which checks were ALREADY red -
+// a check in that list is tolerated afterwards, not re-tested for improvement.
+// Passing the wrong signal here would hand rung 2 to every run that happened to
+// start with a failing lint, which is the opposite of what it means. The
+// missing piece is small and comes with the watcher work; until then a run that
+// the suite never exercised lands on rung 3, which is the honest answer.
+const proof = proofLevel({
+  hasPatch: changed.length > 0,
+  baselineRed: !baseline.ok,
+  testsPassed: true,
+});
+
 const prBody = [
   "## Automated dependency fix: `" + PACKAGE + "`",
+  "",
+  proofBanner(proof),
   "",
   "This PR was opened by **[Patchery](https://github.com/patchery-dev/Patchery)**. An AI agent read the",
   (baseline.ok ? "migration notes" : "breaking change") + " for `" + PACKAGE + "`, migrated the call sites" +
@@ -1649,6 +1671,12 @@ writeOutputs({
   review_confidence: reviewConfidenceOutput(),
   changed: "true",
   tests_passed: "true",
+  // The rung is an output, not just prose in the body, so a workflow can act on
+  // it - open rung 3 as a draft, gate a merge on rung 1, count them in a table.
+  proof_rung: String(proof.rung),
+  proof_name: proof.name,
+  proof_verified: proof.verified ? "true" : "false",
+  draft: proof.draft ? "true" : "false",
   files: changed.join("\n"),
   pr_body_file: prBodyPath,
   summary: "Fixed " + PACKAGE + " (" + changed.length + " file(s)), tests pass.",
