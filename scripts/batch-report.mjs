@@ -15,7 +15,7 @@
  */
 
 const VERIFY_ORDER = ["VALID", "UNKNOWN", "NOT-A-CASE"];
-const BENCHMARK_ORDER = ["FIXED", "REFUSED", "EXHAUSTED", "NO-CHANGE", "WRONG", "BLOCKED"];
+const BENCHMARK_ORDER = ["FIXED", "REFUSED", "NEEDS-DECISION", "EXHAUSTED", "NO-CHANGE", "WRONG", "BLOCKED"];
 
 /**
  * A row whose verdict field is missing or empty.
@@ -132,6 +132,12 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
     out.push("| | |", "|---|---|");
     out.push("| fixed | " + n("FIXED") + " |");
     out.push("| refused to ship an unproven fix | " + n("REFUSED") + " |");
+    // Sits below FIXED and REFUSED and above the failures, because that is where
+    // it belongs: not a success, not a shortfall. The label says what the finding
+    // was rather than what we did not do - "no code fix exists" is the answer, and
+    // a row reading "could not fix" would be describing the same run as a failure
+    // of ours, which is the thing this outcome was added to stop.
+    out.push("| no code fix exists; the decision is the answer | " + n("NEEDS-DECISION") + " |");
     out.push("| ran out of turns mid-investigation | " + n("EXHAUSTED") + " |");
     out.push("| produced nothing | " + n("NO-CHANGE") + " |");
     // Bold, because shipping something broken is the only outcome that costs a

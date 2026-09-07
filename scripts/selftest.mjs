@@ -3812,6 +3812,84 @@ check("an inherited property is not a declaration", () => {
 });
 
 // ---------------------------------------------------------------------------
+// NEEDS-DECISION: a break with no fix in the customer's code is not our failure.
+// The tests that matter here are the ones proving it cannot be claimed.
+// ---------------------------------------------------------------------------
+
+const decided = (over = {}) =>
+  benchmarkOutcome({
+    baselineExit: "0",
+    brokenExit: "1",
+    finalExit: "1",
+    changed: "false",
+    version: "3",
+    installed: "3.0.0",
+    actionOutcome: "needs-decision",
+    actionSummary: "Patchery found the cause - and no code change fixes this one",
+    decisionReason: "no-code-fix",
+    ...over,
+  });
+
+check("a break with no fix in your code is not filed as having nothing to offer", () => {
+  const r = decided();
+  assert.strictEqual(r.outcome, "NEEDS-DECISION");
+  assert.match(r.detail, /no code change fixes this break/);
+  assert.match(r.detail, /no-code-fix/);
+});
+
+// The gate is the action's own outcome slug, which agent.mjs sets only from
+// classifyFailure's regex over the test output. If prose could reach it, an agent
+// that learned the phrase would have learned an excuse - and every stuck run
+// would arrive dressed as a decision.
+check("the summary text alone cannot buy this outcome", () => {
+  const r = decided({
+    actionOutcome: "no-changes",
+    actionSummary: "no code change fixes this one, the decision is yours, needs-decision",
+  });
+  assert.strictEqual(r.outcome, "NO-CHANGE", "a model wrote that sentence, so it proves nothing");
+});
+
+check("running out of turns is still ours, however it is described", () => {
+  const r = decided({ actionOutcome: "max-turns reached", decisionReason: "" });
+  assert.strictEqual(r.outcome, "EXHAUSTED");
+});
+
+// The outcome must not become a place a shipped change can hide. If anything was
+// written, the ordinary checks decide - including the census.
+check("a run that shipped a change is judged on the change, not on its label", () => {
+  assert.strictEqual(decided({ changed: "true", finalExit: "0" }).outcome, "FIXED");
+  assert.strictEqual(decided({ changed: "true", finalExit: "1" }).outcome, "WRONG");
+});
+
+check("our own setup failing still outranks it - that is not the customer's break", () => {
+  assert.strictEqual(decided({ baselineExit: "1" }).outcome, "BLOCKED");
+  assert.strictEqual(decided({ installed: "2.0.1" }).outcome, "BLOCKED");
+});
+
+// The whole discipline in one assertion: it is a separate row, and it is inside
+// the denominator. A customer whose build is still red has not been helped,
+// whoever is at fault.
+check("NEEDS-DECISION is counted, not excused", () => {
+  const rows = [
+    { outcome: "FIXED", repo: "a/b", package: "p", version: "3" },
+    { outcome: "NEEDS-DECISION", repo: "c/d", package: "q", version: "3" },
+    { outcome: "BLOCKED", repo: "e/f", package: "r", version: "3" },
+  ];
+  const text = renderReport(rows, { kind: "benchmark" });
+  assert.match(text, /1 fixed of 2 cases/, "the decision row stays in the denominator; only BLOCKED leaves");
+  assert.match(text, /no code fix exists; the decision is the answer \| 1/);
+  assert.ok(!/could not fix/i.test(text), "the table must not describe it as our shortfall");
+});
+
+check("it is ordered as neither a success nor a failure", () => {
+  const order = sortRows(
+    [{ outcome: "NO-CHANGE", repo: "a" }, { outcome: "NEEDS-DECISION", repo: "b" }, { outcome: "FIXED", repo: "c" }],
+    "benchmark"
+  ).map((r) => r.outcome);
+  assert.deepStrictEqual(order, ["FIXED", "NEEDS-DECISION", "NO-CHANGE"]);
+});
+
+// ---------------------------------------------------------------------------
 // The run budget: the ceiling that making the stall clock honest took away.
 // ---------------------------------------------------------------------------
 

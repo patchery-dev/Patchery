@@ -382,6 +382,7 @@ jobs:
             --guard-reason "$GUARD_REASON" \
             --step-outcome "$STEP_OUTCOME" \
             --action-summary "$ACTION_SUMMARY" \
+            --decision-reason "$DECISION_REASON" \
             --changed "$CHANGED" \
             --review "$REVIEW" \
             --files "$FILES" \
@@ -398,6 +399,7 @@ jobs:
           FINAL_EXIT: ${{ steps.recount.outputs.exit }}
           ACTION_OUTCOME: ${{ steps.patchery.outputs.outcome }}
           GUARD_REASON: ${{ steps.patchery.outputs.guard-reason }}
+          DECISION_REASON: ${{ steps.patchery.outputs.decision-reason }}
           STEP_OUTCOME: ${{ steps.patchery.outcome }}
           ACTION_SUMMARY: ${{ steps.patchery.outputs.summary }}
           CHANGED: ${{ steps.patchery.outputs.changed }}

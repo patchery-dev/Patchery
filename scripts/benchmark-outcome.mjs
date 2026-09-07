@@ -7,15 +7,27 @@
  * opening the log would not change their mind. So the outcomes are few, and the
  * two kinds of "no fix" are kept apart on purpose:
  *
- *   FIXED      the tests are green again, and the same tests are green
- *   REFUSED    Patchery found a fix it could not prove, and did not ship it
- *   NO-CHANGE  Patchery had nothing to offer
- *   WRONG      it shipped a change and the suite is still red, or got smaller
- *   BLOCKED    it never got to try - setup failed on our side
+ *   FIXED           the tests are green again, and the same tests are green
+ *   REFUSED         Patchery found a fix it could not prove, and did not ship it
+ *   NEEDS-DECISION  no code change fixes this break; the analysis names what does
+ *   NO-CHANGE       Patchery had nothing to offer
+ *   WRONG           it shipped a change and the suite is still red, or got smaller
+ *   BLOCKED         it never got to try - setup failed on our side
  *
  * REFUSED is not a failure to be buried in the same column as WRONG. It is the
  * product's claim: an agent that would rather say nothing than say something
  * unproven. A table that hides it is measuring somebody else's product.
+ *
+ * NEEDS-DECISION separates two things that are not alike: a break this agent
+ * could not solve, and a break that has no solution in the customer's code at
+ * all. When a package requires a newer Node than the project runs, no edit to
+ * any call site changes which Node the project runs - the answer is a decision,
+ * and it belongs to whoever owns the consequences. Reporting that as "Patchery
+ * had nothing to offer" states the opposite of what happened.
+ *
+ * It stays in the denominator. A customer whose build is still red has not been
+ * helped, whoever is at fault, and a column where nothing is ever our failure is
+ * how a benchmark stops measuring anything.
  */
 
 import { censusHeld } from "./test-census.mjs";
@@ -60,6 +72,7 @@ export function benchmarkOutcome({
   brokenExit = "",
   actionSummary = "",
   stepOutcome = "",
+  decisionReason = "",
 } = {}) {
   if (baselineExit !== "0") {
     return {
@@ -201,6 +214,35 @@ export function benchmarkOutcome({
     // "no fix produced: no-changes" is a shrug; the row should carry the reason,
     // because this is the most common outcome and a table full of shrugs teaches
     // nobody anything.
+    // A break with no fix in the customer's code is not a failure of ours, and
+    // filing it as "Patchery had nothing to offer" says the opposite.
+    //
+    // This is the mirror of BLOCKED and it earns its place the same way. BLOCKED
+    // exists because our setup failing is not a finding about the product;
+    // NEEDS-DECISION exists because the customer's situation having no code fix
+    // is not a finding about the product either. Neither is a verdict on the
+    // agent. Both must be visible rather than blended away.
+    //
+    // But unlike BLOCKED it stays IN the denominator, and that is the whole
+    // discipline. A customer whose build is still red has not been helped,
+    // whoever is at fault - so this must never become the column where nothing
+    // is ever our failure. It is named so a reader can see how often it fires:
+    // if most runs end here, that is a weak product and the table has to say so
+    // in its own numbers rather than hide it inside a friendlier word.
+    //
+    // Reachable only via the action's own `needs-decision` outcome, which is
+    // gated on a regex over the test output rather than on anything the model
+    // asserts. Nothing here pattern-matches the summary text - a summary is
+    // written by the model, and a model that learned this phrase would have
+    // learned an excuse.
+    if (/^needs-decision$/i.test(String(actionOutcome).trim())) {
+      return {
+        outcome: "NEEDS-DECISION",
+        detail:
+          "no code change fixes this break - the analysis names the decision that does" +
+          (decisionReason ? " (" + decisionReason + ")" : ""),
+      };
+    }
     const said = String(actionSummary || "").trim();
     return {
       outcome: "NO-CHANGE",
@@ -285,6 +327,7 @@ if (isMain) {
     installed: a.installed,
     brokenExit: a["broken-exit"],
     actionSummary: a["action-summary"],
+    decisionReason: a["decision-reason"],
     before,
     after,
   });

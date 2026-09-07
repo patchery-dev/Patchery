@@ -286,6 +286,16 @@ outputs:
       when nothing was blocked. A slug rather than prose, because the
       interesting question is how often each one fires.
     value: ${{ steps.run.outputs.guard_reason }}
+  decision-reason:
+    description: >-
+      Why this run ended in a decision rather than a patch: no-code-fix, when the
+      break has no fix in your code at all - a package that requires a newer Node
+      than the project runs cannot be repaired at any call site. Empty otherwise.
+      A slug for the same reason guard-reason is one: the question worth asking is
+      how often it fires, and prose cannot be counted. It is set from the break
+      classifier's regex over your test output, never from anything the model
+      says about its own run.
+    value: ${{ steps.run.outputs.decision_reason }}
   proof-rung:
     description: >-
       Which rung of proof this run reached: '1' the suite was red and is now

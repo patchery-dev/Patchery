@@ -1029,7 +1029,32 @@ if (changed.length === 0) {
   );
   const message = handover.join("\n");
   log("\n" + message);
-  stop("no-changes", message, { tests_passed: "false", diagnosis_file: diagnosisFile });
+  // A run that ends because no code change CAN fix the break is not the same
+  // result as a run that ends because this agent found nothing, and until now
+  // both wrote "no-changes" - which the benchmark reads as "Patchery had nothing
+  // to offer". That sentence is false about a run that returned the right
+  // answer, and it is false in the direction that costs us: it files a correct
+  // verdict as our shortfall.
+  //
+  // The gate is `classification.inScope === false`, which comes from a regex over
+  // the test output (EBADENGINE and friends), NOT from anything the model says.
+  // That matters more than the wording: an outcome that reads better than
+  // "nothing to offer" is exactly what a stuck agent would learn to reach for, so
+  // it must be unreachable by claiming it. The model cannot set this flag.
+  //
+  // Deliberately NOT implemented: the second reason we know exists - a fix that
+  // was found but needs the owner's consent, because it would break the
+  // consumers of a published library. It is real, it is arguably the more
+  // valuable case, and there is no mechanical signal for it today. Adding it on
+  // the model's say-so would hand back the escape hatch this gate exists to
+  // close. It stays NO-CHANGE, understating us, until something deterministic
+  // can tell a library from an application at run time.
+  const noCodeFix = isVerdict && classification.inScope === false;
+  stop(noCodeFix ? "needs-decision" : "no-changes", message, {
+    tests_passed: "false",
+    diagnosis_file: diagnosisFile,
+    ...(noCodeFix ? { decision_reason: "no-code-fix" } : {}),
+  });
 }
 
 log(changed.map((f) => "  " + f).join("\n"));
