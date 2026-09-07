@@ -125,6 +125,25 @@ export function taglineDrift(surfaces) {
     .map((s) => ({ name: s.name, core: s.core, expected: tied ? null : top }));
 }
 
+/**
+ * The count the README claims the self-test runs, or null if it says nothing.
+ *
+ * Null and zero are different answers and this project has been bitten by
+ * conflating them before: a README that stopped stating the number is fine, a
+ * README stating zero is not, and a regex that returned 0 for "could not find
+ * it" would report agreement with a suite that had vanished.
+ */
+export function statedCheckCount(readme) {
+  const m = /(\d[\d,]*)\s+offline checks/i.exec(String(readme || "").replace(/\r\n/g, "\n"));
+  return m ? Number(m[1].replace(/,/g, "")) : null;
+}
+
+/** The count the suite actually reports, or null if its last line changed shape. */
+export function reportedCheckCount(selftestOutput) {
+  const m = /(\d[\d,]*)\s+checks passed/i.exec(String(selftestOutput || ""));
+  return m ? Number(m[1].replace(/,/g, "")) : null;
+}
+
 const isMain = process.argv[1] && process.argv[1].endsWith("check-claims.mjs");
 if (isMain) {
   const read = (p) => {
@@ -164,4 +183,43 @@ if (isMain) {
     process.exit(1);
   }
   console.log("tagline: " + surfaces.length + " surface(s) saying the same thing");
+
+  // The other claim that keeps drifting, and the reason this check grew a
+  // second job. The offline-check count has been wrong in the README six times
+  // - 179, 206, 388, 474, 512, 551 - and twice an outside reader found it
+  // before we did. Each time the fix was to retype the number, which is why
+  // there was a next time. Retyping it is fine; nobody noticing is the problem.
+  //
+  // Running the suite is the only honest source: importing it and counting
+  // would be counting a different thing than the one the README points a reader
+  // at. It costs one extra run of a suite that makes no network calls, in the
+  // two places that already run it.
+  const stated = statedCheckCount(read(path.join(root, "README.md")));
+  if (stated !== null) {
+    const { spawnSync } = await import("node:child_process");
+    const run = spawnSync(process.execPath, [path.join(root, "scripts", "selftest.mjs")], {
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    const actual = reportedCheckCount(String(run.stdout || "") + String(run.stderr || ""));
+    if (actual === null) {
+      // Not a pass. A check that cannot read the answer must say so rather than
+      // fall through quietly - "we agree" and "I could not look" are the pair
+      // this file exists to keep apart.
+      console.error(
+        "checks: the README claims " + stated + " offline checks and the suite's " +
+          "last line could not be read, so the two could not be compared."
+      );
+      process.exit(1);
+    }
+    if (actual !== stated) {
+      console.error(
+        "checks: the README says " + stated + " offline checks; the suite runs " + actual + ".\n\n" +
+          "This number has drifted six times already. Correct the README in the same\n" +
+          "commit that changed the suite - that is the whole point of this gate."
+      );
+      process.exit(1);
+    }
+    console.log("checks: the README's " + stated + " matches what the suite runs");
+  }
 }

@@ -29,7 +29,7 @@ import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBu
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
-import { taglineCore, taglineSurfaces, taglineDrift } from "./check-claims.mjs";
+import { taglineCore, taglineSurfaces, taglineDrift, statedCheckCount, reportedCheckCount } from "./check-claims.mjs";
 import { planBatch } from "./batch-plan.mjs";
 import { sortRows, renderReport, guardCaught, guardVisible, objectedFixes } from "./batch-report.mjs";
 import {
@@ -3092,6 +3092,37 @@ check("our own surfaces say the same thing", () => {
 });
 
 
+
+console.log("\ncheck-claims - the offline-check count, which has drifted six times");
+
+check("the README's stated count is read, commas and all", () => {
+  assert.strictEqual(statedCheckCount("The engine has 554 offline checks covering the guard."), 554);
+  assert.strictEqual(statedCheckCount("has 1,204 offline checks"), 1204);
+  // CRLF is how this file family actually arrives on Windows, and a pattern
+  // anchored to a bare newline is how check-claims lost a surface once already.
+  assert.strictEqual(statedCheckCount("line\r\nThe engine has 554 offline checks\r\n"), 554);
+});
+
+check("a README that states no count is null, never zero", () => {
+  // The distinction the whole file exists for: "it says nothing" and "it says
+  // none" are different answers, and zero would make the gate compare against
+  // a suite that had vanished and call it agreement.
+  assert.strictEqual(statedCheckCount("no numbers here at all"), null);
+  assert.strictEqual(statedCheckCount(""), null);
+  assert.strictEqual(statedCheckCount(undefined), null);
+});
+
+check("the suite's own last line is read the same way", () => {
+  assert.strictEqual(reportedCheckCount("  ok  something\n\n559 checks passed.\n"), 559);
+  assert.strictEqual(reportedCheckCount("1,004 checks passed."), 1004);
+});
+
+check("a suite whose last line changed shape reports null, not a number", () => {
+  // If someone rewords the summary line, the gate must fail loudly rather than
+  // silently stop comparing - the failure mode that let the number drift.
+  assert.strictEqual(reportedCheckCount("all good"), null);
+  assert.strictEqual(reportedCheckCount(""), null);
+});
 
 console.log("\nbatch-plan.planBatch");
 
