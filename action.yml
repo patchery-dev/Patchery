@@ -1,9 +1,10 @@
 name: "Patchery"
 description: >-
-  When a dependency breaks your code, Patchery fixes it and proves the fix.
-  Reads the changelog, migrates the call sites, verifies against your own
-  tests, and hands you a ready-to-review PR. If the tests do not pass, it
-  delivers nothing.
+  Dependabot tells you a dependency changed. Patchery works out what that means
+  for your code: it reproduces the break, reads the changelog, migrates the call
+  sites, and verifies against your own tests. It will not claim a fix it cannot
+  prove - where the break has no fix at the call site, it hands you the analysis
+  instead. If the tests do not pass, nothing is delivered.
 author: "ugursku"
 
 branding:
