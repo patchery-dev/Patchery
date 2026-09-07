@@ -29,7 +29,14 @@ import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBu
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
-import { taglineCore, taglineSurfaces, taglineDrift, statedCheckCount, reportedCheckCount } from "./check-claims.mjs";
+import {
+  taglineCore,
+  taglineSurfaces,
+  taglineDrift,
+  statedCheckCount,
+  reportedCheckCount,
+  releaseTagWarnings,
+} from "./check-claims.mjs";
 import { planBatch } from "./batch-plan.mjs";
 import { sortRows, renderReport, guardCaught, guardVisible, objectedFixes } from "./batch-report.mjs";
 import {
@@ -3122,6 +3129,43 @@ check("a suite whose last line changed shape reports null, not a number", () => 
   // silently stop comparing - the failure mode that let the number drift.
   assert.strictEqual(reportedCheckCount("all good"), null);
   assert.strictEqual(reportedCheckCount(""), null);
+});
+
+console.log("\ncheck-claims.releaseTagWarnings - the surface that is not a file");
+
+check("a tag behind the tree is named, with what it actually installs", () => {
+  const w = releaseTagWarnings({ tag: "v0", behind: 112, tagCore: "same", headCore: "same" });
+  assert.strictEqual(w.length, 1);
+  assert.match(w[0], /v0 is 112 commit\(s\) behind/);
+  // The point of the sentence: a reader must connect it to `uses: ...@v0`.
+  assert.match(w[0], /@v0/);
+});
+
+check("a tag making a different claim is a separate warning from being behind", () => {
+  // These are genuinely different failures. A tag can be far behind and still
+  // say the same thing; it can be one commit behind and say something wrong.
+  // Only the second puts a false sentence in front of a reader.
+  const w = releaseTagWarnings({ tag: "v0", behind: 112, tagCore: "old pitch", headCore: "new pitch" });
+  assert.strictEqual(w.length, 2);
+  const level = releaseTagWarnings({ tag: "v0", behind: 0, tagCore: "old pitch", headCore: "new pitch" });
+  assert.strictEqual(level.length, 1);
+  assert.match(level[0], /different claim/);
+});
+
+check("a tag level with the tree and saying the same thing warns about nothing", () => {
+  assert.deepStrictEqual(releaseTagWarnings({ tag: "v0", behind: 0, tagCore: "x", headCore: "x" }), []);
+});
+
+check("no tag at all is silence, not a complaint", () => {
+  // A fresh clone without tags, or a repository before its first release, must
+  // not be told it has a stale one.
+  assert.deepStrictEqual(releaseTagWarnings({ tag: "", behind: 9, tagCore: "a", headCore: "b" }), []);
+});
+
+check("an unreadable tag description does not invent a disagreement", () => {
+  // Empty means "could not read it", and this file's whole rule is that
+  // "I could not look" must never render as either agreement or drift.
+  assert.deepStrictEqual(releaseTagWarnings({ tag: "v0", behind: 0, tagCore: "", headCore: "new pitch" }), []);
 });
 
 console.log("\nbatch-plan.planBatch");

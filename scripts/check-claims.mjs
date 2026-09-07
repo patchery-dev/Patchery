@@ -144,6 +144,47 @@ export function reportedCheckCount(selftestOutput) {
   return m ? Number(m[1].replace(/,/g, "")) : null;
 }
 
+/**
+ * What to say about the released tag, which is the surface this file could not
+ * see and the one a user actually installs.
+ *
+ * Everything above compares files in the working tree. GitHub Marketplace, and
+ * `uses: patchery-dev/Patchery@v0`, serve the TAG. On 2026-09-08 those had
+ * diverged by 112 commits: main carried the current pitch and the current
+ * guard, and the tag carried the pitch and the guard of two days earlier -
+ * while this check reported seven surfaces in agreement, because all seven of
+ * them were the ones on disk.
+ *
+ * A tag lagging main is normal during development, so this warns and does not
+ * fail. What it refuses to do is stay quiet: publishing to Marketplace, or
+ * telling a reader to install @v0, should not be possible without having been
+ * told how old that is.
+ *
+ * @returns {string[]} lines to print, empty when there is nothing to say
+ */
+export function releaseTagWarnings({ tag, behind, tagCore, headCore }) {
+  const out = [];
+  if (!tag) return out;
+  if (behind > 0) {
+    out.push(
+      "release tag " + tag + " is " + behind + " commit(s) behind - that is what " +
+        "`uses: ...@" + tag + "` installs and what Marketplace renders, not this tree."
+    );
+  }
+  // Stated separately from the commit count on purpose: a tag can be far behind
+  // and still make the same claim, and it can be one commit behind and make a
+  // different one. The second is the one that puts a wrong sentence in front of
+  // a reader.
+  if (tagCore && headCore && tagCore !== headCore) {
+    out.push(
+      "release tag " + tag + " states a different claim than this tree:\n" +
+        "    tag  says  " + tagCore + "\n" +
+        "    tree says  " + headCore
+    );
+  }
+  return out;
+}
+
 const isMain = process.argv[1] && process.argv[1].endsWith("check-claims.mjs");
 if (isMain) {
   const read = (p) => {
@@ -221,5 +262,27 @@ if (isMain) {
       process.exit(1);
     }
     console.log("checks: the README's " + stated + " matches what the suite runs");
+  }
+
+  // The tag, last, because it is the only surface here that is not a file.
+  // Wrapped whole: a machine without git, or a clone without tags, must lose
+  // the warning and not the check that ran before it.
+  try {
+    const { execFileSync } = await import("node:child_process");
+    const git = (args) => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const tag = git(["tag", "--list", "v*", "--sort=-v:refname"]).split("\n")[0].trim();
+    if (tag) {
+      const warnings = releaseTagWarnings({
+        tag,
+        behind: Number(git(["rev-list", "--count", tag + "..HEAD"])) || 0,
+        tagCore: taglineCore((/^description:[ \t]*>-?[ \t]*\n((?:[ \t]+\S.*\n)+)/m.exec(git(["show", tag + ":action.yml"]).replace(/\r\n/g, "\n") + "\n") || [])[1] || ""),
+        headCore: taglineCore((/^description:[ \t]*>-?[ \t]*\n((?:[ \t]+\S.*\n)+)/m.exec(read(path.join(root, "action.yml")).replace(/\r\n/g, "\n")) || [])[1] || ""),
+      });
+      for (const w of warnings) console.error("::warning::" + w);
+      if (warnings.length === 0) console.log("release tag " + tag + ": level with this tree");
+    }
+  } catch {
+    // No git, no tags, or no action.yml at the tag. Nothing to say, and nothing
+    // that should turn a passing claim check into a failure.
   }
 }
