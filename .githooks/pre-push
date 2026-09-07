@@ -1,0 +1,37 @@
+#!/bin/sh
+#
+# Nothing reaches main without the checks passing.
+#
+# The self-test caught five regressions in one night - a lowercased pattern that
+# stopped protecting setupTests.js, a corpus measurement changed without saying
+# so, a permission opened wider than intended. Every one of those was found
+# because the suite was run, and the suite was run because somebody remembered.
+#
+# This is the same rule the product enforces on its own agent: a change that
+# cannot pass the tests does not ship, whatever anyone intended. Applying it to
+# ourselves is not ceremony - the tool exists because good intentions are not a
+# mechanism.
+#
+# Install once:  git config core.hooksPath .githooks
+# Skip once:     git push --no-verify   (say why in the commit)
+
+set -e
+
+echo "pre-push: running the self-test..."
+if ! node scripts/selftest.mjs > /tmp/patchery-selftest.log 2>&1; then
+  echo ""
+  echo "PUSH REFUSED - the self-test does not pass."
+  echo ""
+  tail -30 /tmp/patchery-selftest.log
+  echo ""
+  echo "Fix it, or push with --no-verify and say why."
+  exit 1
+fi
+grep "checks passed" /tmp/patchery-selftest.log
+
+echo "pre-push: checking the workflows..."
+if ! node scripts/check-workflows.mjs; then
+  echo ""
+  echo "PUSH REFUSED - see above."
+  exit 1
+fi

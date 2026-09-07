@@ -1,0 +1,7 @@
+# Shell scripts must keep Unix line endings.
+#
+# Git on Windows checks these out with CRLF by default, and a shell script with
+# CRLF fails with "bad interpreter" - the hook would appear installed and simply
+# never run, which is worse than not having it.
+.githooks/** text eol=lf
+*.sh text eol=lf

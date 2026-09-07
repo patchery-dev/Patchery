@@ -19,6 +19,9 @@ import { decideNodeVersion, lowestMajor, fromNvmrc, ciNodeVersions, FALLBACK } f
 import { classifyFailure, briefing } from "./classify-break.mjs";
 import { testScriptUsable } from "./find-bumps.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
+import { inlineNodeBlocks } from "./check-workflows.mjs";
+import { planBatch } from "./batch-plan.mjs";
+import { sortRows, renderReport } from "./batch-report.mjs";
 import {
   protectedReason,
   isHarnessConfig,
@@ -2660,6 +2663,246 @@ check("an unrecognised failure offers no next step rather than a guess", () => {
   const c = classifyFailure("something nobody has taught us about");
   assert.strictEqual(c.kind, null);
   assert.strictEqual(c.next, "");
+});
+
+// ---------------------------------------------------------------------------
+// The rule we now apply to ourselves.
+//
+// Every failure in the benchmark pipeline came from JavaScript embedded in a
+// workflow's `run:` block, and none from a script with a test. These three
+// scripts are that logic, moved out - so the last thing to check is that the
+// move actually happened and stays happened.
+// ---------------------------------------------------------------------------
+
+console.log("\ncheck-workflows.inlineNodeBlocks");
+
+check("a long inline block is flagged, with its line number", () => {
+  const yaml = ["jobs:", "  a:", "    steps:", '      - run: node -e "', "  const a = 1;", "  const b = 2;", "  const c = 3;", "  console.log(a + b + c);", '        "'].join("\n");
+  const found = inlineNodeBlocks(yaml);
+  assert.strictEqual(found.length, 1);
+  assert.strictEqual(found[0].line, 4);
+  assert.ok(found[0].lines > 3);
+});
+
+check("a short one-liner is left alone - the rule is about logic, not shelling out", () => {
+  assert.deepStrictEqual(inlineNodeBlocks(`- run: node -e "console.log(1)"`), []);
+  assert.deepStrictEqual(inlineNodeBlocks(`- run: node -p "require('./p.json').version"`), []);
+});
+
+check("a run: block with no node -e at all is clean", () => {
+  assert.deepStrictEqual(inlineNodeBlocks("- run: npm test\n- run: echo hi"), []);
+});
+
+// The gate lives in the pre-push hook, but a hook can be skipped and a hook is
+// not installed for anyone who clones this repository. The suite cannot be.
+check("our own workflows carry no buried logic", () => {
+  const dir = path.join(root, ".github", "workflows");
+  const offenders = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!/\.ya?ml$/i.test(f)) continue;
+    for (const b of inlineNodeBlocks(fs.readFileSync(path.join(dir, f), "utf8"))) {
+      offenders.push(f + ":" + b.line + " (" + b.lines + " lines)");
+    }
+  }
+  for (const f of ["action.yml"]) {
+    const p = path.join(root, f);
+    if (!fs.existsSync(p)) continue;
+    for (const b of inlineNodeBlocks(fs.readFileSync(p, "utf8"))) {
+      offenders.push(f + ":" + b.line + " (" + b.lines + " lines)");
+    }
+  }
+  assert.deepStrictEqual(offenders, [], "move these into scripts/ and give them a test");
+});
+
+console.log("\nbatch-plan.planBatch");
+
+const ROWS = [
+  { repo: "expressjs/express", package: "content-disposition" },
+  { repo: "expressjs/express", package: "content-type" },
+  { repo: "sindresorhus/got", package: "p-cancelable" },
+  { repo: "vercel/next.js", package: "express" },
+];
+
+check("no filter runs everything", () => {
+  const { picked, dropped } = planBatch(ROWS, {});
+  assert.strictEqual(picked.length, 4);
+  assert.strictEqual(dropped, 0);
+});
+
+check("the filter matches the repo or the package, case-insensitively", () => {
+  assert.strictEqual(planBatch(ROWS, { only: "EXPRESS" }).picked.length, 3);
+  assert.strictEqual(planBatch(ROWS, { only: "content-type" }).picked.length, 1);
+  assert.strictEqual(planBatch(ROWS, { only: "  got " }).picked.length, 1);
+});
+
+check("an empty filter is not a filter - a blank input box means all", () => {
+  assert.strictEqual(planBatch(ROWS, { only: "" }).picked.length, 4);
+  assert.strictEqual(planBatch(ROWS, { only: "   " }).picked.length, 4);
+});
+
+check("a filter matching nothing yields nothing, not everything", () => {
+  assert.strictEqual(planBatch(ROWS, { only: "nonesuch" }).picked.length, 0);
+});
+
+// The whole point of returning `dropped`: a truncation nobody announced reads
+// as "we measured everything", which is the exact failure this pipeline exists
+// to prevent - and here it would also mean a quietly smaller bill.
+check("what the cap dropped is counted, not swallowed", () => {
+  const { picked, dropped } = planBatch(ROWS, { cap: 2 });
+  assert.strictEqual(picked.length, 2);
+  assert.strictEqual(dropped, 2);
+});
+
+check("the caller's limit applies, but never above the hard cap", () => {
+  assert.strictEqual(planBatch(ROWS, { limit: 3, cap: 50 }).picked.length, 3);
+  assert.strictEqual(planBatch(ROWS, { limit: 99, cap: 2 }).picked.length, 2);
+  assert.strictEqual(planBatch(ROWS, { limit: 0, cap: 50 }).picked.length, 4);
+});
+
+check("filter first, then cap - not the other way round", () => {
+  const { picked } = planBatch(ROWS, { only: "express", limit: 2 });
+  assert.strictEqual(picked.length, 2);
+  assert.ok(picked.every((r) => (r.repo + r.package).includes("express")));
+});
+
+check("no rows at all is a plan, not a crash", () => {
+  assert.deepStrictEqual(planBatch([], {}), { picked: [], dropped: 0 });
+  assert.deepStrictEqual(planBatch(null, {}), { picked: [], dropped: 0 });
+});
+
+console.log("\nbatch-report.renderReport");
+
+const BENCH = [
+  { outcome: "BLOCKED", repo: "b/b", package: "p", version: "2", detail: "npm died" },
+  { outcome: "WRONG", repo: "w/w", package: "p", version: "2", detail: "suite shrank" },
+  { outcome: "FIXED", repo: "a/a", package: "p", version: "2", detail: "green", model: "glm-5.3" },
+  { outcome: "REFUSED", repo: "r/r", package: "p", version: "2", detail: "could not prove it" },
+];
+
+check("the outcomes are ordered, best-understood first", () => {
+  assert.deepStrictEqual(
+    sortRows(BENCH, "benchmark").map((r) => r.outcome),
+    ["FIXED", "REFUSED", "WRONG", "BLOCKED"]
+  );
+});
+
+check("BLOCKED is named but kept out of the denominator", () => {
+  const text = renderReport(BENCH, { kind: "benchmark", queued: 4 });
+  // 4 rows, 1 of them ours - the product was asked 3 questions, not 4.
+  assert.match(text, /1 fixed of 3 cases/);
+  assert.match(text, /blocked by our setup \(not counted\) \| 1/);
+});
+
+check("a wrong fix is the one line nobody can skim past", () => {
+  const text = renderReport(BENCH, { kind: "benchmark", queued: 4 });
+  assert.match(text, /\*\*shipped something wrong\*\* \| \*\*1\*\*/);
+});
+
+check("REFUSED and WRONG stay separate lines - the product lives in that gap", () => {
+  const text = renderReport(BENCH, { kind: "benchmark", queued: 4 });
+  assert.match(text, /refused to ship an unproven fix \| 1/);
+  assert.ok(!/refused.*wrong/i.test(text.split("\n").find((l) => /refused/.test(l))));
+});
+
+check("the fixer is named, so a rate cannot be read as model-independent", () => {
+  assert.match(renderReport(BENCH, { kind: "benchmark" }), /Fixer: glm-5\.3/);
+  assert.match(renderReport([{ outcome: "FIXED", repo: "a/a", package: "p", version: "2" }], { kind: "benchmark" }), /Fixer: the repository default/);
+});
+
+check("legs that reported nothing are stated, not implied away", () => {
+  const text = renderReport(BENCH, { kind: "benchmark", queued: 7 });
+  assert.match(text, /\*\*3 case\(s\) reported nothing\*\*/);
+  // And when everything reported, the line must not appear at all.
+  assert.ok(!/reported nothing/.test(renderReport(BENCH, { kind: "benchmark", queued: 4 })));
+});
+
+check("a pipe in a detail cannot break the table it is printed in", () => {
+  const text = renderReport([{ outcome: "FIXED", repo: "a/a", package: "p", version: "2", detail: "ran a | b" }], { kind: "benchmark" });
+  assert.match(text, /ran a \\\| b/);
+});
+
+check("a multi-line detail is flattened rather than splitting the row", () => {
+  const text = renderReport([{ outcome: "FIXED", repo: "a/a", package: "p", version: "2", detail: "one\ntwo" }], { kind: "benchmark" });
+  assert.match(text, /\| one two \|/);
+});
+
+check("the verify table counts verdicts, not outcomes", () => {
+  const rows = [
+    { verdict: "NOT-A-CASE", repo: "c/c", package: "p", version: "3", detail: "still green" },
+    { verdict: "VALID", repo: "a/a", package: "p", version: "3", detail: "red after" },
+    { verdict: "UNKNOWN", repo: "b/b", package: "p", version: "3", detail: "would not install" },
+  ];
+  const text = renderReport(rows, { kind: "verify", queued: 3 });
+  assert.match(text, /## 1 valid case\(s\) of 3 tried/);
+  assert.match(text, /1 were not cases, 1 could not be measured/);
+  assert.deepStrictEqual(sortRows(rows, "verify").map((r) => r.verdict), ["VALID", "UNKNOWN", "NOT-A-CASE"]);
+  // No agent ran, so no rate and no fixer belong in this table.
+  assert.ok(!/Fixer:/.test(text));
+});
+
+check("an outcome nobody has taught us about sorts last instead of first", () => {
+  const rows = [{ outcome: "SOMETHING-NEW", repo: "z/z", package: "p", version: "1" }, ...BENCH];
+  assert.strictEqual(sortRows(rows, "benchmark").at(-1).outcome, "SOMETHING-NEW");
+});
+
+// Found by running the report against a result file written in the other
+// shape: the row rendered as the literal "undefined" and still counted, so a
+// case nobody had judged became a case the agent had failed.
+check("a row with no outcome is named, not counted, and not printed as undefined", () => {
+  const text = renderReport(
+    [{ repo: "a/a", package: "p", version: "2", detail: "green" }, { outcome: "FIXED", repo: "b/b", package: "p", version: "2" }],
+    { kind: "benchmark", queued: 2 }
+  );
+  assert.match(text, /1 fixed of 1 cases/);
+  assert.ok(!/undefined/.test(text));
+  assert.match(text, /carried no outcome/);
+});
+
+check("the same holds for the verify table", () => {
+  const text = renderReport(
+    [{ repo: "a/a", package: "p", version: "3" }, { verdict: "VALID", repo: "b/b", package: "p", version: "3" }],
+    { kind: "verify", queued: 2 }
+  );
+  assert.match(text, /## 1 valid case\(s\) of 1 tried/);
+  assert.match(text, /carried no verdict/);
+});
+
+check("an empty string counts as no verdict, not as a verdict", () => {
+  const text = renderReport([{ outcome: "  ", repo: "a/a", package: "p", version: "1" }], { kind: "benchmark", queued: 1 });
+  assert.match(text, /0 fixed of 0 cases/);
+  assert.match(text, /carried no outcome/);
+});
+
+check("nothing about unreported rows appears when every row reported", () => {
+  assert.ok(!/carried no/.test(renderReport(BENCH, { kind: "benchmark", queued: 4 })));
+});
+
+check("an empty results directory reports zero rather than claiming success", () => {
+  const text = renderReport([], { kind: "benchmark", queued: 5 });
+  assert.match(text, /0 fixed of 0 cases/);
+  assert.match(text, /\*\*5 case\(s\) reported nothing\*\*/);
+});
+
+console.log("\nwrite-result.mjs");
+
+check("the verdict file is written, and survives a value with quotes in it", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "patchery-wr-"));
+  const out = path.join(dir, "result.json");
+  const r = spawnSync(process.execPath, [
+    path.join(root, "scripts", "write-result.mjs"),
+    out, "a/b", "pkg", "3.0.0", "deadbeef", "VALID", 'green before, red after "x"',
+  ]);
+  assert.strictEqual(r.status, 0, String(r.stderr));
+  const parsed = JSON.parse(fs.readFileSync(out, "utf8"));
+  assert.strictEqual(parsed.repo, "a/b");
+  assert.strictEqual(parsed.package, "pkg");
+  assert.strictEqual(parsed.verdict, "VALID");
+  assert.match(parsed.detail, /red after/);
+});
+
+check("a missing output path fails loudly instead of writing somewhere else", () => {
+  const r = spawnSync(process.execPath, [path.join(root, "scripts", "write-result.mjs")]);
+  assert.notStrictEqual(r.status, 0);
 });
 
 console.log("\n" + pass + " checks passed.\n");

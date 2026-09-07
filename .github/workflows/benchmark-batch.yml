@@ -44,26 +44,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Every case is a paid agent run, so a silent truncation would be both a
+      # smaller bill and a smaller denominator. The cap is 50 here for that
+      # reason, and the script says out loud what it dropped.
       - name: Choose the cases to run
         id: build
-        run: |
-          node -e "
-            const rows = require('./benchmark/cases.json');
-            const only = process.env.ONLY.trim().toLowerCase();
-            const limit = Number(process.env.LIMIT) || 0;
-            let picked = rows.filter(
-              (r) => !only || (r.repo + ' ' + r.package).toLowerCase().includes(only)
-            );
-            // Every case is a paid agent run, so a silent truncation would also be
-            // a silently smaller bill and a silently smaller denominator.
-            const cap = limit > 0 ? Math.min(limit, 50) : 50;
-            if (picked.length > cap) console.log('::warning::' + (picked.length - cap) + ' case(s) not run - capped at ' + cap);
-            picked = picked.slice(0, cap);
-            const fs = require('fs');
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'matrix=' + JSON.stringify(picked) + '\n');
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'count=' + picked.length + '\n');
-            console.log(picked.length + ' case(s) queued');
-          "
+        run: node scripts/batch-plan.mjs benchmark/cases.json --only "$ONLY" --limit "$LIMIT" --cap 50
         env:
           ONLY: ${{ inputs.only }}
           LIMIT: ${{ inputs.limit }}
@@ -98,60 +84,19 @@ jobs:
     if: always() && needs.plan.outputs.count != '0'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+
       - name: Collect every result
         uses: actions/download-artifact@v4
         with:
           pattern: benchmark-*
           path: results
 
+      # The table is the artefact the whole benchmark exists to produce, so it
+      # is the last place logic should sit untested. batch-report.mjs decides
+      # what it says; this step only points it at the results.
       - name: The table
-        run: |
-          node -e "
-            const fs = require('fs'), path = require('path');
-            const rows = [];
-            const walk = (dir) => {
-              for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const p = path.join(dir, e.name);
-                if (e.isDirectory()) walk(p);
-                else if (e.name === 'benchmark.json') rows.push(JSON.parse(fs.readFileSync(p, 'utf8')));
-              }
-            };
-            try { walk('results') } catch {}
-
-            const order = ['FIXED', 'REFUSED', 'EXHAUSTED', 'NO-CHANGE', 'WRONG', 'BLOCKED'];
-            rows.sort((a, b) => order.indexOf(a.outcome) - order.indexOf(b.outcome) || a.repo.localeCompare(b.repo));
-            const n = (v) => rows.filter((r) => r.outcome === v).length;
-
-            // BLOCKED is ours, not the product's, so it is named separately and
-            // kept out of the denominator - a setup failure is not a loss.
-            const judged = rows.length - n('BLOCKED');
-            const out = [];
-            const models = [...new Set(rows.map((r) => r.model).filter(Boolean))];
-            out.push('## ' + n('FIXED') + ' fixed of ' + judged + ' cases it was able to attempt');
-            out.push('');
-            out.push(models.length ? 'Fixer: ' + models.join(', ') : 'Fixer: the repository default');
-            out.push('');
-            out.push('| | |');
-            out.push('|---|---|');
-            out.push('| fixed | ' + n('FIXED') + ' |');
-            out.push('| refused to ship an unproven fix | ' + n('REFUSED') + ' |');
-            out.push('| ran out of turns mid-investigation | ' + n('EXHAUSTED') + ' |');
-            out.push('| produced nothing | ' + n('NO-CHANGE') + ' |');
-            out.push('| **shipped something wrong** | **' + n('WRONG') + '** |');
-            out.push('| blocked by our setup (not counted) | ' + n('BLOCKED') + ' |');
-            out.push('');
-            out.push('| outcome | repo | upgrade | what happened |');
-            out.push('|---|---|---|---|');
-            for (const r of rows) {
-              out.push('| ' + r.outcome + ' | ' + r.repo + ' | \`' + r.package + '@' + r.version + '\` | ' + r.detail + ' |');
-            }
-            const queued = Number(process.env.QUEUED);
-            if (rows.length < queued) {
-              out.push('');
-              out.push('**' + (queued - rows.length) + ' case(s) reported nothing** - those runs died before reaching a verdict.');
-            }
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\n') + '\n');
-            console.log(out.join('\n'));
-          "
+        run: node scripts/batch-report.mjs benchmark results benchmark.json --queued "$QUEUED"
         env:
           QUEUED: ${{ needs.plan.outputs.count }}
+

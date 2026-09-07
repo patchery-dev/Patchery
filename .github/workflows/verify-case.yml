@@ -324,13 +324,18 @@ jobs:
             echo ""
             echo "Measured on Node ${{ steps.baseline.outputs.node }}."
           } >> "$GITHUB_STEP_SUMMARY"
-          node -e "
-            const [repo, pkg, version, commit, verdict, detail] = process.argv.slice(1);
-            require('fs').writeFileSync('/tmp/result.json', JSON.stringify({
-              repo, package: pkg, version, commit, verdict, detail,
-              run: process.env.GITHUB_RUN_ID,
-            }));
-          " '${{ inputs.repo }}' '${{ inputs.package }}' '${{ inputs.breaking-version }}' '${{ inputs.commit }}' "$V" "$D"
+          # The runner's own node, not the candidate's: our scripts are ours to
+          # run, and one of them already failed to parse on a repository's Node 12.
+          "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/write-result.mjs" \
+            /tmp/result.json "$IN_REPO" "$IN_PACKAGE" "$IN_VERSION" "$IN_COMMIT" "$V" "$D"
+        env:
+          # Through the environment rather than ${{ }} inside the shell: a value
+          # with a quote in it would otherwise end the argument and leave the
+          # rest to be run as a command.
+          IN_REPO: ${{ inputs.repo }}
+          IN_PACKAGE: ${{ inputs.package }}
+          IN_VERSION: ${{ inputs.breaking-version }}
+          IN_COMMIT: ${{ inputs.commit }}
 
       # The full logs, so a verdict can be argued with rather than trusted.
       - name: Keep the result and the logs

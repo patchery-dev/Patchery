@@ -33,27 +33,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # GitHub refuses a matrix over 256 legs; the cap and the announcement of
+      # what it dropped live in a script with a test, not here.
       - name: Build the list of cases to run
         id: build
-        run: |
-          node -e "
-            const rows = require('./benchmark/candidates.json');
-            const only = process.env.ONLY.trim().toLowerCase();
-            const limit = Number(process.env.LIMIT) || 0;
-            let picked = rows.filter(
-              (r) => !only || (r.repo + ' ' + r.package).toLowerCase().includes(only)
-            );
-            // GitHub refuses a matrix over 256 legs, and a truncation nobody
-            // announced would read as 'we measured everything'.
-            const cap = limit > 0 ? Math.min(limit, 256) : 256;
-            const dropped = picked.length - cap;
-            if (dropped > 0) console.log('::warning::' + dropped + ' row(s) not run - matrix capped at ' + cap);
-            picked = picked.slice(0, cap);
-            const fs = require('fs');
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'matrix=' + JSON.stringify(picked) + '\n');
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'count=' + picked.length + '\n');
-            console.log(picked.length + ' case(s) queued');
-          "
+        run: node scripts/batch-plan.mjs benchmark/candidates.json --only "$ONLY" --limit "$LIMIT" --cap 256
         env:
           ONLY: ${{ inputs.only }}
           LIMIT: ${{ inputs.limit }}
@@ -91,6 +75,8 @@ jobs:
     if: always() && needs.plan.outputs.count != '0'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+
       - name: Collect every case's result
         uses: actions/download-artifact@v4
         with:
@@ -98,44 +84,6 @@ jobs:
           path: results
 
       - name: One table
-        run: |
-          node -e "
-            const fs = require('fs'), path = require('path');
-            const found = [];
-            const walk = (dir) => {
-              for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const p = path.join(dir, e.name);
-                if (e.isDirectory()) walk(p);
-                else if (e.name === 'result.json') found.push(JSON.parse(fs.readFileSync(p, 'utf8')));
-              }
-            };
-            try { walk('results') } catch {}
-
-            const rank = { VALID: 0, UNKNOWN: 1, 'NOT-A-CASE': 2 };
-            found.sort((a, b) => (rank[a.verdict] ?? 3) - (rank[b.verdict] ?? 3) || a.repo.localeCompare(b.repo));
-
-            const n = (v) => found.filter((f) => f.verdict === v).length;
-            const out = [];
-            out.push('## ' + n('VALID') + ' valid case(s) of ' + found.length + ' tried');
-            out.push('');
-            out.push(n('NOT-A-CASE') + ' were not cases, ' + n('UNKNOWN') + ' could not be measured.');
-            out.push('');
-            out.push('| verdict | repo | upgrade | what happened |');
-            out.push('|---|---|---|---|');
-            for (const f of found) {
-              out.push(
-                '| ' + f.verdict + ' | ' + f.repo + ' | \`' + f.package + '@' + f.version + '\` | ' + f.detail + ' |'
-              );
-            }
-            // A leg that died before writing a result is invisible above, so say so
-            // rather than letting the totals imply full coverage.
-            const queued = Number(process.env.QUEUED);
-            if (found.length < queued) {
-              out.push('');
-              out.push('**' + (queued - found.length) + ' case(s) reported nothing** - those legs died before reaching a verdict.');
-            }
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join('\n') + '\n');
-            console.log(out.join('\n'));
-          "
+        run: node scripts/batch-report.mjs verify results result.json --queued "$QUEUED"
         env:
           QUEUED: ${{ needs.plan.outputs.count }}
