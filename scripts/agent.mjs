@@ -138,17 +138,47 @@ const MODEL_TIMEOUT_MIN = modelTimeout.minutes;
  * Give one model call a deadline. Returns the abortController to hand to the SDK
  * and a done() that must be called so a finished call does not leave a timer -
  * and, more importantly, does not abort the NEXT call.
+ *
+ * The clock measures SILENCE, not total runtime, and the difference cost a whole
+ * benchmark run to find.
+ *
+ * It used to be one timer started before the loop and never touched again, so a
+ * multi-turn run was killed at twenty minutes of wall clock however productive
+ * it had been - and the message it printed said "the model stopped answering",
+ * which sent everyone to the provider. Nine of fourteen cases died that way in
+ * one run, and the reason the better model died MORE often is that it wrote 2.5x
+ * the output of the cheap one: more work, more wall clock, more likely to hit a
+ * wall that was never meant to be there.
+ *
+ * `touch()` resets it. Called on every message, the timer only ever fires after a
+ * genuine gap - which is what the input has always claimed to measure.
  */
 function deadline(label) {
-  if (!MODEL_TIMEOUT_MIN) return { abortController: undefined, done: () => {}, expired: () => false };
+  if (!MODEL_TIMEOUT_MIN) {
+    return { abortController: undefined, done: () => {}, expired: () => false, touch: () => {} };
+  }
   const ac = new AbortController();
   let fired = false;
-  const timer = setTimeout(() => {
-    fired = true;
-    log("[timeout] " + timeoutReason(label, MODEL_TIMEOUT_MIN));
-    ac.abort();
-  }, MODEL_TIMEOUT_MIN * 60 * 1000);
-  return { abortController: ac, done: () => clearTimeout(timer), expired: () => fired };
+  let timer = null;
+  const arm = () => {
+    timer = setTimeout(() => {
+      fired = true;
+      log("[timeout] " + timeoutReason(label, MODEL_TIMEOUT_MIN));
+      ac.abort();
+    }, MODEL_TIMEOUT_MIN * 60 * 1000);
+  };
+  arm();
+  return {
+    abortController: ac,
+    done: () => clearTimeout(timer),
+    expired: () => fired,
+    // Anything arriving from the model is proof it has not stopped answering.
+    touch: () => {
+      if (fired) return;
+      clearTimeout(timer);
+      arm();
+    },
+  };
 }
 
 const verifyTools = normalizeVerifyTools(env("SMA_VERIFY_TOOLS"));
@@ -646,6 +676,10 @@ try {
       abortController: agentDeadline.abortController,
     },
   })) {
+    // Proof the model is still answering. Without this the deadline is a budget
+    // on the whole run rather than a stall detector, and a productive agent is
+    // killed for being productive.
+    agentDeadline.touch();
     if (message.type === "assistant") {
       const toolUses = [];
       for (const block of message.message.content) {
@@ -1396,6 +1430,7 @@ async function runReviewPass(entries) {
       const text = [];
       let res = null;
       for await (const message of query({ prompt: promptText, options })) {
+        reviewDeadline.touch();
         if (message.type === "assistant") {
           for (const block of message.message.content) {
             if (block.type === "text" && block.text.trim()) text.push(block.text);
@@ -1524,6 +1559,7 @@ if (VERIFY_REPAIR && review) {
           maxTurns: VERIFY_REPAIR_TURNS,
         },
       })) {
+        repairDeadline.touch();
         if (message.type === "assistant") {
           for (const block of message.message.content) {
             if (block.type === "text" && block.text.trim()) log("\n[repair] " + block.text);
