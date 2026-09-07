@@ -26,6 +26,8 @@
  * A GITHUB_TOKEN in the environment raises the rate limit from 60/hr to 5000/hr.
  */
 
+import { chooseTargetDir, normDir } from "./target-dir.mjs";
+
 const argv = process.argv.slice(2);
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "";
 const ONE = flagValue("--repo");
@@ -272,6 +274,61 @@ async function latestMajor(pkg, haveMajor) {
   };
 }
 
+/** How many workspace manifests are worth fetching before the crawl is the cost. */
+const MAX_MANIFESTS = 60;
+
+/**
+ * Every package.json in the repository, one HTTP call for the listing plus one
+ * per file.
+ *
+ * Without this a monorepo is read from its root alone, and a root package.json
+ * is a coordinator: it declares turbo and eslint, not the library whose new
+ * major breaks the build. That is why the recognizable repositories - the ones
+ * worth measuring - produced the least interesting candidates.
+ *
+ * Excluded: node_modules (not the project's code), and fixtures/examples, whose
+ * package.json files exist to be broken on purpose and would each look like a
+ * workspace.
+ */
+async function workspaceManifests(full, sha) {
+  let tree;
+  try {
+    tree = await api("https://api.github.com/repos/" + full + "/git/trees/" + sha + "?recursive=1");
+  } catch {
+    return { manifests: [], truncated: true };
+  }
+  const paths = (tree.tree || [])
+    .filter((n) => n.type === "blob" && n.path.endsWith("/package.json"))
+    .map((n) => n.path)
+    .filter((p) => !/(^|\/)(node_modules|__fixtures__|fixtures|examples?|test|tests|e2e|benchmarks?|templates?)\//.test(p))
+    .sort((a, b) => a.split("/").length - b.split("/").length);
+
+  // A tree GitHub itself truncated, or one deeper than the cap, means the list
+  // below is incomplete - and an incomplete manifest list makes "only one
+  // workspace declares it" a claim we have not earned. Say so rather than let
+  // the caller read a short list as a whole one.
+  const truncated = Boolean(tree.truncated) || paths.length > MAX_MANIFESTS;
+
+  const manifests = [];
+  for (const p of paths.slice(0, MAX_MANIFESTS)) {
+    try {
+      const file = await api("https://api.github.com/repos/" + full + "/contents/" + p + "?ref=" + sha);
+      const json = JSON.parse(Buffer.from(file.content, "base64").toString("utf8"));
+      manifests.push({
+        dir: p.slice(0, -"/package.json".length),
+        deps: { ...(json.dependencies || {}), ...(json.devDependencies || {}) },
+        runtime: new Set(Object.keys(json.dependencies || {})),
+        test: json.scripts?.test || "",
+      });
+    } catch {
+      // One unreadable member does not invalidate the rest, but it does mean the
+      // list is short - and short lists are exactly what `truncated` is for.
+    }
+    await sleep(80);
+  }
+  return { manifests, truncated: truncated || manifests.length < Math.min(paths.length, MAX_MANIFESTS) };
+}
+
 async function inspectRepo(full) {
   const out = { repo: full };
   const repo = await api("https://api.github.com/repos/" + full);
@@ -296,22 +353,70 @@ async function inspectRepo(full) {
   if (!usable.ok) return { ...out, reject: usable.why };
   out.test = pkg.scripts.test;
 
-  // A workspaces root runs its members' tests through a tool we have not told the
-  // workflow about. Flagged rather than rejected: `target-dir` exists for this,
-  // and the recognizable repositories are mostly monorepos.
-  if (pkg.workspaces) out.note = "monorepo - may need target-dir";
+  // The root counts as a workspace like any other - a monorepo that declares a
+  // dependency at its root really does own it there.
+  const manifests = [
+    {
+      dir: ".",
+      deps: { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) },
+      runtime: new Set(Object.keys(pkg.dependencies || {})),
+      test: pkg.scripts?.test || "",
+    },
+  ];
+
+  if (pkg.workspaces) {
+    const found = await workspaceManifests(full, out.commit);
+    manifests.push(...found.manifests);
+    out.workspaces = found.manifests.length;
+    out.manifestsTruncated = found.truncated;
+    out.note =
+      found.manifests.length
+        ? "monorepo - " + found.manifests.length + " workspace(s) read" +
+          (found.truncated ? ", list incomplete" : "")
+        : "monorepo - could not read its workspaces";
+  }
 
   // Which population this row belongs to. See projectKind for why it decides
   // whether the harness fix is honest.
   out.kind = projectKind(pkg);
   out.typescript = Boolean((pkg.devDependencies || {}).typescript || (pkg.dependencies || {}).typescript);
 
-  const runtime = new Set(Object.keys(pkg.dependencies || {}));
-  const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+  const byDir = new Map(manifests.map((m) => [normDir(m.dir) || ".", m]));
+  const names = [...new Set(manifests.flatMap((m) => Object.keys(m.deps)))];
   const bumps = [];
-  for (const [name, range] of Object.entries(deps)) {
+  for (const name of names) {
     const skip = isOutOfScope(name);
     if (skip) continue;
+
+    // Where this dependency lives, from the one signal available before anything
+    // has run: who declares it. The second signal - what the failure points at -
+    // does not exist yet, so a package several workspaces declare stays
+    // unresolved here and is carried forward for verify-case to settle.
+    let target = chooseTargetDir({ packageName: name, manifests });
+
+    // Running in a workspace means running THAT workspace's tests. A root
+    // "npm test" that fans out through turbo or lerna measures the whole
+    // repository, and a red suite there says nothing about this one package.
+    const runnable = (m) => (normDir(m.dir) || ".") === "." || testScriptUsable(m.test).ok;
+
+    // Several workspaces declaring the same dependency is the ordinary case in a
+    // monorepo, and dropping all of them would leave almost nothing. Where only
+    // one of the candidates has a suite we could run at all, that is not a guess
+    // between equals - the others were never measurable. Where more than one is,
+    // it stays unresolved: verify-case sees the stack trace, which we do not.
+    if (!target.dir) {
+      const declaring = manifests.filter((m) => name in m.deps).filter(runnable);
+      if (declaring.length === 1) {
+        const only = normDir(declaring[0].dir) || ".";
+        target = { dir: only, agreed: false, why: only + " is the only one of them we can run tests in" };
+      }
+    }
+
+    const owner = target.dir ? byDir.get(target.dir) : null;
+    if (!owner || !runnable(owner)) continue;
+    const range = owner.deps[name];
+    if (!range) continue;
+
     const have = rangeMajor(range);
     if (!have) continue;
     let latest;
@@ -326,9 +431,12 @@ async function inspectRepo(full) {
       from: have,
       to: latest.major,
       version: latest.version,
-      runtime: runtime.has(name),
+      runtime: owner.runtime.has(name),
       format: latest.format,
       apiOnly: latest.apiOnly,
+      dir: target.dir,
+      dirWhy: target.why,
+      dirAgreed: target.agreed,
     });
     await sleep(120);
   }
@@ -386,11 +494,16 @@ if (isMain) {
           package: b.package,
           "breaking-version": String(b.to),
           "test-command": "npm test",
-          "target-dir": ".",
+          "target-dir": b.dir,
           "node-version": "auto",
           _stars: r.stars,
           _bump: b.package + " v" + b.from + " -> v" + b.to,
           _note: r.note || "",
+          // Why this directory, in the row itself. A target-dir is an environment
+          // assumption, and section 6 rule 4 of the project's own rules says an
+          // assumption nobody wrote down gets read later as a finding.
+          _dir_why: b.dirWhy,
+          _dir_agreed: b.dirAgreed,
           _runtime: b.runtime,
         _format: b.format,
         _apiOnly: b.apiOnly,

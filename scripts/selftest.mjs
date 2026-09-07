@@ -33,6 +33,13 @@ import { taglineCore, taglineSurfaces, taglineDrift } from "./check-claims.mjs";
 import { planBatch } from "./batch-plan.mjs";
 import { sortRows, renderReport, guardCaught, guardVisible, objectedFixes } from "./batch-report.mjs";
 import {
+  chooseTargetDir,
+  workspacesDeclaring,
+  repoPathsInOutput,
+  ownerOf,
+  normDir,
+} from "./target-dir.mjs";
+import {
   protectedReason,
   isHarnessConfig,
   harnessConfigReason,
@@ -3667,6 +3674,138 @@ check("the banner never says verified for an unproven rung", () => {
   assert.match(proofBanner(proofLevel({ hasPatch: true, testsPassed: true })), /Not verified/);
   assert.match(proofBanner(proofLevel({ hasPatch: false })), /No patch/);
   assert.match(proofBanner(proofLevel({ hasPatch: true, baselineRed: true, testsPassed: false })), /Not delivered/);
+});
+
+// ---------------------------------------------------------------------------
+// target-dir.mjs — which directory of a monorepo the break lives in.
+//
+// The failure this guards against is not "we picked no directory" (that is
+// visible and harmless), it is "we picked the wrong one": the run then measures
+// a package that never imported the thing, and reports a confident verdict
+// about it. So the disagreement cases below matter more than the happy path.
+// ---------------------------------------------------------------------------
+
+const MONO = [
+  { dir: ".", deps: { turbo: "^1" } },
+  { dir: "packages/core", deps: { "content-type": "^2", jest: "^29" } },
+  { dir: "packages/cli", deps: { chalk: "^4" } },
+];
+
+check("a single-package repo is always the root", () => {
+  const r = chooseTargetDir({
+    packageName: "content-type",
+    manifests: [{ dir: ".", deps: { "content-type": "^2" } }],
+  });
+  assert.strictEqual(r.dir, ".");
+});
+
+check("the one workspace that declares the package is the target", () => {
+  const r = chooseTargetDir({ packageName: "content-type", manifests: MONO });
+  assert.strictEqual(r.dir, "packages/core");
+  assert.strictEqual(r.agreed, false, "declaration alone is one signal, not two");
+});
+
+check("a stack trace agreeing with the declaration raises confidence", () => {
+  const r = chooseTargetDir({
+    packageName: "content-type",
+    manifests: MONO,
+    output: "Error [ERR_REQUIRE_ESM]: require() of ES Module /case/packages/core/src/read.js",
+  });
+  assert.strictEqual(r.dir, "packages/core");
+  assert.strictEqual(r.agreed, true);
+});
+
+// The exact shape of the break that dominates this benchmark. The FIRST path in
+// the message is the dependency's own file, inside node_modules - taking it
+// would point every single monorepo at the wrong place.
+check("the node_modules path in an ERR_REQUIRE_ESM message is not our code", () => {
+  const msg =
+    "Error [ERR_REQUIRE_ESM]: require() of ES Module " +
+    "/home/runner/work/case/node_modules/content-type/dist/index.js from " +
+    "/home/runner/work/case/packages/core/lib/read.js not supported.";
+  const paths = repoPathsInOutput(msg);
+  assert.ok(!paths.some((p) => p.includes("node_modules")), "the dependency's own file must not count");
+  assert.strictEqual(paths[0], "home/runner/work/case/packages/core/lib/read.js");
+});
+
+check("the workspace root prefix is stripped so paths are repo-relative", () => {
+  const paths = repoPathsInOutput("at /home/runner/work/case/packages/cli/bin.js:3:1", "case");
+  assert.strictEqual(paths[0], "packages/cli/bin.js");
+});
+
+check("several workspaces declare it, and the failure says which one broke", () => {
+  const many = [
+    { dir: ".", deps: {} },
+    { dir: "packages/core", deps: { "content-type": "^2" } },
+    { dir: "packages/http", deps: { "content-type": "^2" } },
+  ];
+  const r = chooseTargetDir({
+    packageName: "content-type",
+    manifests: many,
+    output: "at Object.<anonymous> (packages/http/src/parse.js:9:11)",
+  });
+  assert.strictEqual(r.dir, "packages/http");
+  assert.strictEqual(r.agreed, true);
+});
+
+// The whole point. Two signals that disagree mean we do not know, and a
+// benchmark that guesses here produces a wrong answer that still looks right.
+check("signals that disagree produce no answer at all", () => {
+  const r = chooseTargetDir({
+    packageName: "content-type",
+    manifests: MONO,
+    output: "at Object.<anonymous> (packages/cli/bin.js:3:1)",
+  });
+  assert.strictEqual(r.dir, null);
+  assert.match(r.why, /refusing to guess/);
+  assert.match(r.why, /packages\/core/, "the reason must name both candidates");
+  assert.match(r.why, /packages\/cli/);
+});
+
+check("several declare it and nothing says which - still no answer", () => {
+  const many = [
+    { dir: "packages/core", deps: { "content-type": "^2" } },
+    { dir: "packages/http", deps: { "content-type": "^2" } },
+  ];
+  const r = chooseTargetDir({ packageName: "content-type", manifests: many });
+  assert.strictEqual(r.dir, null);
+  assert.match(r.why, /refusing to guess/);
+});
+
+check("nothing to go on is null, not the root as a hopeful default", () => {
+  const r = chooseTargetDir({ packageName: "left-pad", manifests: MONO, output: "boom" });
+  assert.strictEqual(r.dir, null);
+});
+
+check("the deepest workspace containing a file owns it, not the root", () => {
+  const dirs = [".", "packages/core", "packages/core/plugins"];
+  assert.strictEqual(ownerOf("packages/core/plugins/a.js", dirs), "packages/core/plugins");
+  assert.strictEqual(ownerOf("packages/core/src/a.js", dirs), "packages/core");
+  assert.strictEqual(ownerOf("tools/build.js", dirs), ".");
+});
+
+check("a devDependency counts - a test-only import still breaks the tests", () => {
+  const r = chooseTargetDir({
+    packageName: "jest",
+    manifests: MONO,
+  });
+  assert.strictEqual(r.dir, "packages/core");
+});
+
+check("windows separators and ./ prefixes normalise to the same directory", () => {
+  assert.strictEqual(normDir("./packages\\core/"), "packages/core");
+  assert.strictEqual(ownerOf("packages\\core\\src\\a.js", ["packages/core"]), "packages/core");
+});
+
+check("a missing package name never yields a directory", () => {
+  assert.deepStrictEqual(workspacesDeclaring("", MONO), []);
+  assert.deepStrictEqual(workspacesDeclaring(undefined, MONO), []);
+});
+
+// A dependency name that happens to match Object.prototype must not resolve
+// through the prototype chain and report a declaration nobody wrote.
+check("an inherited property is not a declaration", () => {
+  assert.deepStrictEqual(workspacesDeclaring("constructor", [{ dir: ".", deps: {} }]), []);
 });
 
 console.log("\n" + pass + " checks passed.\n");
