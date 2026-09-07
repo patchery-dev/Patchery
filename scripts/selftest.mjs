@@ -748,6 +748,38 @@ check("it never tells the reviewer the change already passed a guard check", () 
   const { text } = buildReviewEvidence(evidenceInput);
   assert.ok(!/verified|approved|Patchery (says|approved)/i.test(text));
 });
+// The prompt used to tell the reviewer "no test-runner config (jest/vitest/
+// playwright/cypress/karma, .mocharc, setup files)" was enforced, under the
+// heading "do not spend turns on them". That stopped being true when the
+// blanket ban was replaced by isHarnessConfig + JUDGE_SETTINGS - on purpose,
+// because changing how a dependency is COMPILED is a legitimate migration.
+//
+// So the widest remaining hole was the one the last line of defence had been
+// told to skip. These two checks pin the prompt to the guard's real behaviour.
+check("the reviewer is not told the whole runner config was enforced", () => {
+  const { text } = buildReviewEvidence(evidenceInput);
+  const claimed = text.slice(0, text.indexOf("What they do NOT cover"));
+  // Naming the settings that ARE enforced is fine. Claiming the config wholesale
+  // is not - that is the sentence that was false.
+  assert.ok(!/no test-runner config\b/i.test(claimed), "the blanket claim is back");
+});
+
+check("the reviewer is told which runner-config edits nothing checked", () => {
+  const { text } = buildReviewEvidence(evidenceInput);
+  const uncovered = text.slice(text.indexOf("What they do NOT cover"));
+  for (const key of ["moduleNameMapper", "transform", "setupFiles"]) {
+    assert.match(uncovered, new RegExp(key), key + " must be named as uncovered");
+  }
+  // And the claim must be true: these really do pass the mechanical check.
+  const before = "module.exports = { testEnvironment: 'node' };";
+  const after = "module.exports = { testEnvironment: 'node', moduleNameMapper: { '^p$': './shim.js' } };";
+  assert.strictEqual(harnessConfigReason(before, after), null);
+  // While a setting that IS enforced still is - otherwise this test would pass
+  // by the guard having stopped checking anything at all.
+  const judged = "module.exports = { testEnvironment: 'node', testMatch: ['nope'] };";
+  assert.ok(harnessConfigReason(before, judged), "testMatch must still be refused");
+});
+
 check("a URL changelog is flagged as unreachable rather than pretended to be content", () => {
   const { text } = buildReviewEvidence({ ...evidenceInput, changelogText: "", changelogUrl: "https://x/y" });
   assert.match(text, /no network access/);
