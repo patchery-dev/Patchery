@@ -332,7 +332,8 @@ jobs:
           # The runner's own node, not the candidate's: our scripts are ours to
           # run, and one of them already failed to parse on a repository's Node 12.
           "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/write-result.mjs" \
-            /tmp/result.json "$IN_REPO" "$IN_PACKAGE" "$IN_VERSION" "$IN_COMMIT" "$V" "$D"
+            /tmp/result.json "$IN_REPO" "$IN_PACKAGE" "$IN_VERSION" "$IN_COMMIT" "$V" "$D" \
+            "${{ steps.baseline.outputs.node }}"
         env:
           # Through the environment rather than ${{ }} inside the shell: a value
           # with a quote in it would otherwise end the argument and leave the

@@ -72,15 +72,23 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
     out.push("| blocked by our setup (not counted) | " + n("BLOCKED") + " |", "");
   }
 
-  out.push("| " + (kind === "verify" ? "verdict" : "outcome") + " | repo | upgrade | what happened |");
-  out.push("|---|---|---|---|");
+  // The Node column is not decoration. The same case gave VALID on Node 12 and
+  // NOT-A-CASE on Node 16, so a verdict without its runtime is not a verdict.
+  //
+  // Shown only when something recorded it: a column of "?" beside every row is
+  // not honesty, it is noise, and results written before this field existed
+  // genuinely do not know.
+  const withNode = sorted.some((r) => r.node);
+  const head = ["", kind === "verify" ? "verdict" : "outcome", "repo", "upgrade"];
+  if (withNode) head.push("node");
+  head.push("what happened", "");
+  out.push(head.join(" | ").trim());
+  out.push("|" + "---|".repeat(head.length - 2));
   for (const r of sorted) {
-    out.push(
-      "| " + label(r, kind) +
-        " | " + r.repo +
-        " | `" + r.package + "@" + r.version + "`" +
-        " | " + String(r.detail || "").replace(/\|/g, "\\|").replace(/\n+/g, " ") + " |"
-    );
+    const cells = [label(r, kind), r.repo, "`" + r.package + "@" + r.version + "`"];
+    if (withNode) cells.push(r.node ? String(r.node) : "?");
+    cells.push(String(r.detail || "").replace(/\|/g, "\\|").replace(/\n+/g, " "));
+    out.push("| " + cells.join(" | ") + " |");
   }
 
   // A row we could not read is a bug in this pipeline, not a result. Say so on

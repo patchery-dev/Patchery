@@ -106,6 +106,19 @@
   {
     "repo": "node-fetch/node-fetch",
     "commit": "8b3320d2a7c07bce4afc6b2bf6c3bbddda85b01f",
+    "package": "data-uri-to-buffer",
+    "breaking-version": "8",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 8857,
+    "_bump": "data-uri-to-buffer v4 -> v8",
+    "_class": "packaging",
+    "_note": "verify-batch run #7, 2026-09-07: green before, red after (run #5 lost this leg to a preflight failure, not a disconfirmation)"
+  },
+  {
+    "repo": "node-fetch/node-fetch",
+    "commit": "8b3320d2a7c07bce4afc6b2bf6c3bbddda85b01f",
     "package": "fetch-blob",
     "breaking-version": "4",
     "test-command": "npm test",
@@ -113,19 +126,6 @@
     "node-version": "auto",
     "_stars": 8857,
     "_bump": "fetch-blob v3 -> v4",
-    "_class": "packaging",
-    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
-  },
-  {
-    "repo": "node-fetch/node-fetch",
-    "commit": "8b3320d2a7c07bce4afc6b2bf6c3bbddda85b01f",
-    "package": "formdata-node",
-    "breaking-version": "6",
-    "test-command": "npm test",
-    "target-dir": ".",
-    "node-version": "auto",
-    "_stars": 8857,
-    "_bump": "formdata-node v4 -> v6",
     "_class": "packaging",
     "_note": "verify-batch run #5, 2026-09-07: green before, red after"
   },

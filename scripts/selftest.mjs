@@ -2826,6 +2826,33 @@ check("legs that reported nothing are stated, not implied away", () => {
   assert.ok(!/reported nothing/.test(renderReport(BENCH, { kind: "benchmark", queued: 4 })));
 });
 
+// A verdict without its runtime is not a verdict: formdata-node@6 was VALID on
+// Node 12 and NOT-A-CASE on Node 16, same repo, same commit.
+check("every row carries the node it was measured on", () => {
+  const text = renderReport([{ verdict: "VALID", repo: "a/a", package: "p", version: "3", node: "16", detail: "red after" }], { kind: "verify" });
+  assert.match(text, /\| 16 \|/);
+  assert.match(text, /\| node \|/);
+});
+
+// Mixed is the case that actually happens: a batch collected after the change,
+// holding one artifact written before it.
+check("a row that does not know its node says ? rather than borrowing a neighbour's", () => {
+  const text = renderReport(
+    [
+      { verdict: "VALID", repo: "a/a", package: "p", version: "3", node: "16", detail: "red after" },
+      { verdict: "VALID", repo: "b/b", package: "p", version: "3", detail: "red after" },
+    ],
+    { kind: "verify" }
+  );
+  assert.match(text, /\| b\/b \| `p@3` \| \? \|/);
+});
+
+check("no column at all when nothing recorded it - a column of ? is noise", () => {
+  const text = renderReport([{ outcome: "FIXED", repo: "a/a", package: "p", version: "2", detail: "green" }], { kind: "benchmark" });
+  assert.ok(!/\| node \|/.test(text));
+  assert.ok(!/\| \? \|/.test(text));
+});
+
 check("a pipe in a detail cannot break the table it is printed in", () => {
   const text = renderReport([{ outcome: "FIXED", repo: "a/a", package: "p", version: "2", detail: "ran a | b" }], { kind: "benchmark" });
   assert.match(text, /ran a \\\| b/);
