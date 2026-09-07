@@ -29,6 +29,13 @@ if ! node scripts/selftest.mjs > /tmp/patchery-selftest.log 2>&1; then
 fi
 grep "checks passed" /tmp/patchery-selftest.log
 
+echo "pre-push: checking the claims..."
+if ! node scripts/check-claims.mjs; then
+  echo ""
+  echo "PUSH REFUSED - see above."
+  exit 1
+fi
+
 echo "pre-push: checking the workflows..."
 if ! node scripts/check-workflows.mjs; then
   echo ""

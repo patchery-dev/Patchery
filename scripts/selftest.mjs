@@ -29,6 +29,7 @@ import { testScriptUsable, projectKind, parseRepoLine } from "./find-bumps.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
+import { taglineCore, taglineSurfaces, taglineDrift } from "./check-claims.mjs";
 import { planBatch } from "./batch-plan.mjs";
 import { sortRows, renderReport, guardCaught, guardVisible, objectedFixes } from "./batch-report.mjs";
 import {
@@ -2983,6 +2984,103 @@ check("our own workflows paste nothing into a shell", () => {
   if (fs.existsSync(action)) scan("action.yml", action);
   assert.deepStrictEqual(offenders, [], "bind these under env: and use $NAME in the script");
 });
+
+console.log("\ncheck-claims - one claim, five surfaces, nothing but attention holding them together");
+
+const SITE = [
+  '<meta name="description" content="Dependabot tells you a dependency changed. Patchery works out what that means for your code, and will not claim a fix it cannot prove. A GitHub Action that runs in your own CI.">',
+  '<meta property="og:description" content="Dependabot tells you a dependency changed. Patchery works out what that means for your code.">',
+  '<meta property="og:image:alt" content="Patchery — Dependabot tells you a dependency changed. Patchery works out what that means for your code.">',
+  '<meta name="twitter:description" content="Dependabot tells you a dependency changed. Patchery works out what that means for your code.">',
+  '<h1 class="display display--hero">',
+  "  Dependabot tells you a dependency changed.",
+  "  Patchery works out what that <em>means</em> for your code.",
+  "</h1>",
+].join("\n");
+const README = "<strong>Dependabot tells you a dependency changed. Patchery works out what that means for your code &mdash; and will not claim a fix it cannot prove.</strong>";
+const ACTION = "name: \"Patchery\"\ndescription: >-\n  Dependabot tells you a dependency changed. Patchery works out what that means\n  for your code: it reproduces the break and verifies the fix.\nauthor: \"ugursku\"\n";
+
+check("the surfaces as they stand today agree", () =>
+  assert.deepStrictEqual(taglineDrift(taglineSurfaces({ readme: README, action: ACTION, site: SITE })), [])
+);
+
+// The same claim is punctuated three ways across these files, and none of those
+// is a difference in what is being said. A check that called them drift would
+// be switched off in a week.
+check("a full stop, a comma and a dash are the same claim", () => {
+  const core = "Dependabot tells you a dependency changed. Patchery works out what that means for your code";
+  assert.strictEqual(taglineCore("Dependabot tells you a dependency changed. Patchery works out what that means for your code."), core);
+  assert.strictEqual(taglineCore("Dependabot tells you a dependency changed. Patchery works out what that means for your code, and will not claim a fix it cannot prove."), core);
+  assert.strictEqual(taglineCore("Dependabot tells you a dependency changed. Patchery works out what that means for your code — and will not claim a fix it cannot prove."), core);
+});
+
+check("markup and entities are not part of the claim", () =>
+  assert.strictEqual(
+    taglineCore("Dependabot tells you a dependency changed. Patchery works out what that <em>means</em> for your code&trade;."),
+    taglineCore("Dependabot tells you a dependency changed. Patchery works out what that means for your code.")
+  )
+);
+
+// The share card names the product first. That label is not one of the claims -
+// reading it as one would put every other surface in the wrong.
+check("the share card's product label is not a claim", () =>
+  assert.strictEqual(
+    taglineCore("Patchery — Dependabot tells you a dependency changed. Patchery works out what that means for your code."),
+    taglineCore("Dependabot tells you a dependency changed. Patchery works out what that means for your code.")
+  )
+);
+
+// 8bf6916, exactly: the positioning changed and the share card kept the old
+// pitch. Found by a person reading two files side by side.
+check("one forgotten surface is named, with what the others say", () => {
+  const stale = SITE.replace(
+    'content="Patchery — Dependabot tells you a dependency changed. Patchery works out what that means for your code."',
+    'content="Patchery — The fastest way to migrate a breaking dependency."'
+  );
+  const drift = taglineDrift(taglineSurfaces({ readme: README, action: ACTION, site: stale }));
+  assert.strictEqual(drift.length, 1);
+  assert.strictEqual(drift[0].name, "site og:image:alt");
+  assert.match(drift[0].expected, /^Dependabot tells you/);
+});
+
+check("with no majority, every surface is reported rather than guessed at", () => {
+  const half = "<strong>A different pitch entirely.</strong>";
+  const twoSurfaces = taglineSurfaces({ readme: half, action: ACTION, site: "" });
+  const drift = taglineDrift(twoSurfaces);
+  assert.strictEqual(drift.length, 2);
+  assert.ok(drift.every((d) => d.expected === null));
+});
+
+// The trap this check would otherwise walk into: finding nobody to disagree and
+// calling that agreement. CRLF alone was enough to do it.
+check("a surface we cannot read is not a surface that agrees", () => {
+  const surfaces = taglineSurfaces({ readme: "<p>no bold sentence here</p>", action: ACTION, site: SITE });
+  const readme = surfaces.find((s) => s.name === "README.md");
+  assert.strictEqual(readme.found, false);
+  assert.deepStrictEqual(taglineDrift(surfaces), [], "an unreadable surface is not drift, it is reported separately");
+});
+
+check("CRLF files are read the same as LF ones", () => {
+  const surfaces = taglineSurfaces({ readme: README, action: ACTION.replace(/\n/g, "\r\n"), site: SITE });
+  const action = surfaces.find((s) => s.name === "action.yml");
+  assert.strictEqual(action.found, true);
+  assert.match(action.core, /^Dependabot tells you/);
+});
+
+// The whole point, over the real files: five surfaces went out of step four
+// times in one evening, every time by hand.
+check("our own surfaces say the same thing", () => {
+  const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
+  const surfaces = taglineSurfaces({
+    readme: read("README.md"),
+    action: read("action.yml"),
+    site: read(path.join("docs", "index.html")),
+  });
+  assert.deepStrictEqual(surfaces.filter((s) => !s.found).map((s) => s.name), [], "this surface states the tagline and could not be read");
+  assert.deepStrictEqual(taglineDrift(surfaces), []);
+  assert.ok(surfaces.length >= 6, "found only " + surfaces.length + " surfaces");
+});
+
 
 
 console.log("\nbatch-plan.planBatch");

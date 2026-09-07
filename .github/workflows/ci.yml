@@ -29,6 +29,14 @@ jobs:
       - name: The calibration harness must still run
         run: node scripts/calibrate.mjs --dry-run
 
+      # The tagline lives on five surfaces and four of them went out of step in
+      # one evening, each time found by a person reading two files side by side.
+      - name: Every surface must state the same claim
+        run: node scripts/check-claims.mjs
+
+      - name: No value may be pasted into a shell script
+        run: node scripts/check-workflows.mjs
+
       - name: The fixture must still be broken
         working-directory: test-fixture
         run: |
