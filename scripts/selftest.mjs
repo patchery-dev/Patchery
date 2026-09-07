@@ -28,7 +28,7 @@ import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.m
 import { testScriptUsable, projectKind, parseRepoLine } from "./find-bumps.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
-import { inlineNodeBlocks } from "./check-workflows.mjs";
+import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
 import { planBatch } from "./batch-plan.mjs";
 import { sortRows, renderReport, guardCaught, guardVisible, objectedFixes } from "./batch-report.mjs";
 import {
@@ -2892,6 +2892,98 @@ check("our own workflows carry no buried logic", () => {
   }
   assert.deepStrictEqual(offenders, [], "move these into scripts/ and give them a test");
 });
+
+console.log("\ncheck-workflows.shellInterpolations - a value pasted into a script is a program");
+
+check("an expression inside a run: block is flagged, with its line", () => {
+  const yaml = ["jobs:", "  a:", "    steps:", "      - run: |", "          echo ${{ inputs.name }}"].join("\n");
+  const found = shellInterpolations(yaml);
+  assert.strictEqual(found.length, 1);
+  assert.strictEqual(found[0].line, 5);
+  assert.strictEqual(found[0].expr, "inputs.name");
+});
+
+check("a one-line run: counts too - the shape does not change the hole", () =>
+  assert.strictEqual(shellInterpolations("      - run: echo ${{ inputs.name }}").length, 1)
+);
+
+check("two on one line are two findings, not one", () =>
+  assert.strictEqual(
+    shellInterpolations("      - run: |\n          echo ${{ inputs.a }}-${{ inputs.b }}").length,
+    2
+  )
+);
+
+// This is the whole point of the rule: env: is where they belong, so finding
+// them there would make the check unusable and it would be turned off.
+check("the same expression under env: is not a finding", () => {
+  const yaml = [
+    "      - run: |",
+    "          echo \"$NAME\"",
+    "        env:",
+    "          NAME: ${{ inputs.name }}",
+    "        with:",
+    "          x: ${{ inputs.x }}",
+  ].join("\n");
+  assert.deepStrictEqual(shellInterpolations(yaml), []);
+});
+
+check("if: and working-directory: are left alone as well", () => {
+  const yaml = [
+    "      - name: x",
+    "        if: ${{ steps.a.outputs.b == '1' }}",
+    "        working-directory: case/${{ inputs.target-dir }}",
+    "        run: npm test",
+  ].join("\n");
+  assert.deepStrictEqual(shellInterpolations(yaml), []);
+});
+
+// benchmark-batch.yml has a job called `run`. Reading it as a step would flag
+// every expression in the job and the rule would be abandoned in a week.
+check("a job named run is not a run: block", () => {
+  const yaml = ["jobs:", "  run:", "    with:", "      repo: ${{ matrix.case.repo }}"].join("\n");
+  assert.deepStrictEqual(shellInterpolations(yaml), []);
+});
+
+check("the block ends where the indentation does", () => {
+  const yaml = [
+    "      - run: |",
+    "          echo hi",
+    "",
+    "          echo still inside ${{ inputs.a }}",
+    "      - name: next",
+    "        with:",
+    "          x: ${{ inputs.b }}",
+  ].join("\n");
+  const found = shellInterpolations(yaml);
+  assert.strictEqual(found.length, 1);
+  assert.strictEqual(found[0].expr, "inputs.a");
+});
+
+check("CRLF files are read the same as LF ones", () =>
+  assert.strictEqual(shellInterpolations("      - run: |\r\n          echo ${{ inputs.a }}\r\n").length, 1)
+);
+
+// The gate lives in the pre-push hook, and a hook can be skipped and is not
+// installed for anyone who clones this repository. The suite cannot be. 91
+// occurrences of 24 distinct expressions were moved to env: in one pass; this
+// is what stops the twenty-fifth from arriving.
+check("our own workflows paste nothing into a shell", () => {
+  const offenders = [];
+  const scan = (label, p) => {
+    for (const s of shellInterpolations(fs.readFileSync(p, "utf8"))) {
+      offenders.push(label + ":" + s.line + "  ${{ " + s.expr + " }}");
+    }
+  };
+  const dir = path.join(root, ".github", "workflows");
+  for (const f of fs.readdirSync(dir)) {
+    if (/\.ya?ml$/i.test(f)) scan(f, path.join(dir, f));
+  }
+  const action = path.join(root, "action.yml");
+  if (fs.existsSync(action)) scan("action.yml", action);
+  assert.deepStrictEqual(offenders, [], "bind these under env: and use $NAME in the script");
+});
+
 
 console.log("\nbatch-plan.planBatch");
 

@@ -335,10 +335,15 @@ runs:
         OURS="$(command -v node)"
         echo "ours=$OURS" >> "$GITHUB_OUTPUT"
         echo "this action runs on $(node --version)"
-        VERSION=$("$OURS" "${{ github.action_path }}/scripts/node-version.mjs" \
-          '${{ inputs.node-version }}' \
-          "${{ github.workspace }}/${{ inputs.target-dir }}")
+        VERSION=$("$OURS" "$ACTION_PATH/scripts/node-version.mjs" \
+          "$IN_NODE_VERSION" \
+          "$WORKSPACE/$IN_TARGET_DIR")
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        WORKSPACE: ${{ github.workspace }}
+        IN_NODE_VERSION: ${{ inputs.node-version }}
+        IN_TARGET_DIR: ${{ inputs.target-dir }}
 
     - name: Set up Node ${{ steps.node.outputs.version }}
       uses: actions/setup-node@v7
@@ -357,12 +362,14 @@ runs:
         # later with an error that named neither npm nor the SDK.
         #
         # Failing here says what is wrong, in the step where it is wrong.
-        NPM="$(dirname "${{ steps.node.outputs.ours }}")/npm"
+        NPM="$(dirname "$OURS_NODE")/npm"
         if [ ! -x "$NPM" ]; then
-          echo "::error::Could not find the runner's own npm next to $(dirname "${{ steps.node.outputs.ours }}"). Patchery needs it to install its SDK - the project's npm may be too old to do it correctly."
+          echo "::error::Could not find the runner's own npm next to $(dirname "$OURS_NODE"). Patchery needs it to install its SDK - the project's npm may be too old to do it correctly."
           exit 1
         fi
         "$NPM" install --no-save --no-audit --no-fund "@anthropic-ai/claude-agent-sdk@^0.1.77"
+      env:
+        OURS_NODE: ${{ steps.node.outputs.ours }}
       working-directory: ${{ github.action_path }}
 
     - name: Run the agent and verify
@@ -408,5 +415,7 @@ runs:
         ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.anthropic-model }}
         ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.anthropic-model }}
         CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.anthropic-model }}
+        OURS_NODE: ${{ steps.node.outputs.ours }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
-        "${{ steps.node.outputs.ours }}" "${{ github.action_path }}/scripts/agent.mjs"
+        "$OURS_NODE" "$ACTION_PATH/scripts/agent.mjs"

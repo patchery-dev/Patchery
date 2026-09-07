@@ -58,6 +58,64 @@ export function inlineNodeBlocks(text) {
   return out;
 }
 
+/**
+ * Every `${{ }}` left inside a `run:` block.
+ *
+ * GitHub does not pass these to the shell as values. It pastes them into the
+ * script before any shell exists, so whatever the expression holds becomes part
+ * of the program. One of the values pasted into this repository's benchmark was
+ * a summary written by a language model:
+ *
+ *   syntax error near unexpected token `('
+ *
+ * An apostrophe in "the agent didn't change any files (22 turns)" closed the
+ * quote and the rest of the sentence ran as shell. That cost two legs of a
+ * benchmark, and it is the harmless version - the same hole runs whatever the
+ * text says, on a runner holding the repository's token. Fixed once in `ad01240`
+ * for that one value, which left every other one in place.
+ *
+ * The fix is always the same and it is mechanical: bind the expression under
+ * `env:` and use `$NAME` in the script. The shell then gets a value, not a
+ * program. A command that really is a command - `$TEST_COMMAND` - still works,
+ * because the shell splits it into words itself, at the point where it is
+ * allowed to.
+ *
+ * No allowlist. "Trusted enough" is a judgement, and this rule exists because
+ * judgement is what missed twenty-odd of these; the mechanical version has no
+ * cases to argue about. It also costs nothing: `${{ }}` outside a run: block -
+ * in `env:`, `with:`, `if:`, `working-directory:` - is untouched and is where
+ * they all belong.
+ *
+ * Crude on purpose, like inlineNodeBlocks: a `run:` key with a value, then every
+ * more-indented line under it.
+ */
+export function shellInterpolations(text) {
+  const out = [];
+  const lines = String(text || "").split("\n");
+  let runIndent = null;
+  lines.forEach((raw, i) => {
+    const line = raw.replace(/\r$/, "");
+    const indent = line.search(/\S/);
+    // A blank line inside a block scalar does not end it; a less-indented key does.
+    if (runIndent !== null && indent >= 0 && indent <= runIndent) runIndent = null;
+    // `- run: ...` is the same key with the sequence dash in front of it.
+    const m = runIndent === null ? /^(\s*(?:-\s+)?)run:[ \t]*(\S.*)?$/.exec(line) : null;
+    let body = null;
+    if (m) {
+      // `run:` with nothing after it is not a step. `jobs.run:` is a job named
+      // "run", and this repository has one.
+      if (!m[2]) return;
+      runIndent = m[1].length;
+      body = m[2];
+    } else if (runIndent !== null) {
+      body = line;
+    }
+    if (body === null) return;
+    for (const hit of body.matchAll(/\$\{\{([^}]*)\}\}/g)) out.push({ line: i + 1, expr: hit[1].trim() });
+  });
+  return out;
+}
+
 const isMain = process.argv[1] && process.argv[1].endsWith("check-workflows.mjs");
 if (isMain) {
   const files = [];
@@ -70,13 +128,29 @@ if (isMain) {
   if (fs.existsSync("action.yml")) files.push("action.yml");
 
   let bad = 0;
+  let spliced = 0;
   for (const f of files) {
-    for (const b of inlineNodeBlocks(fs.readFileSync(f, "utf8"))) {
+    const text = fs.readFileSync(f, "utf8");
+    for (const b of inlineNodeBlocks(text)) {
       bad++;
       console.error(
         f + ":" + b.line + "  " + b.lines + " lines of JavaScript inline  (" + b.preview + "...)"
       );
     }
+    for (const s of shellInterpolations(text)) {
+      spliced++;
+      console.error(f + ":" + s.line + "  ${{ " + s.expr + " }} pasted into a run: block");
+    }
+  }
+  if (spliced > 0) {
+    console.error(
+      "\n" + spliced + " expression(s) pasted into a run: block.\n" +
+        "GitHub does not pass these to the shell as values - it writes them into the\n" +
+        "script before the shell exists, so the value becomes program text. Bind each\n" +
+        "one under env: and use $NAME instead. A model-written summary already did this\n" +
+        "here once: an apostrophe closed the quote and the rest of the sentence ran as\n" +
+        "shell, on a runner holding the repository's token."
+    );
   }
   if (bad > 0) {
     console.error(
@@ -88,5 +162,6 @@ if (isMain) {
     );
     process.exit(1);
   }
-  console.log("workflows: no logic buried in a run: block");
+  if (spliced > 0) process.exit(1);
+  console.log("workflows: no logic buried in a run: block, no ${{ }} pasted into one");
 }

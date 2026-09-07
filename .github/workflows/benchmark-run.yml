@@ -77,8 +77,12 @@ jobs:
       - name: Name this case
         id: slug
         run: |
-          SLUG=$(printf '%s' '${{ inputs.repo }}-${{ inputs.package }}-v${{ inputs.breaking-version }}' | tr -c 'A-Za-z0-9._-' '-')
+          SLUG=$(printf '%s' "$IN_REPO-$IN_PACKAGE-v$IN_VERSION" | tr -c 'A-Za-z0-9._-' '-')
           echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+        env:
+          IN_REPO: ${{ inputs.repo }}
+          IN_PACKAGE: ${{ inputs.package }}
+          IN_VERSION: ${{ inputs.breaking-version }}
 
       # The runner's own Node, captured before setup-node replaces it.
       #
@@ -120,10 +124,14 @@ jobs:
       - name: Decide which Node to use
         id: node
         run: |
-          LIST=$("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }} --list)
+          LIST=$("$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" "$IN_NODE_VERSION" "case/$IN_TARGET_DIR" --list)
           echo "candidates: $LIST"
           echo "first=$(echo "$LIST" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "last=$(echo "$LIST" | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+        env:
+          OURS_NODE: ${{ steps.ours.outputs.node }}
+          IN_NODE_VERSION: ${{ inputs.node-version }}
+          IN_TARGET_DIR: ${{ inputs.target-dir }}
 
       - name: Use Node ${{ steps.node.outputs.first }}
         uses: actions/setup-node@v7
@@ -160,10 +168,16 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          ${{ inputs.test-command }} > /tmp/baseline.log 2>&1
+          # Unquoted on purpose - this IS a command line and the shell has to
+          # split it into words. What it must not be is pasted into the script
+          # before the shell ever sees it; that is the injection, not this.
+          $TEST_COMMAND > /tmp/baseline.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
-          "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
+          "$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
           cat /tmp/census-before.json
+        env:
+          TEST_COMMAND: ${{ inputs.test-command }}
+          OURS_NODE: ${{ steps.ours.outputs.node }}
 
       - name: Use Node ${{ steps.node.outputs.last }} instead
         if: steps.census.outputs.exit != '0' && steps.node.outputs.last != steps.node.outputs.first
@@ -183,14 +197,18 @@ jobs:
         run: |
           set +e
           rm -rf node_modules
-          if [ '${{ steps.install.outputs.pm }}' = 'pnpm' ]; then pnpm install --no-frozen-lockfile > /tmp/reinstall.log 2>&1
-          elif [ '${{ steps.install.outputs.pm }}' = 'yarn' ]; then yarn install > /tmp/reinstall.log 2>&1
+          if [ "$PM" = 'pnpm' ]; then pnpm install --no-frozen-lockfile > /tmp/reinstall.log 2>&1
+          elif [ "$PM" = 'yarn' ]; then yarn install > /tmp/reinstall.log 2>&1
           else npm ci > /tmp/reinstall.log 2>&1 || npm install > /tmp/reinstall.log 2>&1; fi
           tail -10 /tmp/reinstall.log
-          ${{ inputs.test-command }} > /tmp/baseline.log 2>&1
+          $TEST_COMMAND > /tmp/baseline.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
-          "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
+          "$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/baseline.log > /tmp/census-before.json
           cat /tmp/census-before.json
+        env:
+          PM: ${{ steps.install.outputs.pm }}
+          TEST_COMMAND: ${{ inputs.test-command }}
+          OURS_NODE: ${{ steps.ours.outputs.node }}
 
       # Whichever attempt produced a green suite is what everything downstream
       # reads - including the Node handed to the action, so the agent is never
@@ -198,19 +216,22 @@ jobs:
       - name: Settle on a baseline
         id: baseline
         run: |
-          FIRST='${{ steps.census.outputs.exit }}'
-          RETRY='${{ steps.recensus.outputs.exit }}'
           if [ "$FIRST" = "0" ]; then
             echo "exit=0" >> "$GITHUB_OUTPUT"
-            echo "node=${{ steps.node.outputs.first }}" >> "$GITHUB_OUTPUT"
+            echo "node=$NODE_FIRST" >> "$GITHUB_OUTPUT"
           elif [ "$RETRY" = "0" ]; then
             echo "exit=0" >> "$GITHUB_OUTPUT"
-            echo "node=${{ steps.node.outputs.last }}" >> "$GITHUB_OUTPUT"
-            echo "::notice::Node ${{ steps.node.outputs.first }} could not run this suite; measured on ${{ steps.node.outputs.last }} instead"
+            echo "node=$NODE_LAST" >> "$GITHUB_OUTPUT"
+            echo "::notice::Node $NODE_FIRST could not run this suite; measured on $NODE_LAST instead"
           else
             echo "exit=${FIRST:-1}" >> "$GITHUB_OUTPUT"
-            echo "node=${{ steps.node.outputs.first }}" >> "$GITHUB_OUTPUT"
+            echo "node=$NODE_FIRST" >> "$GITHUB_OUTPUT"
           fi
+        env:
+          FIRST: ${{ steps.census.outputs.exit }}
+          RETRY: ${{ steps.recensus.outputs.exit }}
+          NODE_FIRST: ${{ steps.node.outputs.first }}
+          NODE_LAST: ${{ steps.node.outputs.last }}
 
       - name: Install the breaking version
         id: bump
@@ -218,8 +239,7 @@ jobs:
         working-directory: case/${{ inputs.target-dir }}
         run: |
           set -o pipefail
-          PM='${{ steps.install.outputs.pm }}'
-          SPEC='${{ inputs.package }}@${{ inputs.breaking-version }}'
+          SPEC="$IN_PACKAGE@$IN_VERSION"
           # Not piped through `tail`. This is the evidence for whether the break
           # exists at all, and the first two runs of this workflow could not be
           # explained because npm's own summary of what it changed had been
@@ -227,13 +247,18 @@ jobs:
           if [ "$PM" = "pnpm" ]; then pnpm add "$SPEC"
           elif [ "$PM" = "yarn" ]; then yarn add "$SPEC"
           else npm install "$SPEC"; fi
-          INSTALLED=$("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)
-          echo "installed: ${{ inputs.package }}@$INSTALLED"
+          INSTALLED=$("$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" "$IN_PACKAGE" .)
+          echo "installed: $IN_PACKAGE@$INSTALLED"
           echo "installed=$INSTALLED" >> "$GITHUB_OUTPUT"
           case "$INSTALLED" in
-            '${{ inputs.breaking-version }}'*) ;;
-            *) echo "::warning::asked for ${{ inputs.breaking-version }}, got $INSTALLED - the break may not be present" ;;
+            "$IN_VERSION"*) ;;
+            *) echo "::warning::asked for $IN_VERSION, got $INSTALLED - the break may not be present" ;;
           esac
+        env:
+          PM: ${{ steps.install.outputs.pm }}
+          IN_PACKAGE: ${{ inputs.package }}
+          IN_VERSION: ${{ inputs.breaking-version }}
+          OURS_NODE: ${{ steps.ours.outputs.node }}
 
       # Confirm the repository is actually red, here, before handing it over.
       #
@@ -257,17 +282,22 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          echo "resolved : $(node -p "require.resolve('${{ inputs.package }}')" 2>&1 | head -1)"
-          echo "on disk  : $("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)"
+          echo "resolved : $(node -p "require.resolve(process.env.IN_PACKAGE)" 2>&1 | head -1)"
+          echo "on disk  : $("$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" "$IN_PACKAGE" .)"
           echo "node     : $(node --version)"
-          ${{ inputs.test-command }} > /tmp/broken.log 2>&1
+          $TEST_COMMAND > /tmp/broken.log 2>&1
           EXIT=$?
           echo "exit=$EXIT" >> "$GITHUB_OUTPUT"
           echo "test exit: $EXIT"
           tail -25 /tmp/broken.log
           if [ "$EXIT" = "0" ]; then
-            echo "::warning::the suite is green after installing ${{ inputs.package }}@${{ inputs.breaking-version }} - there is no break here to fix"
+            echo "::warning::the suite is green after installing $IN_PACKAGE@$IN_VERSION - there is no break here to fix"
           fi
+        env:
+          IN_PACKAGE: ${{ inputs.package }}
+          IN_VERSION: ${{ inputs.breaking-version }}
+          TEST_COMMAND: ${{ inputs.test-command }}
+          OURS_NODE: ${{ steps.ours.outputs.node }}
 
       # Everything above exists to reach this line honestly: somebody else's
       # repository, red, for a real reason.
@@ -309,10 +339,13 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          ${{ inputs.test-command }} > /tmp/final.log 2>&1
+          $TEST_COMMAND > /tmp/final.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
-          "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/final.log > /tmp/census-after.json
+          "$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/test-census.mjs" /tmp/final.log > /tmp/census-after.json
           cat /tmp/census-after.json
+        env:
+          TEST_COMMAND: ${{ inputs.test-command }}
+          OURS_NODE: ${{ steps.ours.outputs.node }}
 
       # Every value arrives through the environment, never through ${{ }} inside
       # the shell. One of these - the action summary - is written by a language

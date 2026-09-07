@@ -64,8 +64,12 @@ jobs:
       - name: Name this case
         id: slug
         run: |
-          SLUG=$(printf '%s' '${{ inputs.repo }}-${{ inputs.package }}-v${{ inputs.breaking-version }}' | tr -c 'A-Za-z0-9._-' '-')
+          SLUG=$(printf '%s' "$IN_REPO-$IN_PACKAGE-v$IN_VERSION" | tr -c 'A-Za-z0-9._-' '-')
           echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+        env:
+          IN_REPO: ${{ inputs.repo }}
+          IN_PACKAGE: ${{ inputs.package }}
+          IN_VERSION: ${{ inputs.breaking-version }}
 
       # Two of the values are typed by hand and both are long. A wrong one costs a
       # minute of git retries and then an "UNKNOWN - install failed" verdict that
@@ -75,15 +79,18 @@ jobs:
       - name: Check the repository and commit exist
         run: |
           set -o pipefail
-          BASE=https://api.github.com/repos/${{ inputs.repo }}
+          BASE="https://api.github.com/repos/$IN_REPO"
           if ! curl -sfL -H "Accept: application/vnd.github+json" "$BASE" > /dev/null; then
-            echo "::error::No repository called ${{ inputs.repo }}. Check the spelling - it is owner/name."
+            echo "::error::No repository called $IN_REPO. Check the spelling - it is owner/name."
             exit 1
           fi
-          if ! curl -sfL -H "Accept: application/vnd.github+json" "$BASE/commits/${{ inputs.commit }}" > /dev/null; then
-            echo "::error::${{ inputs.repo }} exists but has no commit ${{ inputs.commit }}."
+          if ! curl -sfL -H "Accept: application/vnd.github+json" "$BASE/commits/$IN_COMMIT" > /dev/null; then
+            echo "::error::$IN_REPO exists but has no commit $IN_COMMIT."
             exit 1
           fi
+        env:
+          IN_REPO: ${{ inputs.repo }}
+          IN_COMMIT: ${{ inputs.commit }}
 
       # Our own repository, for the small scripts this workflow leans on. Same
       # layout as benchmark-run: ours under `patchery`, theirs under `case`, and
@@ -142,11 +149,15 @@ jobs:
           # explanation under it. Without this, awk reads every line and writes a
           # multi-line value into GITHUB_OUTPUT, which is a step output that is
           # silently not what anyone intended.
-          FULL=$("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" '${{ inputs.node-version }}' case/${{ inputs.target-dir }} --list)
+          FULL=$("$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/node-version.mjs" "$IN_NODE_VERSION" "case/$IN_TARGET_DIR" --list)
           echo "$FULL"
           LIST=$(echo "$FULL" | head -1)
           echo "first=$(echo "$LIST" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "last=$(echo "$LIST" | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+        env:
+          OURS_NODE: ${{ steps.ours.outputs.node }}
+          IN_NODE_VERSION: ${{ inputs.node-version }}
+          IN_TARGET_DIR: ${{ inputs.target-dir }}
 
       - name: Use Node ${{ steps.node.outputs.first }}
         uses: actions/setup-node@v7
@@ -156,15 +167,23 @@ jobs:
       - name: Report what is being verified
         run: |
           {
-            echo "## ${{ inputs.repo }} - ${{ inputs.package }} v${{ inputs.breaking-version }}"
+            echo "## $IN_REPO - $IN_PACKAGE v$IN_VERSION"
             echo ""
             echo "| | |"
             echo "|---|---|"
-            echo "| pinned to | \`${{ inputs.commit }}\` |"
-            echo "| test command | \`${{ inputs.test-command }}\` |"
-            echo "| directory | \`${{ inputs.target-dir }}\` |"
-            echo "| node | \`${{ steps.node.outputs.first }}\` |"
+            echo "| pinned to | \`$IN_COMMIT\` |"
+            echo "| test command | \`$TEST_COMMAND\` |"
+            echo "| directory | \`$IN_TARGET_DIR\` |"
+            echo "| node | \`$NODE_FIRST\` |"
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          IN_REPO: ${{ inputs.repo }}
+          IN_PACKAGE: ${{ inputs.package }}
+          IN_VERSION: ${{ inputs.breaking-version }}
+          IN_COMMIT: ${{ inputs.commit }}
+          TEST_COMMAND: ${{ inputs.test-command }}
+          IN_TARGET_DIR: ${{ inputs.target-dir }}
+          NODE_FIRST: ${{ steps.node.outputs.first }}
 
       # Lockfile decides the tool. `npm ci` is refused when the lockfile and
       # package.json disagree, which is common on an old commit, so a plain
@@ -203,9 +222,11 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          ${{ inputs.test-command }} > /tmp/before.log 2>&1
+          $TEST_COMMAND > /tmp/before.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
           tail -40 /tmp/before.log
+        env:
+          TEST_COMMAND: ${{ inputs.test-command }}
 
       # Second attempt, on the highest Node this repository's CI runs. Only when
       # the first one produced a red suite - and a red suite here is far more
@@ -229,33 +250,39 @@ jobs:
           # not load on this one, and their failure would read as the repository
           # being broken.
           rm -rf node_modules
-          if [ '${{ steps.install.outputs.pm }}' = 'pnpm' ]; then pnpm install --no-frozen-lockfile > /tmp/reinstall.log 2>&1
-          elif [ '${{ steps.install.outputs.pm }}' = 'yarn' ]; then yarn install > /tmp/reinstall.log 2>&1
+          if [ "$PM" = 'pnpm' ]; then pnpm install --no-frozen-lockfile > /tmp/reinstall.log 2>&1
+          elif [ "$PM" = 'yarn' ]; then yarn install > /tmp/reinstall.log 2>&1
           else npm ci > /tmp/reinstall.log 2>&1 || npm install > /tmp/reinstall.log 2>&1; fi
           tail -10 /tmp/reinstall.log
-          ${{ inputs.test-command }} > /tmp/before.log 2>&1
+          $TEST_COMMAND > /tmp/before.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
           echo "node: $(node --version)"
           tail -40 /tmp/before.log
+        env:
+          PM: ${{ steps.install.outputs.pm }}
+          TEST_COMMAND: ${{ inputs.test-command }}
 
       # Whichever attempt produced a green suite is the one the case is measured
       # against; the rest of the workflow reads this and not the individual steps.
       - name: Settle on a baseline
         id: baseline
         run: |
-          FIRST='${{ steps.before.outputs.exit }}'
-          RETRY='${{ steps.retry.outputs.exit }}'
           if [ "$FIRST" = "0" ]; then
             echo "exit=0" >> "$GITHUB_OUTPUT"
-            echo "node=${{ steps.node.outputs.first }}" >> "$GITHUB_OUTPUT"
+            echo "node=$NODE_FIRST" >> "$GITHUB_OUTPUT"
           elif [ "$RETRY" = "0" ]; then
             echo "exit=0" >> "$GITHUB_OUTPUT"
-            echo "node=${{ steps.node.outputs.last }}" >> "$GITHUB_OUTPUT"
-            echo "::notice::Node ${{ steps.node.outputs.first }} could not run this suite; measured on ${{ steps.node.outputs.last }} instead"
+            echo "node=$NODE_LAST" >> "$GITHUB_OUTPUT"
+            echo "::notice::Node $NODE_FIRST could not run this suite; measured on $NODE_LAST instead"
           else
             echo "exit=${FIRST:-1}" >> "$GITHUB_OUTPUT"
-            echo "node=${{ steps.node.outputs.first }}" >> "$GITHUB_OUTPUT"
+            echo "node=$NODE_FIRST" >> "$GITHUB_OUTPUT"
           fi
+        env:
+          FIRST: ${{ steps.before.outputs.exit }}
+          RETRY: ${{ steps.retry.outputs.exit }}
+          NODE_FIRST: ${{ steps.node.outputs.first }}
+          NODE_LAST: ${{ steps.node.outputs.last }}
 
       - name: Install the breaking version
         id: bump
@@ -264,8 +291,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          PM='${{ steps.install.outputs.pm }}'
-          SPEC='${{ inputs.package }}@${{ inputs.breaking-version }}'
+          SPEC="$IN_PACKAGE@$IN_VERSION"
           if [ "$PM" = "pnpm" ]; then
             pnpm add "$SPEC" 2>&1 | tail -20
           elif [ "$PM" = "yarn" ]; then
@@ -277,7 +303,12 @@ jobs:
           # `exports` map that hides its own package.json, and the resolving probe
           # then reports the upgrade as never installed - a false negative aimed
           # squarely at the packages this benchmark is made of.
-          echo "installed: ${{ inputs.package }}@$("${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" '${{ inputs.package }}' .)"
+          echo "installed: $IN_PACKAGE@$("$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/installed-version.mjs" "$IN_PACKAGE" .)"
+        env:
+          PM: ${{ steps.install.outputs.pm }}
+          IN_PACKAGE: ${{ inputs.package }}
+          IN_VERSION: ${{ inputs.breaking-version }}
+          OURS_NODE: ${{ steps.ours.outputs.node }}
 
       # Half two: the same suite, same machine, one thing changed.
       - name: Run the tests AFTER the upgrade
@@ -288,18 +319,18 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          ${{ inputs.test-command }} > /tmp/after.log 2>&1
+          $TEST_COMMAND > /tmp/after.log 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
           tail -60 /tmp/after.log
+        env:
+          TEST_COMMAND: ${{ inputs.test-command }}
 
       # One sentence, so a candidate can be accepted or dropped without opening a
       # log, and one JSON file, so fifty of them can be read as a table.
       - name: Verdict
         if: always()
         run: |
-          BEFORE='${{ steps.baseline.outputs.exit }}'
-          AFTER='${{ steps.after.outputs.exit }}'
-          if [ '${{ steps.install.outcome }}' != 'success' ]; then
+          if [ "$INSTALL_OUTCOME" != 'success' ]; then
             V=UNKNOWN
             D="dependencies would not install - not evidence against the case"
           elif [ -z "$BEFORE" ]; then
@@ -308,15 +339,15 @@ jobs:
           elif [ "$BEFORE" != "0" ]; then
             V=NOT-A-CASE
             D="already failing at this commit (exit $BEFORE) - read the log, a Node too old for the suite looks the same"
-          elif [ '${{ steps.bump.outcome }}' != 'success' ]; then
+          elif [ "$BUMP_OUTCOME" != 'success' ]; then
             V=UNKNOWN
-            D="green before, but ${{ inputs.package }}@${{ inputs.breaking-version }} would not install"
+            D="green before, but $IN_PACKAGE@$IN_VERSION would not install"
           elif [ -z "$AFTER" ]; then
             V=UNKNOWN
             D="green before, but the second run did not finish"
           elif [ "$AFTER" = "0" ]; then
             V=NOT-A-CASE
-            D="still green with ${{ inputs.package }}@${{ inputs.breaking-version }} - the suite does not cover the changed calls"
+            D="still green with $IN_PACKAGE@$IN_VERSION - the suite does not cover the changed calls"
           else
             V=VALID
             D="green before, red after (exit $AFTER) - the break is real and this suite sees it"
@@ -327,13 +358,13 @@ jobs:
             echo ""
             echo "$D"
             echo ""
-            echo "Measured on Node ${{ steps.baseline.outputs.node }}."
+            echo "Measured on Node $BASELINE_NODE."
           } >> "$GITHUB_STEP_SUMMARY"
           # The runner's own node, not the candidate's: our scripts are ours to
           # run, and one of them already failed to parse on a repository's Node 12.
-          "${{ steps.ours.outputs.node }}" "$GITHUB_WORKSPACE/patchery/scripts/write-result.mjs" \
+          "$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/write-result.mjs" \
             /tmp/result.json "$IN_REPO" "$IN_PACKAGE" "$IN_VERSION" "$IN_COMMIT" "$V" "$D" \
-            "${{ steps.baseline.outputs.node }}"
+            "$BASELINE_NODE"
         env:
           # Through the environment rather than ${{ }} inside the shell: a value
           # with a quote in it would otherwise end the argument and leave the
@@ -342,6 +373,12 @@ jobs:
           IN_PACKAGE: ${{ inputs.package }}
           IN_VERSION: ${{ inputs.breaking-version }}
           IN_COMMIT: ${{ inputs.commit }}
+          BEFORE: ${{ steps.baseline.outputs.exit }}
+          AFTER: ${{ steps.after.outputs.exit }}
+          BASELINE_NODE: ${{ steps.baseline.outputs.node }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          BUMP_OUTCOME: ${{ steps.bump.outcome }}
+          OURS_NODE: ${{ steps.ours.outputs.node }}
 
       # The full logs, so a verdict can be argued with rather than trusted.
       - name: Keep the result and the logs
