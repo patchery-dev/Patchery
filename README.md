@@ -52,11 +52,31 @@ whether it agrees or not — and with `verify-mode: block` it stops the pull
 request from opening at all.
 
 The first three are gates: fail any of them and the attempt is discarded whole.
-What you get instead is the diagnosis — what broke, why the obvious fix does not
-apply, and which decision would unblock it.
 
-That last part is the point. A tool that is right most of the time and says so
-plainly when it is not is worth more than one that is confident every time.
+## When it cannot patch it, it hands you the analysis
+
+Some breaks have no fix at the call site. A dependency that starts shipping as an
+ES module does not rename anything — your code is fine and can no longer load it.
+No amount of editing call sites solves that; it is a decision about your runtime
+or your dependencies, and it is yours to make.
+
+Patchery does not shrug at those. It reports:
+
+- which call sites are affected, having searched for all of them
+- why the obvious fix does not apply, with the specific contract it would break
+- which decisions would unblock it, and what each one costs you
+
+On `expressjs/express` with `content-disposition@3` it produced exactly that:
+three call sites in one file, a demonstration that `res.attachment()` cannot
+become async because `res.attachment().send()` is a tested contract, an argument
+that a build transform would only paint this repository's CI green while leaving
+every downstream consumer broken — and two options, one of which it verified by
+running the alternative version and comparing the output byte for byte.
+
+It made no code change, and said so. That report is the deliverable.
+
+A tool that is right most of the time, and says plainly what it found when it is
+not, is worth more than one that is confident every time.
 
 ## Setup
 
@@ -116,16 +136,19 @@ people change:
 ## Where it is today
 
 Patchery migrates **call sites in JavaScript and TypeScript projects** when a
-dependency's API changes, and it is judged by your own test suite.
+dependency's API changes, and it is judged by your own test suite. Where the break
+is not a call-site problem, it reports rather than patches.
 
 It is being measured against real breaks in repositories we do not own — express,
 node-fetch, winston, yargs and others — with the losses reported alongside the
 wins. That benchmark is public and reproducible: the case list lives in
 [`benchmark/`](benchmark) and the workflows that run it are in
 [`.github/workflows`](.github/workflows). Numbers will be published here when the
-full set has run.
+full set has run, and one thing already measured is worth saying: a great deal of
+what breaks a build in 2026 is packaging rather than a changed signature, which is
+why the report is not a consolation prize.
 
-The engine has 348 offline checks covering the guard, the census and the outcome
+The engine has 388 offline checks covering the guard, the census and the outcome
 rules. None of them need an API key: `node scripts/selftest.mjs`.
 
 ## Where it is going
