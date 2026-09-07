@@ -181,17 +181,56 @@ export function isOutOfScope(name) {
  * recognizable npm packages are libraries. The pool measured the population that
  * structurally cannot take the fix.
  *
- * The test is whether anything can `import` you: a published entry point means
- * consumers, and consumers mean the harness fix is off the table. `private: true`
- * or no entry point at all means it runs rather than gets imported - a `bin` is
- * not an entry point in this sense, because a CLI's callers spawn it, they do not
- * load its modules.
+ * The test is whether anything can `import` you: consumers mean the harness fix
+ * is off the table, and no consumers mean it is simply correct. A `bin` does not
+ * count - a CLI's callers spawn it, they do not load its modules.
+ *
+ * And it is a JUDGEMENT, not a field. The first version of this read it off
+ * package.json and got express, multer, lodash and zod all wrong:
+ *
+ *   express, multer   no `main` at all - because Node defaults to index.js when
+ *                     it is absent, so "no declared entry point" does not mean
+ *                     "nothing can import you"
+ *   lodash, zod       `private: true` at the repository root - which means "do
+ *                     not publish THIS package", and is what a monorepo or a
+ *                     build-from-source project writes while shipping a library
+ *
+ * So the authority is the label in repos.txt, where we are already choosing the
+ * repositories and can say what we know. This function is only the fallback for
+ * an unlabelled line, and it answers "unknown" wherever the signals are the ones
+ * that fooled it before. An unknown row is excluded from the split rather than
+ * quietly counted on one side of it.
  */
 export function projectKind(pkg) {
   const p = pkg || {};
-  if (p.private === true) return "application";
-  const importable = p.main || p.exports || p.module || p.types || p.typings || p.browser;
-  return importable ? "library" : "application";
+  const declared = p.main || p.exports || p.module || p.types || p.typings || p.browser;
+
+  // A monorepo root is about its members, and says nothing about them.
+  if (p.workspaces) return "unknown";
+  // `private` with an entry point is the lodash shape: published from a build,
+  // so the root is not the product and the root's flag is not the answer.
+  if (p.private === true) return declared ? "unknown" : "application";
+  if (declared) return "library";
+  // Not private, and no entry point declared - which is either an application or
+  // a library relying on Node's implicit index.js. Both are common; guessing
+  // between them is how express became an "application".
+  return "unknown";
+}
+
+/**
+ * A repos.txt line: `owner/name` with an optional kind after it.
+ *
+ *   expressjs/express       library
+ *   excalidraw/excalidraw   application
+ *   somebody/something                  <- falls back to projectKind
+ */
+export function parseRepoLine(line) {
+  const clean = String(line || "").replace(/#.*/, "").trim();
+  if (!clean) return null;
+  const [repo, kind] = clean.split(/\s+/);
+  if (!repo) return null;
+  const known = kind === "library" || kind === "application";
+  return { repo, kind: known ? kind : "" };
 }
 
 function moduleFormat(manifest) {
@@ -319,19 +358,22 @@ async function inspectRepo(full) {
 const isMain = process.argv[1] && process.argv[1].endsWith("find-bumps.mjs");
 if (isMain) {
   const repos = ONE
-    ? [ONE]
+    ? [{ repo: ONE, kind: "" }]
     : (await import("node:fs")).readFileSync(argv[0], "utf8")
         .split("\n")
-        .map((l) => l.replace(/#.*/, "").trim())
+        .map(parseRepoLine)
         .filter(Boolean);
 
   const cases = [];
   const rejected = [];
 
-  for (const full of repos) {
-    console.error("· " + full);
+  for (const entry of repos) {
+    const full = entry.repo;
+    console.error("· " + full + (entry.kind ? "  [" + entry.kind + "]" : ""));
     try {
       const r = await inspectRepo(full);
+      // The label in repos.txt is the authority; projectKind only fills a gap.
+      if (entry.kind) r.kind = entry.kind;
       if (r.reject) {
         rejected.push(r);
         console.error("  skipped: " + r.reject);

@@ -25,7 +25,7 @@ import {
   FALLBACK,
 } from "./node-version.mjs";
 import { classifyFailure, briefing } from "./classify-break.mjs";
-import { testScriptUsable, projectKind } from "./find-bumps.mjs";
+import { testScriptUsable, projectKind, parseRepoLine } from "./find-bumps.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks } from "./check-workflows.mjs";
@@ -3052,31 +3052,63 @@ check("the summary shows what moved, not only where it landed", () => {
 
 console.log("\nfind-bumps.projectKind");
 
-check("a published package with an entry point is a library", () => {
-  assert.strictEqual(projectKind({ name: "express", main: "index.js" }), "library");
+check("a declared entry point is a library", () => {
+  assert.strictEqual(projectKind({ name: "x", main: "index.js" }), "library");
   assert.strictEqual(projectKind({ name: "x", exports: { ".": "./dist/i.js" } }), "library");
   assert.strictEqual(projectKind({ name: "x", module: "./esm/i.js" }), "library");
   assert.strictEqual(projectKind({ name: "x", types: "./i.d.ts" }), "library");
 });
 
-check("private beats everything - it is not published, so nobody imports it", () => {
-  assert.strictEqual(projectKind({ private: true, main: "index.js" }), "application");
+// The four the first version of this got wrong, with their real package.json.
+check("the shapes that fooled it before now answer unknown", () => {
+  // express and multer: no `main` at all, because Node defaults to index.js.
+  assert.strictEqual(projectKind({}), "unknown");
+  assert.strictEqual(projectKind({ name: "express" }), "unknown");
+  // lodash: private at a root that ships a library from a build.
+  assert.strictEqual(projectKind({ private: true, main: "lodash.js" }), "unknown");
+  // A monorepo root is about its members and says nothing about them.
+  assert.strictEqual(projectKind({ workspaces: ["packages/*"] }), "unknown");
+  assert.strictEqual(projectKind({ private: true, workspaces: ["p/*"] }), "unknown");
 });
 
-check("no entry point at all means it runs rather than gets imported", () => {
-  assert.strictEqual(projectKind({ name: "my-app", scripts: { test: "jest" } }), "application");
-  assert.strictEqual(projectKind({}), "application");
-  assert.strictEqual(projectKind(null), "application");
+check("private with nothing to import is the one confident application", () => {
+  assert.strictEqual(projectKind({ private: true, name: "my-app" }), "application");
 });
 
-// A CLI's callers spawn it; they do not load its modules, so the harness fix
-// breaks nobody.
-check("a bin-only package is not a library", () => {
-  assert.strictEqual(projectKind({ name: "my-cli", bin: { "my-cli": "./cli.js" } }), "application");
-});
-
-check("private: false is not the same as private: true", () => {
+check("private: false is not private: true", () => {
   assert.strictEqual(projectKind({ private: false, main: "i.js" }), "library");
+});
+
+console.log("\nfind-bumps.parseRepoLine");
+
+check("a line carries the repository and, when given, its kind", () => {
+  assert.deepStrictEqual(parseRepoLine("expressjs/express       library"), { repo: "expressjs/express", kind: "library" });
+  assert.deepStrictEqual(parseRepoLine("  a/b   application  # note"), { repo: "a/b", kind: "application" });
+});
+
+check("an unlabelled line asks for no kind rather than inventing one", () => {
+  assert.deepStrictEqual(parseRepoLine("somebody/thing"), { repo: "somebody/thing", kind: "" });
+  // A word we do not recognise is not a label; it must not become one.
+  assert.deepStrictEqual(parseRepoLine("a/b nonsense"), { repo: "a/b", kind: "" });
+});
+
+check("comments and blank lines are not repositories", () => {
+  assert.strictEqual(parseRepoLine("# a comment"), null);
+  assert.strictEqual(parseRepoLine("   "), null);
+  assert.strictEqual(parseRepoLine(""), null);
+});
+
+// The list is the input to every measurement; an unlabelled line would silently
+// fall back to a heuristic that answers "unknown" for most real repositories.
+check("every repository in our own list carries a kind", () => {
+  const text = fs.readFileSync(path.join(root, "benchmark", "repos.txt"), "utf8");
+  const missing = text
+    .split("\n")
+    .map(parseRepoLine)
+    .filter(Boolean)
+    .filter((e) => !e.kind)
+    .map((e) => e.repo);
+  assert.deepStrictEqual(missing, [], "unlabelled: " + missing.join(", "));
 });
 
 console.log("\nnode-version.usableCiMajor");

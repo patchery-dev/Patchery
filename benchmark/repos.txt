@@ -2,7 +2,25 @@
 # tested, not for having a migration in their history - see find-bumps.mjs for
 # why that constraint was dropped.
 #
-# A line is a GitHub owner/name. Comments and blank lines are ignored.
+# A line is a GitHub owner/name, followed by what the project is:
+#
+#   library      other people install it and import it
+#   application  it runs; nobody imports it (products, and tools that are
+#                invoked rather than loaded)
+#
+# The label decides which fixes are honest, so it is written here rather than
+# guessed from package.json. When a dependency starts shipping as an ES module,
+# teaching the test runner to transform it is correct in an application and
+# dishonest in a library, where it greens one CI and leaves every consumer
+# broken. The agent refused exactly that on express, and was right.
+#
+# Guessing it from package.json was tried and got four wrong in the first run:
+# express and multer declare no `main` (Node defaults to index.js), and lodash
+# and zod set `private: true` at a root that still ships a library. An
+# unlabelled line falls back to that heuristic, which now answers "unknown"
+# rather than picking a side.
+#
+# Comments and blank lines are ignored.
 #
 # What earns a place here: a name a developer recognises, a real unit-test suite,
 # and a `npm test` that runs in an empty container. That last one is not a
@@ -11,67 +29,67 @@
 # of them came back looking like a broken repository.
 
 # --- confirmed useful: these produced measurable verdicts ---
-expressjs/express
-node-fetch/node-fetch
-winstonjs/winston
-bcoe/yargs
-mozilla/treeherder
-axios/axios
-fastify/fastify
-immutable-js/immutable-js
-moment/luxon
-markedjs/marked
-sindresorhus/got
-handlebars-lang/handlebars.js
-chartjs/Chart.js
-Automattic/mongoose
+expressjs/express                     library
+node-fetch/node-fetch                 library
+winstonjs/winston                     library
+bcoe/yargs                            library
+mozilla/treeherder                    application
+axios/axios                           library
+fastify/fastify                       library
+immutable-js/immutable-js             library
+moment/luxon                          library
+markedjs/marked                       library
+sindresorhus/got                      library
+handlebars-lang/handlebars.js         library
+chartjs/Chart.js                      library
+Automattic/mongoose                   library
 
 # --- widely used libraries, unit suites, no external services expected ---
-sindresorhus/p-map
-sindresorhus/execa
-sindresorhus/ky
-chalk/chalk
-debug-js/debug
-jshttp/http-errors
-jshttp/mime-types
-expressjs/body-parser
-expressjs/cors
-expressjs/multer
-expressjs/session
-pillarjs/router
-nodeca/js-yaml
-kelektiv/node-uuid
-uuidjs/uuid
-date-fns/date-fns
-Unitech/pm2
-motdotla/dotenv
-validatorjs/validator.js
-colinhacks/zod
-jquense/yup
-hapijs/joi
-lodash/lodash
-Reactive-Extensions/RxJS
-ReactiveX/rxjs
-caolan/async
-tj/commander.js
-yargs/yargs-parser
-isaacs/node-glob
-isaacs/minimatch
-npm/node-semver
-sindresorhus/globby
-node-cache/node-cache
-luin/ioredis
-nodemailer/nodemailer
-websockets/ws
-socketio/socket.io-client
-axios/axios-mock-adapter
-form-data/form-data
-request/request-promise
-node-formidable/formidable
-jaredhanson/passport
-auth0/node-jsonwebtoken
-dcodeIO/bcrypt.js
-kriasoft/node-sqlite
+sindresorhus/p-map                    library
+sindresorhus/execa                    library
+sindresorhus/ky                       library
+chalk/chalk                           library
+debug-js/debug                        library
+jshttp/http-errors                    library
+jshttp/mime-types                     library
+expressjs/body-parser                 library
+expressjs/cors                        library
+expressjs/multer                      library
+expressjs/session                     library
+pillarjs/router                       library
+nodeca/js-yaml                        library
+kelektiv/node-uuid                    library
+uuidjs/uuid                           library
+date-fns/date-fns                     library
+Unitech/pm2                           application
+motdotla/dotenv                       library
+validatorjs/validator.js              library
+colinhacks/zod                        library
+jquense/yup                           library
+hapijs/joi                            library
+lodash/lodash                         library
+Reactive-Extensions/RxJS              library
+ReactiveX/rxjs                        library
+caolan/async                          library
+tj/commander.js                       library
+yargs/yargs-parser                    library
+isaacs/node-glob                      library
+isaacs/minimatch                      library
+npm/node-semver                       library
+sindresorhus/globby                   library
+node-cache/node-cache                 library
+luin/ioredis                          library
+nodemailer/nodemailer                 library
+websockets/ws                         library
+socketio/socket.io-client             library
+axios/axios-mock-adapter              library
+form-data/form-data                   library
+request/request-promise               library
+node-formidable/formidable            library
+jaredhanson/passport                  library
+auth0/node-jsonwebtoken               library
+dcodeIO/bcrypt.js                     library
+kriasoft/node-sqlite                  library
 
 # --- rejected, and why (kept so the reasons are not re-discovered) ---
 # knex/knex              npm test runs its integration suite against postgres/mysql/mariadb
@@ -103,28 +121,28 @@ kriasoft/node-sqlite
 # Many of these are monorepos and some will be rejected for wanting a database
 # or a browser. That is the pipeline's job; a rejection recorded is cheaper than
 # a candidate assumed.
-excalidraw/excalidraw
-verdaccio/verdaccio
-laurent22/joplin
-n8n-io/n8n
-directus/directus
-hoppscotch/hoppscotch
-nocodb/nocodb
-medusajs/medusa
-strapi/strapi
-outline/outline
-etherpad/etherpad-lite
-standardnotes/app
-desktop/desktop
-sindresorhus/refined-github
-apollographql/apollo-server
-storybookjs/storybook
-yarnpkg/berry
-pnpm/pnpm
-eslint/eslint
-prettier/prettier
-webpack/webpack
-rollup/rollup
-nestjs/nest
-remix-run/remix
-withastro/astro
+excalidraw/excalidraw                 application
+verdaccio/verdaccio                   application
+laurent22/joplin                      application
+n8n-io/n8n                            application
+directus/directus                     application
+hoppscotch/hoppscotch                 application
+nocodb/nocodb                         application
+medusajs/medusa                       application
+strapi/strapi                         application
+outline/outline                       application
+etherpad/etherpad-lite                application
+standardnotes/app                     application
+desktop/desktop                       application
+sindresorhus/refined-github           application
+apollographql/apollo-server           library
+storybookjs/storybook                 application
+yarnpkg/berry                         application
+pnpm/pnpm                             application
+eslint/eslint                         library
+prettier/prettier                     library
+webpack/webpack                       application
+rollup/rollup                         application
+nestjs/nest                           library
+remix-run/remix                       library
+withastro/astro                       library
