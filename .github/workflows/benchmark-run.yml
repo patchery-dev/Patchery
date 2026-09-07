@@ -72,7 +72,18 @@ permissions:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Was 60, and 60 is what killed a case in benchmark #9 - the job cap fired
+    # before anything of ours did, and a container killed from outside writes no
+    # result, no summary and no diagnosis, so the case vanished rather than
+    # failing. The action's own 45-minute run budget is the brake now; this sits
+    # well above it so that OUR clock is always the one that closes, and the run
+    # ends with a written account instead of a gap.
+    #
+    # The gap is not 45 to 90 idly: Patchery does not start at minute zero.
+    # Install, census and baseline run first, so a 45-minute budget beginning at
+    # minute ten ends at minute fifty-five - which against a 60-minute cap was a
+    # race we would sometimes lose, and losing it silently.
+    timeout-minutes: 90
     steps:
       - name: Name this case
         id: slug

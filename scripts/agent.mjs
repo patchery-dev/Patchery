@@ -36,7 +36,10 @@ import {
   reviewPassPlan,
   renderSpend,
   normalizeModelTimeout,
+  normalizeRunBudget,
+  budgetDelayMs,
   timeoutReason,
+  budgetReason,
   harnessCrash,
   shouldReview,
   buildReviewEvidence,
@@ -134,6 +137,14 @@ const VERIFY_MODE = verifyMode.mode;
 const modelTimeout = normalizeModelTimeout(env("SMA_MODEL_TIMEOUT_MINUTES"));
 const MODEL_TIMEOUT_MIN = modelTimeout.minutes;
 
+// And a ceiling on the whole run, which the stall clock above is not. See
+// normalizeRunBudget: making the stall clock measure silence took away the
+// accidental ceiling it used to provide, and a run that kept answering ran until
+// the CI job limit killed it - writing nothing at all.
+const runBudget = normalizeRunBudget(env("SMA_RUN_BUDGET_MINUTES"));
+const RUN_BUDGET_MIN = runBudget.minutes;
+const RUN_STARTED_AT = Date.now();
+
 /**
  * Give one model call a deadline. Returns the abortController to hand to the SDK
  * and a done() that must be called so a finished call does not leave a timer -
@@ -154,29 +165,61 @@ const MODEL_TIMEOUT_MIN = modelTimeout.minutes;
  * genuine gap - which is what the input has always claimed to measure.
  */
 function deadline(label) {
-  if (!MODEL_TIMEOUT_MIN) {
-    return { abortController: undefined, done: () => {}, expired: () => false, touch: () => {} };
+  if (!MODEL_TIMEOUT_MIN && !RUN_BUDGET_MIN) {
+    return {
+      abortController: undefined,
+      done: () => {},
+      expired: () => false,
+      reason: () => "",
+      touch: () => {},
+    };
   }
   const ac = new AbortController();
-  let fired = false;
-  let timer = null;
-  const arm = () => {
-    timer = setTimeout(() => {
-      fired = true;
-      log("[timeout] " + timeoutReason(label, MODEL_TIMEOUT_MIN));
-      ac.abort();
-    }, MODEL_TIMEOUT_MIN * 60 * 1000);
+  let firedBy = null;
+  let stallTimer = null;
+  let budgetTimer = null;
+
+  const reasonFor = (why) =>
+    why === "budget" ? budgetReason(label, RUN_BUDGET_MIN) : timeoutReason(label, MODEL_TIMEOUT_MIN);
+
+  const stop = (why) => {
+    if (firedBy) return;
+    firedBy = why;
+    log("[timeout] " + reasonFor(why));
+    ac.abort();
   };
-  arm();
+
+  const armStall = () => {
+    if (!MODEL_TIMEOUT_MIN) return;
+    stallTimer = setTimeout(() => stop("stall"), MODEL_TIMEOUT_MIN * 60 * 1000);
+  };
+
+  // The budget is measured from the start of the RUN, not of this call. Three
+  // calls each given the full budget would be three times the ceiling, and the
+  // job limit this exists to stay under is a single number for the whole job.
+  // A call that begins with the budget already spent gets a zero-length timer
+  // and stops immediately, which is correct: there is no time left to give it.
+  const left = budgetDelayMs(RUN_BUDGET_MIN, RUN_STARTED_AT, Date.now());
+  if (left !== null) budgetTimer = setTimeout(() => stop("budget"), left);
+  armStall();
+
   return {
     abortController: ac,
-    done: () => clearTimeout(timer),
-    expired: () => fired,
-    // Anything arriving from the model is proof it has not stopped answering.
+    done: () => {
+      clearTimeout(stallTimer);
+      clearTimeout(budgetTimer);
+    },
+    expired: () => Boolean(firedBy),
+    // Which brake closed, in the caller's words. Reporting a budget stop as "the
+    // model stopped answering" would send the reader to their provider over a
+    // model that answered perfectly well.
+    reason: () => (firedBy ? reasonFor(firedBy) : ""),
+    // Anything arriving from the model is proof it has not stopped answering -
+    // but it is not proof there is time left, so only the stall timer resets.
     touch: () => {
-      if (fired) return;
-      clearTimeout(timer);
-      arm();
+      if (firedBy) return;
+      clearTimeout(stallTimer);
+      armStall();
     },
   };
 }
@@ -421,6 +464,7 @@ if (!fs.existsSync(TARGET_DIR)) {
 if (verifyMode.error) fail(verifyMode.error);
 if (verifyTools.error) fail(verifyTools.error);
 if (modelTimeout.error) fail(modelTimeout.error);
+if (runBudget.error) fail(runBudget.error);
 
 group("0. Environment");
 // "Custom endpoint" means anything other than Anthropic's own host. Some
@@ -714,7 +758,7 @@ try {
   // An abort surfaces here as an ordinary throw. Say which it was: "the agent
   // crashed" sends someone reading a stack trace, "it stopped answering" sends
   // them to the provider.
-  if (agentDeadline.expired()) fail(timeoutReason("fixing agent", MODEL_TIMEOUT_MIN));
+  if (agentDeadline.expired()) fail(agentDeadline.reason());
   // A dead child process is our runtime, not the agent declining to answer. Filed
   // as a plain failure it became NO-CHANGE - "Patchery had nothing to offer" - for
   // three runs where the agent never got to have an offer.
@@ -1469,7 +1513,7 @@ async function runReviewPass(entries) {
       }
     } catch (err) {
       callError = reviewDeadline.expired()
-        ? timeoutReason("reviewer", MODEL_TIMEOUT_MIN)
+        ? reviewDeadline.reason()
         : "the reviewer crashed: " + (err?.message ?? err);
     } finally {
       reviewDeadline.done();
@@ -1569,7 +1613,7 @@ if (VERIFY_REPAIR && review) {
       }
     } catch (err) {
       repairFailed = repairDeadline.expired()
-        ? timeoutReason("repair turn", MODEL_TIMEOUT_MIN)
+        ? repairDeadline.reason()
         : "the repair turn crashed: " + (err?.message ?? err);
     } finally {
       repairDeadline.done();

@@ -141,6 +141,18 @@ inputs:
       indefinitely, for a genuinely slow self-hosted model.
     required: false
     default: "20"
+  run-budget-minutes:
+    description: >-
+      Stop the whole run after this long and report what was learned. This is a
+      third brake and it catches what the other two cannot: max-turns bounds work,
+      model-timeout-minutes bounds waiting, and this bounds a model that is
+      answering productively and still will not finish in the time you have. The
+      default sits below the usual CI job limit deliberately - ending at 45 minutes
+      with a written diagnosis beats being killed at 60 by the job timeout, which
+      writes nothing at all, not even the diagnosis file. If you raise this, raise
+      your job's own timeout-minutes with it. 0 removes the ceiling.
+    required: false
+    default: "45"
   verify-mode:
     description: >-
       Independent review of the fix by a second, read-only agent. `warn` (the
@@ -399,6 +411,7 @@ runs:
         SMA_ALLOW_DELETIONS: ${{ inputs.allow-deletions }}
         SMA_ALLOW_DEPENDENCY_REMOVAL: ${{ inputs.allow-dependency-removal }}
         SMA_MODEL_TIMEOUT_MINUTES: ${{ inputs.model-timeout-minutes }}
+        SMA_RUN_BUDGET_MINUTES: ${{ inputs.run-budget-minutes }}
         SMA_BASELINE_RETRIES: ${{ inputs.baseline-retries }}
         SMA_STALL_REPEATS: ${{ inputs.stall-repeats }}
         SMA_STALL_STALE_TURNS: ${{ inputs.stall-stale-turns }}

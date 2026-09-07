@@ -68,7 +68,10 @@ import {
   packagesNamedIn,
   chainedFailureMessage,
   normalizeModelTimeout,
+  normalizeRunBudget,
+  budgetDelayMs,
   timeoutReason,
+  budgetReason,
   harnessCrash,
   confidenceThresholdReport,
   shouldReview,
@@ -3806,6 +3809,70 @@ check("a missing package name never yields a directory", () => {
 // through the prototype chain and report a declaration nobody wrote.
 check("an inherited property is not a declaration", () => {
   assert.deepStrictEqual(workspacesDeclaring("constructor", [{ dir: ".", deps: {} }]), []);
+});
+
+// ---------------------------------------------------------------------------
+// The run budget: the ceiling that making the stall clock honest took away.
+// ---------------------------------------------------------------------------
+
+check("the run budget defaults below the usual CI job limit", () => {
+  assert.strictEqual(normalizeRunBudget("").minutes, 45);
+  assert.strictEqual(normalizeRunBudget(undefined).minutes, 45);
+  assert.ok(normalizeRunBudget("").minutes < 60, "a default at or above the job cap defeats the point");
+});
+
+check("0 removes the ceiling, for a runner that has none of its own", () => {
+  assert.strictEqual(normalizeRunBudget("0").minutes, 0);
+  assert.strictEqual(normalizeRunBudget("0").error, null);
+});
+
+check("a nonsense budget is named, not silently accepted", () => {
+  for (const bad of ["soon", "-5", "9999"]) {
+    const r = normalizeRunBudget(bad);
+    assert.strictEqual(r.minutes, 45, bad + " should fall back to the default");
+    assert.match(r.error, /run-budget-minutes/);
+  }
+});
+
+// The two messages must not be confusable. The stall message sends the reader to
+// their provider, which is exactly the wrong place to send someone whose model
+// answered every time and simply had more work than time.
+check("the budget message does not claim the model stopped answering", () => {
+  const budget = budgetReason("fixing agent", 45);
+  assert.match(budget, /45-minute budget/);
+  assert.match(budget, /not a stall/);
+  assert.ok(!/produced nothing for/.test(budget), "that is the stall message");
+  assert.match(timeoutReason("fixing agent", 20), /produced nothing for 20 minutes/);
+  assert.notStrictEqual(budget, timeoutReason("fixing agent", 45));
+});
+
+check("each message names the input that would change it", () => {
+  assert.match(budgetReason("reviewer", 45), /run-budget-minutes/);
+  assert.match(timeoutReason("reviewer", 20), /model-timeout-minutes/);
+});
+
+// The origin is the whole bug. A budget measured from when THIS call started
+// gives the agent, the reviewer and the repair turn 45 minutes each against a
+// job limit that is one number for the whole job.
+check("the budget counts from the start of the run, not of the call", () => {
+  const start = 1_000_000;
+  const min = 45;
+  assert.strictEqual(budgetDelayMs(min, start, start), 45 * 60 * 1000);
+  // Thirty minutes in, a freshly armed timer must get the remaining fifteen.
+  assert.strictEqual(budgetDelayMs(min, start, start + 30 * 60 * 1000), 15 * 60 * 1000);
+});
+
+check("a call that begins with the budget already spent gets no time", () => {
+  const start = 1_000_000;
+  assert.strictEqual(budgetDelayMs(45, start, start + 60 * 60 * 1000), 0);
+  assert.ok(budgetDelayMs(45, start, start + 99 * 60 * 1000) >= 0, "never a negative delay");
+});
+
+check("no budget means no timer at all, not a zero-length one", () => {
+  assert.strictEqual(budgetDelayMs(0, 1000, 2000), null);
+  // 0 is the value that fires immediately - conflating the two would abort every
+  // run instantly for anyone who opted out of the ceiling.
+  assert.notStrictEqual(budgetDelayMs(0, 1000, 2000), 0);
 });
 
 // The real path from the first live crawl. nestjs/nest reported 49 workspaces
