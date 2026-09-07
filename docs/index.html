@@ -182,7 +182,8 @@
       <p>
         Tests are counted while the code is still whole — before anything is broken, so nothing the
         agent does afterwards can move that baseline. They are counted again after its turn. If fewer
-        tests pass than at the start, the run is recorded WRONG, however green it looks.
+        tests pass than at the start, the change is reverted and the run ends REFUSED, however
+        green it looks — nothing reaches a pull request, which is the point.
       </p>
     </div>
   </div>
