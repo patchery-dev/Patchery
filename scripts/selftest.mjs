@@ -30,7 +30,7 @@ import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks } from "./check-workflows.mjs";
 import { planBatch } from "./batch-plan.mjs";
-import { sortRows, renderReport } from "./batch-report.mjs";
+import { sortRows, renderReport, guardCaught, guardVisible } from "./batch-report.mjs";
 import {
   protectedReason,
   isHarnessConfig,
@@ -2994,6 +2994,59 @@ check("legs that reported nothing are stated, not implied away", () => {
   // And when everything reported, the line must not appear at all.
   assert.ok(!/reported nothing/.test(renderReport(BENCH, { kind: "benchmark", queued: 4 })));
 });
+
+// The guard is the product's central claim and the table never counted it. The
+// number has to come from `blocked-by-guard`, which only the guard writes - not
+// from REFUSED, which also holds every change the reviewer refuted.
+const GUARDED = [
+  { outcome: "REFUSED", actionOutcome: "blocked-by-guard", repo: "g/g", package: "p", version: "2", detail: "abandoned the package" },
+  { outcome: "REFUSED", actionOutcome: "inconclusive", review: "refuted", repo: "v/v", package: "p", version: "2", detail: "reviewer refuted it" },
+  { outcome: "WRONG", actionOutcome: "changed", repo: "w/w", package: "p", version: "2", detail: "suite shrank" },
+  { outcome: "FIXED", actionOutcome: "changed", repo: "a/a", package: "p", version: "2", detail: "green" },
+];
+
+check("the guard's catches and the ones that got past it are both on the table", () => {
+  const text = renderReport(GUARDED, { kind: "benchmark" });
+  assert.match(text, /\| bad fixes caught by the guard \| 1 \|/);
+  assert.match(text, /\| \*\*bad fixes that reached a PR\*\* \| \*\*1\*\* \|/);
+});
+
+check("the count comes from blocked-by-guard, not from REFUSED", () => {
+  // Two REFUSED rows, one guard revert and one reviewer refutation. Reading
+  // REFUSED would say 2 and credit the guard with the reviewer's work.
+  assert.strictEqual(GUARDED.filter((r) => r.outcome === "REFUSED").length, 2);
+  assert.strictEqual(guardCaught(GUARDED), 1);
+});
+
+check("only the guard's own word counts - a lookalike outcome does not", () => {
+  assert.strictEqual(guardCaught([{ actionOutcome: "blocked by our setup" }]), 0);
+  assert.strictEqual(guardCaught([{ actionOutcome: "harness-error" }]), 0);
+  assert.strictEqual(guardCaught([{ actionOutcome: " BLOCKED-BY-GUARD " }]), 1);
+});
+
+// Same rule as the node column, for the same reason: 0 and "nobody recorded it"
+// are different facts, and the table must not print the first when it means the
+// second.
+check("a batch from before the field existed shows no guard lines at all", () => {
+  const old = [{ outcome: "FIXED", repo: "a/a", package: "p", version: "2", detail: "green" }];
+  assert.strictEqual(guardVisible(old), false);
+  const text = renderReport(old, { kind: "benchmark" });
+  assert.ok(!/caught by the guard/.test(text));
+  assert.ok(!/reached a PR/.test(text));
+});
+
+check("a guard that caught nothing on a recorded batch still says 0", () => {
+  const text = renderReport([{ outcome: "FIXED", actionOutcome: "changed", repo: "a/a", package: "p", version: "2" }], { kind: "benchmark" });
+  assert.match(text, /\| bad fixes caught by the guard \| 0 \|/);
+});
+
+// The field has to survive the trip from the action to the table, and the two
+// files are joined by nothing but its name.
+check("the row benchmark-outcome writes is the row the guard lines read", () => {
+  const src = fs.readFileSync(path.join(root, "scripts", "benchmark-outcome.mjs"), "utf8");
+  assert.match(src, /actionOutcome: a\["action-outcome"\]/);
+});
+
 
 // A verdict without its runtime is not a verdict: formdata-node@6 was VALID on
 // Node 12 and NOT-A-CASE on Node 16, same repo, same commit.

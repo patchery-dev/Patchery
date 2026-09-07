@@ -33,6 +33,41 @@ export function label(row, kind) {
   return typeof raw === "string" && raw.trim() ? raw.trim() : UNREPORTED;
 }
 
+/**
+ * How many bad fixes the guard caught, from the only field that says so.
+ *
+ * REFUSED is the wrong source for this number and it is the tempting one. It
+ * covers two different events: the guard reverting a change (the agent
+ * abandoned the package it was sent to migrate, the suite went green anyway),
+ * and the independent reviewer refuting a change that was otherwise fine.
+ * Counting REFUSED as "the guard caught it" would credit the guard with the
+ * reviewer's work, which is the sort of number that survives right up until
+ * someone asks how it was measured.
+ *
+ * `blocked-by-guard` is the outcome agent.mjs writes for the guard's own
+ * reverts, and nothing else writes it - so it is the number.
+ *
+ * Rows written before the field existed carry nothing, and the caller must not
+ * read that as zero: see guardVisible below.
+ */
+export function guardCaught(rows) {
+  return rows.filter((r) => /^blocked-by-guard$/i.test(String(r.actionOutcome || "").trim())).length;
+}
+
+/**
+ * Did these rows record what the action said, at all?
+ *
+ * A batch collected before `actionOutcome` was written would render "caught by
+ * the guard: 0" - which is not a measurement of a guard that caught nothing, it
+ * is the absence of a measurement, and this project has already learned once
+ * what a 0 standing in for null does to a table. Same rule as the node column:
+ * shown when something recorded it, absent when nothing did.
+ */
+export function guardVisible(rows) {
+  return rows.some((r) => String(r.actionOutcome || "").trim());
+}
+
+
 /** Rows first, in the order a reader should meet them. */
 export function sortRows(rows, kind) {
   const order = kind === "verify" ? VERIFY_ORDER : BENCHMARK_ORDER;
@@ -69,7 +104,20 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
     // Bold, because shipping something broken is the only outcome that costs a
     // user anything, and a benchmark that does not make it prominent is an advert.
     out.push("| **shipped something wrong** | **" + n("WRONG") + "** |");
-    out.push("| blocked by our setup (not counted) | " + n("BLOCKED") + " |", "");
+    out.push("| blocked by our setup (not counted) | " + n("BLOCKED") + " |");
+    // The two lines the guard exists for, and until now the table did not say
+    // either of them. They are not a third total - every fix counted here is
+    // already counted above - they are the same runs read from the guard's
+    // side: of the bad fixes this batch produced, how many died in the guard
+    // and how many a user would have had to review.
+    //
+    // "reached a PR" is WRONG by construction: a change that shipped with the
+    // suite still red or smaller is a bad fix that got past everything.
+    if (guardVisible(sorted)) {
+      out.push("| bad fixes caught by the guard | " + guardCaught(sorted) + " |");
+      out.push("| **bad fixes that reached a PR** | **" + n("WRONG") + "** |");
+    }
+    out.push("");
   }
 
   // The Node column is not decoration. The same case gave VALID on Node 12 and

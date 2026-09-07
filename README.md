@@ -190,7 +190,7 @@ breaking changes in the ecosystem, and across **five** repositories that depend
 on it, not one suite noticed. Closing that gap needs a second trigger that does
 not wait for red, which is the next thing being built.
 
-The engine has 482 offline checks covering the guard, the census and the outcome
+The engine has 488 offline checks covering the guard, the census and the outcome
 rules. None of them need an API key: `node scripts/selftest.mjs`.
 
 ## Where it is going

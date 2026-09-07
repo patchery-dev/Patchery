@@ -298,6 +298,12 @@ if (isMain) {
     model: a.model || "",
     outcome,
     detail,
+    // Kept beside the outcome because the two answer different questions. The
+    // outcome says what the case came to; this says what the action itself
+    // reported, and it is the only place `blocked-by-guard` survives into the
+    // table - REFUSED covers the reviewer's refutations too, so it cannot be
+    // read as the guard's catch count.
+    actionOutcome: a["action-outcome"] || "",
     before,
     after,
     files: a.files || "",
