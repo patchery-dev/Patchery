@@ -116,6 +116,15 @@ for (const p of [
   "tests/helper.js",
   "src/__tests__/foo.js",
   "src/__mocks__/foo.js",
+  // A snapshot IS the assertion, and jest/vitest put it beside the test file by
+  // default - src/__snapshots__/, not under __tests__/ - which is exactly the
+  // layout the two rules above miss. `npx jest -u` rewrites every failing
+  // expectation to match whatever the code now does, and nothing downstream
+  // notices: the census only refuses a suite that got SMALLER, and rewriting
+  // snapshots makes more tests pass.
+  "src/__snapshots__/Button.test.js.snap",
+  "src/components/__snapshots__/App.test.tsx.snap",
+  "__snapshots__/a.snap",
   "node_modules/fake-lib/index.js",
   "test-fixture/node_modules/fake-lib/index.js",
   ".github/workflows/patchery-demo.yml",
@@ -134,6 +143,11 @@ for (const p of [
   "lib/latest.js",
   "src/contest.js",
   "README.md",
+  // The snapshot rules must key on the extension and the directory, not on the
+  // word appearing in a filename. A module that happens to be about snapshots is
+  // ordinary source and a migration may legitimately need to edit it.
+  "src/snapshot-utils.js",
+  "lib/snapshots.ts",
 ]) {
   check(p, () => assert.strictEqual(protectedReason(p), null, p + " should have been allowed"));
 }
@@ -835,6 +849,56 @@ check("a bare string concern still counts", () => {
   assert.strictEqual(r.review.concerns.length, 1);
   assert.strictEqual(r.review.concerns[0].severity, "serious");
 });
+// The cap is a size bound, and taken in the model's order it became a choice of
+// which concerns count. reviewOutcome reads severity off the KEPT list, so a
+// `blocking` entry that fell off the end took the whole verdict with it -
+// measured: five minor concerns then one blocking, and the review came back
+// not-refuted, rank 0, "A second agent tried to refute this change and could
+// not", in block mode. Models list small things first and the real finding last.
+check("a blocking concern past the cap is kept, not dropped", () => {
+  const minor = (i) => ({ severity: "minor", file: "f" + i + ".js", claim: "style " + i });
+  const r = parseReview(goodReview({
+    concerns: [minor(1), minor(2), minor(3), minor(4), minor(5),
+      { severity: "blocking", file: "src/db.js", claim: "this drops every write" }],
+  }));
+  assert.strictEqual(r.review.concerns.length, 5);
+  assert.strictEqual(r.review.concerns[0].severity, "blocking");
+  // And it must still reach the decision, which is the point of keeping it.
+  const outcome = reviewOutcome({ review: r.review, mode: "block" });
+  assert.strictEqual(outcome.status, "refuted");
+  assert.strictEqual(outcome.blocking, true);
+});
+
+check("what did not fit is counted, never silently gone", () => {
+  const r = parseReview(goodReview({
+    concerns: Array.from({ length: 9 }, (_, i) => ({ severity: "minor", file: "a", claim: "c" + i })),
+  }));
+  assert.strictEqual(r.review.concernsOmitted, 4);
+  // And it reaches the reader, rather than the list just stopping at five.
+  const text = renderReviewSection(reviewOutcome({ review: r.review }), r.review, {});
+  assert.match(text, /4 further concern\(s\) not shown/);
+});
+
+check("a review inside the cap reports nothing omitted", () => {
+  const r = parseReview(goodReview({
+    concerns: Array.from({ length: 3 }, (_, i) => ({ severity: "minor", file: "a", claim: "c" + i })),
+  }));
+  assert.strictEqual(r.review.concernsOmitted, 0);
+  assert.doesNotMatch(
+    renderReviewSection(reviewOutcome({ review: r.review }), r.review, {}),
+    /further concern/
+  );
+});
+
+check("equal severities keep the order the reviewer wrote them in", () => {
+  // Sorting by weight must not reshuffle within a severity: the reviewer's own
+  // ordering is the only signal left once severity ties.
+  const r = parseReview(goodReview({
+    concerns: Array.from({ length: 5 }, (_, i) => ({ severity: "minor", file: "a", claim: "c" + i })),
+  }));
+  assert.deepStrictEqual(r.review.concerns.map((c) => c.claim), ["c0", "c1", "c2", "c3", "c4"]);
+});
+
 check("concerns are capped at five", () =>
   assert.strictEqual(
     parseReview(goodReview({

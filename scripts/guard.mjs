@@ -22,6 +22,23 @@ export function protectedReason(relPath) {
   if (/(^|\/)node_modules\//.test(p)) return "inside node_modules";
   if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(p)) return "test file";
   if (/(^|\/)(__tests__|__mocks__|tests?)\//.test(p)) return "inside a test directory";
+  // A snapshot IS the assertion, and it was the one assertion left unguarded.
+  //
+  // The rule above is anchored to the extension, so `Button.test.js.snap` does
+  // not match it; the directory rule lists __tests__/__mocks__/tests but not
+  // __snapshots__. That leaves jest and vitest's DEFAULT layout - a
+  // __snapshots__/ folder beside the test file, typically under src/ -
+  // completely open, while the same file under __tests__/ happens to be caught.
+  //
+  // It is the cheapest fake-green there is: `npx jest -u` rewrites every failing
+  // expectation to match whatever the code now does. Nothing downstream sees it.
+  // The census cannot: rewriting snapshots makes MORE tests pass, and censusHeld
+  // only refuses a suite that got smaller. bashLooksMutating("npx jest -u") is
+  // false, so it does not even read as an edit. The run then reaches rung 1 of
+  // the proof ladder, "the suite failed before this change and passes after it",
+  // and the pull request prints "Were any test files modified | No".
+  if (/\.snap$/.test(p)) return "snapshot file - it is the assertion, not the code";
+  if (/(^|\/)__snapshots__\//.test(p)) return "inside a snapshot directory";
   if (/(^|\/)\.github\//.test(p)) return "CI configuration";
   if (/(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(p)) return "lockfile";
   // Setup files stay refused, and the line between them and configuration is not
@@ -1736,12 +1753,33 @@ export function parseReview(raw) {
 
   let rawConcerns = obj.concerns;
   if (typeof rawConcerns === "string") rawConcerns = [{ severity: "serious", claim: rawConcerns }];
-  const concerns = (Array.isArray(rawConcerns) ? rawConcerns : []).slice(0, 5).map((c) => ({
+  // The cap is a size bound, not a choice of which concerns matter - but taken
+  // in the model's own order it became one, and it decided the outcome.
+  //
+  // reviewOutcome reads severity off THIS list: one `blocking` entry makes the
+  // verdict refuted, in block mode it withholds the pull request. Measured with
+  // five `minor` concerns followed by one `blocking` ("src/db.js: this drops
+  // every write"): the blocking one fell off the end, and the run came back
+  // not-refuted, rank 0, labelled patchery:reviewed, headline "A second agent
+  // tried to refute this change and could not". Nothing anywhere said six had
+  // been written. Models tend to list small things first and the real finding
+  // last, so this is the likely order, not the adversarial one.
+  //
+  // Sorted by weight before the slice, and stably, so the model's order still
+  // decides between concerns of equal severity. The count that did not fit is
+  // kept rather than dropped - the same rule the evidence truncation follows:
+  // cut if you must, but say that you cut.
+  const WEIGHT = { blocking: 0, serious: 1, minor: 2 };
+  const allConcerns = (Array.isArray(rawConcerns) ? rawConcerns : []).map((c) => ({
     severity: normaliseSeverity(c?.severity),
     file: capString(c?.file, 200),
     line_hint: capString(c?.line_hint, 60),
     claim: capString(c?.claim, 600),
   }));
+  const ranked = [...allConcerns].sort(
+    (a, b) => (WEIGHT[a.severity] ?? 3) - (WEIGHT[b.severity] ?? 3)
+  );
+  const concerns = ranked.slice(0, 5);
 
   return {
     ok: true,
@@ -1749,6 +1787,7 @@ export function parseReview(raw) {
       reconstructed_intent: capString(obj.reconstructed_intent, 400),
       checks,
       concerns,
+      concernsOmitted: Math.max(0, allConcerns.length - concerns.length),
       verdict,
       confidence: normaliseConfidence(obj.confidence),
     },
@@ -1921,6 +1960,14 @@ export function renderReviewSection(outcome, review, meta = {}) {
           "- **" + c.severity + "** · `" + escapeForPr(c.file) + "`" +
             (c.line_hint ? " (" + escapeForPr(c.line_hint) + ")" : "") +
             " — " + escapeForPr(c.claim)
+        );
+      }
+      // Named, never omitted. A list that silently stops at five reads as the
+      // whole of what the reviewer said.
+      if (review.concernsOmitted > 0) {
+        lines.push(
+          "- _" + review.concernsOmitted + " further concern(s) not shown - the list is capped at five, " +
+            "most severe first._"
         );
       }
       lines.push("");
