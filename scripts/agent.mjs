@@ -272,11 +272,24 @@ function fail(message, outcome = "failed") {
  * broke. Nothing downstream reads the exit code - the pull request step is gated
  * on `changed` - so the only thing the 1 communicated was alarm, at the moment
  * the product was working.
+ *
+ * The `reason` is a slug, not prose, because it has to be counted. The first two
+ * benchmark runs blocked four patches and all four were the same escape - the
+ * agent replacing an imported name with a local reimplementation, so the calls
+ * still resolve, the tests still pass, and the package is never reached. That is
+ * a finding, and it was only visible because somebody read three summaries by
+ * hand. A slug makes it a number.
  */
-function refuse(message) {
+function refuse(message, reason = "unspecified") {
   console.error("\n[BLOCKED] " + clean(message));
-  writeOutputs({ outcome: "blocked-by-guard", changed: "false", tests_passed: "false", summary: message });
-  writeStepSummary("### Patchery\n\nBlocked by the guard: " + message);
+  writeOutputs({
+    outcome: "blocked-by-guard",
+    guard_reason: reason,
+    changed: "false",
+    tests_passed: "false",
+    summary: message,
+  });
+  writeStepSummary("### Patchery\n\nBlocked by the guard (" + reason + "): " + message);
   process.exit(0);
 }
 
@@ -1007,7 +1020,8 @@ if (violations.length > 0) {
       violations.map(([f, reason]) => f + " - " + reason).join("; ") +
       ". The diffs above show exactly what was changed, so you can tell a legitimate " +
       "migration apart from an agent going outside its brief. " +
-      hints.join(" ")
+      hints.join(" "),
+    "protected-path"
   );
 }
 
@@ -1024,7 +1038,8 @@ if (violations.length > 0) {
       "Blocked and reverted, no PR will be opened: " + scriptsReason + ". Everything else " +
         "in package.json - dependencies, version - is still fair game; only the scripts are " +
         "frozen for the length of a run, because they are the definition of correct that " +
-        "the rest of this pipeline is measured against."
+        "the rest of this pipeline is measured against.",
+      "scripts-tamper"
     );
   }
 }
@@ -1060,7 +1075,8 @@ for (const entry of changedEntries) {
   refuse(
     "Blocked and reverted, no PR will be opened. `" + entry.path + "` - " + reason +
       " Changing how a dependency is compiled is a legitimate migration and is allowed; " +
-      "changing what the runner looks at is not."
+      "changing what the runner looks at is not.",
+    "harness-config"
   );
 }
 
@@ -1104,7 +1120,8 @@ for (const entry of changedEntries) {
       "Blocked and reverted, no PR will be opened. " + depReasons.join(" ") + " " +
         "These changes pass your tests - that is why they are checked here rather than " +
         "left to the test run - and a reviewing model cleared this class of change as " +
-        "often as it cleared correct work, which is why it is a rule and not an opinion."
+        "often as it cleared correct work, which is why it is a rule and not an opinion.",
+      "dependency-misuse"
     );
   }
 }
@@ -1199,7 +1216,8 @@ if (censusVerdict.ok === false) {
   refuse(
     "Blocked and reverted, no PR will be opened. " + censusVerdict.why + " A change that " +
       "makes the suite pass by running less of it has not been proved by that suite - it has " +
-      "been excused by it."
+      "been excused by it.",
+    "census-shrunk"
   );
 }
 if (censusVerdict.ok === null && censusBefore.total == null) {

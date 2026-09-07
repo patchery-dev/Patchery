@@ -278,6 +278,7 @@ if (isMain) {
     finalExit: a["final-exit"],
     actionOutcome: a["action-outcome"],
     stepOutcome: a["step-outcome"],
+    guardReason: a["guard-reason"],
     changed: a.changed,
     review: a.review,
     version: a.version,
@@ -296,6 +297,7 @@ if (isMain) {
     // model produced it cannot be reproduced or compared, and invites the
     // reader to assume the best one.
     model: a.model || "",
+    guardReason: a["guard-reason"] || "",
     outcome,
     detail,
     // Kept beside the outcome because the two answer different questions. The

@@ -151,6 +151,30 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
       out.push("| **bad fixes that reached a PR** | **" + n("WRONG") + "** |");
     }
     out.push("");
+
+    // And WHICH rule caught them, because the count alone hides the finding.
+    //
+    // The first two runs blocked four patches and all four were one escape:
+    // the agent replaced an imported name with a local reimplementation, so the
+    // calls still resolved, the tests still passed, and the package was never
+    // reached. Three repositories, three packages, one strategy. A single total
+    // would have shown "4" and lost the only interesting part.
+    //
+    // Rows from before the slug existed are counted separately rather than
+    // dropped: a breakdown that quietly omits them would understate the total it
+    // sits under.
+    const withReason = sorted.filter((r) => r.guardReason);
+    if (withReason.length) {
+      const byReason = {};
+      for (const r of withReason) byReason[r.guardReason] = (byReason[r.guardReason] || 0) + 1;
+      const unlabelled = guardCaught(sorted) - withReason.length;
+      if (unlabelled > 0) byReason["(recorded before the reason was)"] = unlabelled;
+      out.push("| which rule caught it | |", "|---|---|");
+      for (const [reason, count] of Object.entries(byReason).sort((a, b) => b[1] - a[1])) {
+        out.push("| " + reason + " | " + count + " |");
+      }
+      out.push("");
+    }
   }
 
   // The Node column is not decoration. The same case gave VALID on Node 12 and

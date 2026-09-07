@@ -3178,6 +3178,48 @@ check("the fixer is named, so a rate cannot be read as model-independent", () =>
   assert.match(renderReport([{ outcome: "FIXED", repo: "a/a", package: "p", version: "2" }], { kind: "benchmark" }), /Fixer: the repository default/);
 });
 
+// "0 wrong" reads as "the agent produced no bad fixes". It means none escaped.
+// In the first two runs the agent produced four, all the same escape, and the
+// table could not show any of them.
+// The count alone would have shown "4" for the first two runs and lost the only
+// interesting part: all four were the same escape.
+check("the breakdown says which rule caught each one", () => {
+  const g = (repo, reason) => ({
+    outcome: "REFUSED", repo, package: "p", version: "3",
+    actionOutcome: "blocked-by-guard", guardReason: reason,
+  });
+  const text = renderReport(
+    [g("a/a", "dependency-misuse"), g("b/b", "dependency-misuse"), g("c/c", "census-shrunk"),
+     { outcome: "FIXED", repo: "d/d", package: "p", version: "3", actionOutcome: "fixed" }],
+    { kind: "benchmark", queued: 4 }
+  );
+  assert.match(text, /bad fixes caught by the guard \| 3/);
+  assert.match(text, /\| dependency-misuse \| 2 \|/);
+  assert.match(text, /\| census-shrunk \| 1 \|/);
+});
+
+// A batch collected before the slug existed would otherwise show a total of 3
+// above a breakdown adding to 1, which reads as a bug in the table.
+check("catches recorded before the reason existed are named, not dropped", () => {
+  const text = renderReport(
+    [
+      { outcome: "REFUSED", repo: "a/a", package: "p", version: "3", actionOutcome: "blocked-by-guard", guardReason: "dependency-misuse" },
+      { outcome: "REFUSED", repo: "b/b", package: "p", version: "3", actionOutcome: "blocked-by-guard" },
+    ],
+    { kind: "benchmark", queued: 2 }
+  );
+  assert.match(text, /bad fixes caught by the guard \| 2/);
+  assert.match(text, /recorded before the reason was\) \| 1/);
+});
+
+check("no breakdown at all when the guard never fired", () => {
+  const text = renderReport(
+    [{ outcome: "FIXED", repo: "a/a", package: "p", version: "3", actionOutcome: "fixed" }],
+    { kind: "benchmark" }
+  );
+  assert.ok(!/which rule caught it/.test(text));
+});
+
 check("legs that reported nothing are stated, not implied away", () => {
   const text = renderReport(BENCH, { kind: "benchmark", queued: 7 });
   assert.match(text, /\*\*3 case\(s\) reported nothing\*\*/);

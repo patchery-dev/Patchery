@@ -368,6 +368,7 @@ jobs:
             --broken-exit "$BROKEN_EXIT" \
             --final-exit "$FINAL_EXIT" \
             --action-outcome "$ACTION_OUTCOME" \
+            --guard-reason "$GUARD_REASON" \
             --step-outcome "$STEP_OUTCOME" \
             --action-summary "$ACTION_SUMMARY" \
             --changed "$CHANGED" \
@@ -385,6 +386,7 @@ jobs:
           BROKEN_EXIT: ${{ steps.broken.outputs.exit }}
           FINAL_EXIT: ${{ steps.recount.outputs.exit }}
           ACTION_OUTCOME: ${{ steps.patchery.outputs.outcome }}
+          GUARD_REASON: ${{ steps.patchery.outputs.guard-reason }}
           STEP_OUTCOME: ${{ steps.patchery.outcome }}
           ACTION_SUMMARY: ${{ steps.patchery.outputs.summary }}
           CHANGED: ${{ steps.patchery.outputs.changed }}

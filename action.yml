@@ -267,6 +267,13 @@ outputs:
   tests-passed:
     description: "Whether the tests passed after the fix."
     value: ${{ steps.run.outputs.tests_passed }}
+  guard-reason:
+    description: >-
+      Why the guard blocked a change, when it did: protected-path,
+      scripts-tamper, harness-config, dependency-misuse or census-shrunk. Empty
+      when nothing was blocked. A slug rather than prose, because the
+      interesting question is how often each one fires.
+    value: ${{ steps.run.outputs.guard_reason }}
   proof-rung:
     description: >-
       Which rung of proof this run reached: '1' the suite was red and is now
