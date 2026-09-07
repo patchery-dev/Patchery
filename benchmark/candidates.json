@@ -7,12 +7,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 69453,
+    "_stars": 69454,
     "_bump": "ejs v3 -> v6",
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "expressjs/express",
@@ -22,12 +24,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 69453,
+    "_stars": 69454,
     "_bump": "content-disposition v2 -> v3",
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "expressjs/express",
@@ -37,12 +41,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 69453,
+    "_stars": 69454,
     "_bump": "content-type v2 -> v3",
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "node-fetch/node-fetch",
@@ -57,7 +63,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "node-fetch/node-fetch",
@@ -72,7 +80,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "node-fetch/node-fetch",
@@ -87,7 +97,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "winstonjs/winston",
@@ -97,12 +109,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 24519,
+    "_stars": 24518,
     "_bump": "readable-stream v3 -> v4",
     "_note": "",
     "_runtime": true,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "winstonjs/winston",
@@ -112,12 +126,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 24519,
+    "_stars": 24518,
     "_bump": "is-stream v2 -> v4",
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "winstonjs/winston",
@@ -127,12 +143,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 24519,
+    "_stars": 24518,
     "_bump": "through2 v4 -> v5",
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "bcoe/yargs",
@@ -147,7 +165,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "bcoe/yargs",
@@ -162,11 +182,13 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "mozilla/treeherder",
-    "commit": "e5bc18f7919fdc75b162e09a221f03d180b9714f",
+    "commit": "1ffa9f01fbbbf51927a57cff1814de8256491ec2",
     "package": "@mui/material",
     "breaking-version": "9",
     "test-command": "npm test",
@@ -177,11 +199,13 @@
     "_note": "",
     "_runtime": true,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "mozilla/treeherder",
-    "commit": "e5bc18f7919fdc75b162e09a221f03d180b9714f",
+    "commit": "1ffa9f01fbbbf51927a57cff1814de8256491ec2",
     "package": "@fortawesome/fontawesome-svg-core",
     "breaking-version": "7",
     "test-command": "npm test",
@@ -192,11 +216,13 @@
     "_note": "",
     "_runtime": true,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "mozilla/treeherder",
-    "commit": "e5bc18f7919fdc75b162e09a221f03d180b9714f",
+    "commit": "1ffa9f01fbbbf51927a57cff1814de8256491ec2",
     "package": "@fortawesome/free-brands-svg-icons",
     "breaking-version": "7",
     "test-command": "npm test",
@@ -207,7 +233,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "axios/axios",
@@ -217,12 +245,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 109230,
+    "_stars": 109231,
     "_bump": "https-proxy-agent v5 -> v9",
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "axios/axios",
@@ -232,12 +262,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 109230,
+    "_stars": 109231,
     "_bump": "chalk v5 -> v6",
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "fastify/fastify",
@@ -247,12 +279,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 37102,
+    "_stars": 37103,
     "_bump": "pino v9 -> v10",
     "_note": "",
     "_runtime": true,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "immutable-js/immutable-js",
@@ -267,7 +301,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "immutable-js/immutable-js",
@@ -282,7 +318,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "immutable-js/immutable-js",
@@ -297,7 +335,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "moment/luxon",
@@ -312,7 +352,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "handlebars-lang/handlebars.js",
@@ -327,7 +369,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "handlebars-lang/handlebars.js",
@@ -342,7 +386,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "handlebars-lang/handlebars.js",
@@ -357,7 +403,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "chartjs/Chart.js",
@@ -372,7 +420,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "chartjs/Chart.js",
@@ -387,7 +437,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "chartjs/Chart.js",
@@ -402,7 +454,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "sindresorhus/p-map",
@@ -417,7 +471,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "sindresorhus/p-map",
@@ -432,7 +488,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "chalk/chalk",
@@ -447,7 +505,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "debug-js/debug",
@@ -462,7 +522,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "expressjs/body-parser",
@@ -477,7 +539,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "expressjs/body-parser",
@@ -492,7 +556,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "expressjs/cors",
@@ -507,7 +573,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "expressjs/multer",
@@ -517,12 +585,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 12083,
+    "_stars": 12082,
     "_bump": "type-is v1 -> v2",
     "_note": "",
     "_runtime": true,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "expressjs/multer",
@@ -532,12 +602,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 12083,
+    "_stars": 12082,
     "_bump": "express v4 -> v5",
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "expressjs/multer",
@@ -547,12 +619,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 12083,
+    "_stars": 12082,
     "_bump": "append-field v1 -> v2",
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "expressjs/session",
@@ -567,7 +641,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "expressjs/session",
@@ -582,7 +658,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "nodeca/js-yaml",
@@ -597,7 +675,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "nodeca/js-yaml",
@@ -612,7 +692,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "kelektiv/node-uuid",
@@ -627,7 +709,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "kelektiv/node-uuid",
@@ -642,7 +726,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "kelektiv/node-uuid",
@@ -657,7 +743,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "uuidjs/uuid",
@@ -672,7 +760,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "uuidjs/uuid",
@@ -687,7 +777,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "uuidjs/uuid",
@@ -702,7 +794,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "Unitech/pm2",
@@ -712,12 +806,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 43288,
+    "_stars": 43287,
     "_bump": "js-yaml v4 -> v5",
     "_note": "",
     "_runtime": true,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "Unitech/pm2",
@@ -727,12 +823,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 43288,
+    "_stars": 43287,
     "_bump": "express v4 -> v5",
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "Unitech/pm2",
@@ -742,12 +840,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 43288,
+    "_stars": 43287,
     "_bump": "commander v2 -> v15",
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "colinhacks/zod",
@@ -757,12 +857,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 43870,
+    "_stars": 43874,
     "_bump": "@biomejs/biome v1 -> v2",
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
   },
   {
     "repo": "colinhacks/zod",
@@ -772,12 +874,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 43870,
+    "_stars": 43874,
     "_bump": "tinybench v2 -> v6",
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": true
   },
   {
     "repo": "colinhacks/zod",
@@ -787,12 +891,14 @@
     "test-command": "npm test",
     "target-dir": ".",
     "node-version": "auto",
-    "_stars": 43870,
+    "_stars": 43874,
     "_bump": "chalk v5 -> v6",
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": true
   },
   {
     "repo": "jquense/yup",
@@ -807,7 +913,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "jquense/yup",
@@ -822,7 +930,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "jquense/yup",
@@ -837,7 +947,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "hapijs/joi",
@@ -852,7 +964,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "hapijs/joi",
@@ -867,7 +981,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "hapijs/joi",
@@ -882,7 +998,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "lodash/lodash",
@@ -897,7 +1015,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "lodash/lodash",
@@ -912,7 +1032,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "lodash/lodash",
@@ -927,7 +1049,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
   },
   {
     "repo": "yargs/yargs-parser",
@@ -942,7 +1066,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "npm/node-semver",
@@ -957,7 +1083,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "node-cache/node-cache",
@@ -972,7 +1100,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "node-cache/node-cache",
@@ -987,7 +1117,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "node-cache/node-cache",
@@ -1002,7 +1134,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "luin/ioredis",
@@ -1017,7 +1151,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "nodemailer/nodemailer",
@@ -1032,7 +1168,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "form-data/form-data",
@@ -1047,7 +1185,9 @@
     "_note": "",
     "_runtime": true,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "form-data/form-data",
@@ -1062,7 +1202,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "form-data/form-data",
@@ -1077,7 +1219,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "request/request-promise",
@@ -1092,7 +1236,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "request/request-promise",
@@ -1107,7 +1253,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "request/request-promise",
@@ -1122,7 +1270,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "node-formidable/formidable",
@@ -1137,7 +1287,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "node-formidable/formidable",
@@ -1152,7 +1304,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "node-formidable/formidable",
@@ -1167,7 +1321,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "jaredhanson/passport",
@@ -1182,7 +1338,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "auth0/node-jsonwebtoken",
@@ -1197,7 +1355,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "auth0/node-jsonwebtoken",
@@ -1212,7 +1372,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "auth0/node-jsonwebtoken",
@@ -1227,7 +1389,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "esm",
-    "_apiOnly": false
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": false
   },
   {
     "repo": "dcodeIO/bcrypt.js",
@@ -1242,7 +1406,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "kriasoft/node-sqlite",
@@ -1257,7 +1423,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "kriasoft/node-sqlite",
@@ -1272,7 +1440,9 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
   },
   {
     "repo": "kriasoft/node-sqlite",
@@ -1287,6 +1457,739 @@
     "_note": "",
     "_runtime": false,
     "_format": "cjs",
-    "_apiOnly": true
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "excalidraw/excalidraw",
+    "commit": "f1a79b73df5b9883f940417861a4f5fb879a3f02",
+    "package": "jsdom",
+    "breaking-version": "30",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 131310,
+    "_bump": "jsdom v22 -> v30",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "excalidraw/excalidraw",
+    "commit": "f1a79b73df5b9883f940417861a4f5fb879a3f02",
+    "package": "rewire",
+    "breaking-version": "9",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 131310,
+    "_bump": "rewire v6 -> v9",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "excalidraw/excalidraw",
+    "commit": "f1a79b73df5b9883f940417861a4f5fb879a3f02",
+    "package": "dotenv",
+    "breaking-version": "17",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 131310,
+    "_bump": "dotenv v16 -> v17",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "verdaccio/verdaccio",
+    "commit": "b27212f7c69b46569b099b3d5d27d9d5e5047830",
+    "package": "undici-types",
+    "breaking-version": "8",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 17870,
+    "_bump": "undici-types v6 -> v8",
+    "_note": "",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "verdaccio/verdaccio",
+    "commit": "b27212f7c69b46569b099b3d5d27d9d5e5047830",
+    "package": "@crowdin/cli",
+    "breaking-version": "5",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 17870,
+    "_bump": "@crowdin/cli v4 -> v5",
+    "_note": "",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "verdaccio/verdaccio",
+    "commit": "b27212f7c69b46569b099b3d5d27d9d5e5047830",
+    "package": "got",
+    "breaking-version": "16",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 17870,
+    "_bump": "got v15 -> v16",
+    "_note": "",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "laurent22/joplin",
+    "commit": "81f8bfed395a2bab2bb8963fc9456fb22c4dc0d9",
+    "package": "node-gyp",
+    "breaking-version": "13",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 56258,
+    "_bump": "node-gyp v11 -> v13",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "laurent22/joplin",
+    "commit": "81f8bfed395a2bab2bb8963fc9456fb22c4dc0d9",
+    "package": "npm-package-json-lint",
+    "breaking-version": "11",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 56258,
+    "_bump": "npm-package-json-lint v9 -> v11",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "laurent22/joplin",
+    "commit": "81f8bfed395a2bab2bb8963fc9456fb22c4dc0d9",
+    "package": "@joplin/utils",
+    "breaking-version": "3",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 56258,
+    "_bump": "@joplin/utils v2 -> v3",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "n8n-io/n8n",
+    "commit": "821b102ce7e9079113b4d068c8503dd1b6004f54",
+    "package": "@biomejs/biome",
+    "breaking-version": "2",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 203618,
+    "_bump": "@biomejs/biome v1 -> v2",
+    "_note": "",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "n8n-io/n8n",
+    "commit": "821b102ce7e9079113b4d068c8503dd1b6004f54",
+    "package": "@dotenvx/dotenvx",
+    "breaking-version": "2",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 203618,
+    "_bump": "@dotenvx/dotenvx v1 -> v2",
+    "_note": "",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "n8n-io/n8n",
+    "commit": "821b102ce7e9079113b4d068c8503dd1b6004f54",
+    "package": "lefthook",
+    "breaking-version": "2",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 203618,
+    "_bump": "lefthook v1 -> v2",
+    "_note": "",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "hoppscotch/hoppscotch",
+    "commit": "ac145e7f758151b41fd46d3e5f513886ce9068ba",
+    "package": "@commitlint/cli",
+    "breaking-version": "21",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 80232,
+    "_bump": "@commitlint/cli v20 -> v21",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": false
+  },
+  {
+    "repo": "hoppscotch/hoppscotch",
+    "commit": "ac145e7f758151b41fd46d3e5f513886ce9068ba",
+    "package": "@commitlint/config-conventional",
+    "breaking-version": "21",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 80232,
+    "_bump": "@commitlint/config-conventional v20 -> v21",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": false
+  },
+  {
+    "repo": "medusajs/medusa",
+    "commit": "755cbd98c6ff33a673356ff30368d651129f4c3d",
+    "package": "import-from",
+    "breaking-version": "4",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 36169,
+    "_bump": "import-from v3 -> v4",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "medusajs/medusa",
+    "commit": "755cbd98c6ff33a673356ff30368d651129f4c3d",
+    "package": "jsdom",
+    "breaking-version": "30",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 36169,
+    "_bump": "jsdom v27 -> v30",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "medusajs/medusa",
+    "commit": "755cbd98c6ff33a673356ff30368d651129f4c3d",
+    "package": "axios-mock-adapter",
+    "breaking-version": "2",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 36169,
+    "_bump": "axios-mock-adapter v1 -> v2",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "outline/outline",
+    "commit": "fcfab6452c59bb7bc96417d6a00db1b0b336e038",
+    "package": "rate-limiter-flexible",
+    "breaking-version": "11",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 40479,
+    "_bump": "rate-limiter-flexible v2 -> v11",
+    "_note": "",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "outline/outline",
+    "commit": "fcfab6452c59bb7bc96417d6a00db1b0b336e038",
+    "package": "jsdom",
+    "breaking-version": "30",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 40479,
+    "_bump": "jsdom v22 -> v30",
+    "_note": "",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "outline/outline",
+    "commit": "fcfab6452c59bb7bc96417d6a00db1b0b336e038",
+    "package": "framer-motion",
+    "breaking-version": "13",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 40479,
+    "_bump": "framer-motion v6 -> v13",
+    "_note": "",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "standardnotes/app",
+    "commit": "9601d2df9972e2ee9af3f011f047208415d087b2",
+    "package": "css-loader",
+    "breaking-version": "7",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 6621,
+    "_bump": "css-loader v6 -> v7",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "standardnotes/app",
+    "commit": "9601d2df9972e2ee9af3f011f047208415d087b2",
+    "package": "npm-check-updates",
+    "breaking-version": "23",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 6621,
+    "_bump": "npm-check-updates v16 -> v23",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "standardnotes/app",
+    "commit": "9601d2df9972e2ee9af3f011f047208415d087b2",
+    "package": "@commitlint/cli",
+    "breaking-version": "21",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 6621,
+    "_bump": "@commitlint/cli v17 -> v21",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "desktop/desktop",
+    "commit": "57d54221902278602d34579d218fea414229ffde",
+    "package": "jsdom",
+    "breaking-version": "30",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 21828,
+    "_bump": "jsdom v26 -> v30",
+    "_note": "",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "desktop/desktop",
+    "commit": "57d54221902278602d34579d218fea414229ffde",
+    "package": "front-matter",
+    "breaking-version": "4",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 21828,
+    "_bump": "front-matter v2 -> v4",
+    "_note": "",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "desktop/desktop",
+    "commit": "57d54221902278602d34579d218fea414229ffde",
+    "package": "style-loader",
+    "breaking-version": "4",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 21828,
+    "_bump": "style-loader v3 -> v4",
+    "_note": "",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "apollographql/apollo-server",
+    "commit": "6193ea909389d61d10f893e6b66b8080ea201aa8",
+    "package": "graphql",
+    "breaking-version": "17",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 13951,
+    "_bump": "graphql v16 -> v17",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "apollographql/apollo-server",
+    "commit": "6193ea909389d61d10f893e6b66b8080ea201aa8",
+    "package": "@graphql-codegen/cli",
+    "breaking-version": "7",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 13951,
+    "_bump": "@graphql-codegen/cli v5 -> v7",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "apollographql/apollo-server",
+    "commit": "6193ea909389d61d10f893e6b66b8080ea201aa8",
+    "package": "@graphql-codegen/typescript-operations",
+    "breaking-version": "6",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 13951,
+    "_bump": "@graphql-codegen/typescript-operations v4 -> v6",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "storybookjs/storybook",
+    "commit": "b32714b96ec92bfd41d33879cadadbce443651b4",
+    "package": "@nx/workspace",
+    "breaking-version": "23",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 91032,
+    "_bump": "@nx/workspace v22 -> v23",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
+  },
+  {
+    "repo": "storybookjs/storybook",
+    "commit": "b32714b96ec92bfd41d33879cadadbce443651b4",
+    "package": "nx",
+    "breaking-version": "23",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 91032,
+    "_bump": "nx v22 -> v23",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": false
+  },
+  {
+    "repo": "eslint/eslint",
+    "commit": "c8326608e710e670beaf982501aed80ea104919a",
+    "package": "ajv",
+    "breaking-version": "8",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 27496,
+    "_bump": "ajv v6 -> v8",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "eslint/eslint",
+    "commit": "c8326608e710e670beaf982501aed80ea104919a",
+    "package": "ignore",
+    "breaking-version": "7",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 27496,
+    "_bump": "ignore v5 -> v7",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "eslint/eslint",
+    "commit": "c8326608e710e670beaf982501aed80ea104919a",
+    "package": "ejs",
+    "breaking-version": "6",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 27496,
+    "_bump": "ejs v3 -> v6",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "prettier/prettier",
+    "commit": "7fe4924c8a62c91ff9495f424007854fcc688510",
+    "package": "postcss-selector-parser",
+    "breaking-version": "7",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 52239,
+    "_bump": "postcss-selector-parser v2 -> v7",
+    "_note": "",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "prettier/prettier",
+    "commit": "7fe4924c8a62c91ff9495f424007854fcc688510",
+    "package": "remark-footnotes",
+    "breaking-version": "5",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 52239,
+    "_bump": "remark-footnotes v2 -> v5",
+    "_note": "",
+    "_runtime": true,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "prettier/prettier",
+    "commit": "7fe4924c8a62c91ff9495f424007854fcc688510",
+    "package": "postcss-values-parser",
+    "breaking-version": "8",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 52239,
+    "_bump": "postcss-values-parser v2 -> v8",
+    "_note": "",
+    "_runtime": true,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "webpack/webpack",
+    "commit": "902123d4cb9e957555c6897f8e80bf84b1110d0e",
+    "package": "es-module-lexer",
+    "breaking-version": "3",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 65965,
+    "_bump": "es-module-lexer v2 -> v3",
+    "_note": "",
+    "_runtime": true,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "rollup/rollup",
+    "commit": "02340ecdd312b0e4db8d1dc9446c0edaffedec68",
+    "package": "chokidar",
+    "breaking-version": "5",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 26308,
+    "_bump": "chokidar v3 -> v5",
+    "_note": "",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "rollup/rollup",
+    "commit": "02340ecdd312b0e4db8d1dc9446c0edaffedec68",
+    "package": "@inquirer/prompts",
+    "breaking-version": "8",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 26308,
+    "_bump": "@inquirer/prompts v7 -> v8",
+    "_note": "",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "rollup/rollup",
+    "commit": "02340ecdd312b0e4db8d1dc9446c0edaffedec68",
+    "package": "yargs-parser",
+    "breaking-version": "22",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 26308,
+    "_bump": "yargs-parser v21 -> v22",
+    "_note": "",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "library",
+    "_ts": true
+  },
+  {
+    "repo": "nestjs/nest",
+    "commit": "39fbddae51281ca56bf2fed9123d98e61509066c",
+    "package": "gulp-typescript",
+    "breaking-version": "6",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 76592,
+    "_bump": "gulp-typescript v5 -> v6",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "cjs",
+    "_apiOnly": true,
+    "_kind": "application",
+    "_ts": true
+  },
+  {
+    "repo": "nestjs/nest",
+    "commit": "39fbddae51281ca56bf2fed9123d98e61509066c",
+    "package": "markdown-table",
+    "breaking-version": "3",
+    "test-command": "npm test",
+    "target-dir": ".",
+    "node-version": "auto",
+    "_stars": 76592,
+    "_bump": "markdown-table v2 -> v3",
+    "_note": "monorepo - may need target-dir",
+    "_runtime": false,
+    "_format": "esm",
+    "_apiOnly": false,
+    "_kind": "application",
+    "_ts": true
   }
 ]
