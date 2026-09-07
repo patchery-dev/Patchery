@@ -196,8 +196,9 @@ that edits your code.
 repository of a commercial organisation.
 
 That is the whole distinction, and it is in the [licence](LICENSE) rather than
-only on a pricing page — [BUSL-1.1](https://mariadb.com/bsl11/), which becomes
-Apache-2.0 on 2030-09-07.
+only on a pricing page — [BUSL-1.1](https://mariadb.com/bsl11/). Every version
+becomes Apache-2.0 four years after it is released, so the restriction is on
+what is current, never on what is old.
 
 Versions published before 2026-09-07 were released under MIT and remain
 available under it. That grant is not revoked; the LICENSE file carries both.

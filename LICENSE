@@ -34,7 +34,20 @@ Additional Use Grant: You may use, copy, modify, and redistribute the Licensed
                       managed service whose value is substantially the
                       functionality of the Licensed Work.
 
-Change Date:          2030-09-07
+Change Date:          Four years after the date on which the version of the
+                      Licensed Work accompanying this file was first made
+                      publicly available.
+
+                      Stated as a rule rather than a single date on purpose. A
+                      fixed date converts every version ever published on the
+                      same day, and leaves everything released after it carrying
+                      a date already in the past - so the licence would stop
+                      protecting anything the moment it arrived. The usual
+                      remedy is to edit the date by hand at every release, which
+                      is a step a small team forgets exactly once. Derived from
+                      the release, each version is always four years from
+                      becoming Apache-2.0, and only genuinely old code ever
+                      converts.
 
 Change License:       Apache License, Version 2.0
 
