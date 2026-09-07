@@ -27,7 +27,7 @@ import {
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
-import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
+import { benchmarkOutcome, parseArgs, renderOutcome } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
 import {
   taglineCore,
@@ -1835,6 +1835,53 @@ check("censusHeld catches a suite that got smaller", () => {
 check("censusHeld says 'cannot tell' rather than 'fine' when it cannot parse", () => {
   assert.strictEqual(censusHeld(census("mystery"), census(JEST_GREEN)).ok, null);
   assert.strictEqual(censusHeld(census(JEST_GREEN), census("mystery")).ok, null);
+});
+
+// censusHeld returns a tri-state and benchmarkOutcome read it as a boolean, so
+// "I could not count" printed as nothing at all: the row said "tests green
+// again" and looked exactly like one where the census was taken and held. That
+// is the half of FIXED this file's own header calls "and the same tests are
+// green" going unproven and unmentioned.
+//
+// The OUTCOME is deliberately still FIXED - changing it moves the case across
+// the denominator line the founder is still deciding. What must not happen is
+// it being silent about why.
+check("a FIXED row whose census could not be counted says so", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", finalExit: "0", changed: "true",
+    before: { total: 100, passed: 100 }, after: null,
+  });
+  assert.strictEqual(r.outcome, "FIXED");
+  assert.match(r.detail, /no final count/);
+});
+
+check("an unreadable baseline is named too, not just an unreadable final count", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", finalExit: "0", changed: "true",
+    before: null, after: { total: 100, passed: 100 },
+  });
+  assert.match(r.detail, /no baseline count/);
+});
+
+check("a census that was taken and held still reads as before", () => {
+  // The regression guard on the other side: adding the caveat must not put one
+  // on rows that earned their number.
+  const r = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", finalExit: "0", changed: "true",
+    before: { total: 100, passed: 100 }, after: { total: 100, passed: 100 },
+  });
+  assert.match(r.detail, /100 of 100 baseline tests still pass/);
+  assert.doesNotMatch(r.detail, /not recognized/);
+});
+
+check("the rendered block names an uncounted after-census instead of omitting it", () => {
+  const text = renderOutcome({
+    repo: "acme/app", pkg: "p", version: "3", outcome: "FIXED", detail: "tests green again",
+    before: { total: 100, passed: 100, runner: "jest" }, after: null,
+  });
+  // The old text stopped at "passing before the break", which reads as a
+  // complete sentence and hides that the judging half is missing.
+  assert.match(text, /NOT COUNTED/);
 });
 
 // ---------------------------------------------------------------------------

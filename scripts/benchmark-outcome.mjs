@@ -281,9 +281,30 @@ export function benchmarkOutcome({
   }
 
   if (finalExit === "0") {
+    // `held.ok` is a tri-state and the ternary above used to read it as a
+    // boolean, so `null` - "the runner's output was not recognized, I could not
+    // count" - printed as though there were nothing to say. The row read
+    // "tests green again", full stop, and a reader could not tell it apart from
+    // a run where the census was taken and held.
+    //
+    // test-census.mjs says it in its own docstring: "ok: null means we could
+    // not tell, which must never be read as a pass." This is the null-is-not-
+    // zero rule the outcome code has now learned four times.
+    //
+    // What is NOT changed here: the outcome. FIXED with an unmeasured census is
+    // arguably not FIXED - this file's own header defines FIXED as "the tests
+    // are green again, AND the same tests are green", and the second half is
+    // exactly what went unproven. But every candidate reclassification moves the
+    // case across the denominator line the founder is currently deciding
+    // (BLOCKED's boundary, [[23]] B2), and picking one here would be settling
+    // that decision by implementation. Reported instead.
+    //
+    // So: the outcome stands, and it stops being able to hide why it is unsure.
+    const censusNote =
+      held.ok === true ? " and " + held.why : held.ok === null ? " - but " + held.why : "";
     return {
       outcome: "FIXED",
-      detail: "tests green again" + (held.ok ? " and " + held.why : "") + (review ? "; reviewer: " + review : ""),
+      detail: "tests green again" + censusNote + (review ? "; reviewer: " + review : ""),
     };
   }
 
@@ -311,7 +332,13 @@ export function renderOutcome({ repo, pkg, version, outcome, detail, before, aft
       "Tests: " +
         before.passed +
         " passing before the break" +
-        (after && after.total != null ? ", " + after.passed + " passing after the fix" : "") +
+        // Same rule as the detail line above: an after-count we could not read
+        // used to drop out of the sentence entirely, leaving "Tests: 100 passing
+        // before the break" and no hint that the half which judges the fix is
+        // missing. Named, not omitted.
+        (after && after.total != null
+          ? ", " + after.passed + " passing after the fix"
+          : ", after the fix NOT COUNTED - the runner's output was not recognized") +
         (before.runner ? " (" + before.runner + ")" : "")
     );
   }
