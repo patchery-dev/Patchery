@@ -25,7 +25,8 @@ import {
   FALLBACK,
 } from "./node-version.mjs";
 import { classifyFailure, briefing } from "./classify-break.mjs";
-import { testScriptUsable } from "./find-bumps.mjs";
+import { testScriptUsable, projectKind } from "./find-bumps.mjs";
+import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks } from "./check-workflows.mjs";
 import { planBatch } from "./batch-plan.mjs";
@@ -3003,6 +3004,80 @@ check("a missing output path fails loudly instead of writing somewhere else", ()
 // the lowest was Node 1, setup-node could not install it, and three candidates
 // died before measuring anything - two of them express v4 -> v5.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Library or application.
+//
+// It decides which fix is honest. Teaching a test runner to transform an
+// ES-module dependency is correct in an application and dishonest in a library,
+// where it greens one CI and leaves every consumer broken. The agent refused
+// that fix on express and was right; the row read NO-CHANGE.
+// ---------------------------------------------------------------------------
+
+console.log("\npool-summary.poolShape");
+
+check("a pool is described by what it can measure, not just how big it is", () => {
+  const s = poolShape([
+    { repo: "a/a", _kind: "application", _apiOnly: true, _ts: true },
+    { repo: "a/a", _kind: "application", _apiOnly: false, _ts: true },
+    { repo: "b/b", _kind: "library", _apiOnly: false, _ts: false },
+  ]);
+  assert.strictEqual(s.total, 3);
+  assert.strictEqual(s.repos, 2);
+  assert.strictEqual(s.application, 2);
+  assert.strictEqual(s.library, 1);
+  assert.strictEqual(s.api, 1);
+  assert.strictEqual(s.packaging, 2);
+  assert.strictEqual(s.typescript, 2);
+});
+
+// Rows from before _kind existed must not be counted as either, or the split
+// silently reads as "all libraries" when it is really "we did not record it".
+check("rows from an older run are counted as unknown, not as libraries", () => {
+  const s = poolShape([{ repo: "a/a", _apiOnly: true }]);
+  assert.strictEqual(s.unknownKind, 1);
+  assert.strictEqual(s.library, 0);
+  assert.strictEqual(s.application, 0);
+});
+
+check("an empty pool is a shape, not a crash", () => {
+  assert.strictEqual(poolShape([]).total, 0);
+  assert.strictEqual(poolShape(null).total, 0);
+});
+
+check("the summary shows what moved, not only where it landed", () => {
+  const text = renderShape(poolShape([{ repo: "a/a", _kind: "application" }]), poolShape([]));
+  assert.match(text, /\| applications \| 1 \| 0 \| \+1 \|/);
+});
+
+console.log("\nfind-bumps.projectKind");
+
+check("a published package with an entry point is a library", () => {
+  assert.strictEqual(projectKind({ name: "express", main: "index.js" }), "library");
+  assert.strictEqual(projectKind({ name: "x", exports: { ".": "./dist/i.js" } }), "library");
+  assert.strictEqual(projectKind({ name: "x", module: "./esm/i.js" }), "library");
+  assert.strictEqual(projectKind({ name: "x", types: "./i.d.ts" }), "library");
+});
+
+check("private beats everything - it is not published, so nobody imports it", () => {
+  assert.strictEqual(projectKind({ private: true, main: "index.js" }), "application");
+});
+
+check("no entry point at all means it runs rather than gets imported", () => {
+  assert.strictEqual(projectKind({ name: "my-app", scripts: { test: "jest" } }), "application");
+  assert.strictEqual(projectKind({}), "application");
+  assert.strictEqual(projectKind(null), "application");
+});
+
+// A CLI's callers spawn it; they do not load its modules, so the harness fix
+// breaks nobody.
+check("a bin-only package is not a library", () => {
+  assert.strictEqual(projectKind({ name: "my-cli", bin: { "my-cli": "./cli.js" } }), "application");
+});
+
+check("private: false is not the same as private: true", () => {
+  assert.strictEqual(projectKind({ private: false, main: "i.js" }), "library");
+});
 
 console.log("\nnode-version.usableCiMajor");
 

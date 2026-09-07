@@ -81,3 +81,50 @@ kriasoft/node-sqlite
 # jsdom/jsdom            needs host entries for the web platform tests
 # mozilla/addons-frontend  test script watches and never exits
 # sequelize/sequelize    no test script at the root
+
+# ---------------------------------------------------------------------------
+# Applications, added 2026-09-07 - because the pool was measuring the wrong
+# population.
+#
+# Thirteen of the first fourteen confirmed cases were libraries, and a library
+# structurally cannot take the fix that most of those breaks need. When a
+# dependency ships as an ES module, the honest fix is often to teach the test
+# runner to transform it - correct in an application, dishonest in a library,
+# where it greens one CI and leaves every consumer broken. The agent refused
+# exactly that on express, and it was right; the row read NO-CHANGE.
+#
+# An application has no consumers to break. It is also who pays: the private
+# repositories this is priced for are companies' products, not their libraries.
+#
+# TypeScript is wanted for a second reason. An API signature change breaks `tsc`
+# even when no test exercises it - which is precisely the class the test-broke
+# trigger misses today (express v4 -> v5 was invisible to five suites in a row).
+#
+# Many of these are monorepos and some will be rejected for wanting a database
+# or a browser. That is the pipeline's job; a rejection recorded is cheaper than
+# a candidate assumed.
+excalidraw/excalidraw
+verdaccio/verdaccio
+laurent22/joplin
+n8n-io/n8n
+directus/directus
+hoppscotch/hoppscotch
+nocodb/nocodb
+medusajs/medusa
+strapi/strapi
+outline/outline
+etherpad/etherpad-lite
+standardnotes/app
+desktop/desktop
+sindresorhus/refined-github
+apollographql/apollo-server
+storybookjs/storybook
+yarnpkg/berry
+pnpm/pnpm
+eslint/eslint
+prettier/prettier
+webpack/webpack
+rollup/rollup
+nestjs/nest
+remix-run/remix
+withastro/astro

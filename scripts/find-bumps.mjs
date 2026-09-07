@@ -162,6 +162,38 @@ export function isOutOfScope(name) {
  * publishes are both CommonJS, delivery did not change - so whatever broke is in
  * the API, which is the class this tool most directly claims.
  */
+/**
+ * Is this repository something other people import, or something that runs?
+ *
+ * The distinction decides which fixes are honest, and it took a real benchmark
+ * result to see it. Told that `content-disposition@3` had gone ES-module-only,
+ * the agent could have taught express's own test runner to transform it - the
+ * config is not off limits any more. It refused, and it was right: express is a
+ * library, so that change would paint one CI green and leave every consumer
+ * broken. The run was filed as NO-CHANGE, which reads as an agent with no ideas
+ * and was in fact an agent with judgement.
+ *
+ * In an application the same fix is simply correct. Nobody imports you, so there
+ * is nobody to break. And an application is who pays: the private repositories
+ * this is priced for are companies' products, not their libraries.
+ *
+ * Thirteen of the first fourteen confirmed cases were libraries, because the
+ * recognizable npm packages are libraries. The pool measured the population that
+ * structurally cannot take the fix.
+ *
+ * The test is whether anything can `import` you: a published entry point means
+ * consumers, and consumers mean the harness fix is off the table. `private: true`
+ * or no entry point at all means it runs rather than gets imported - a `bin` is
+ * not an entry point in this sense, because a CLI's callers spawn it, they do not
+ * load its modules.
+ */
+export function projectKind(pkg) {
+  const p = pkg || {};
+  if (p.private === true) return "application";
+  const importable = p.main || p.exports || p.module || p.types || p.typings || p.browser;
+  return importable ? "library" : "application";
+}
+
 function moduleFormat(manifest) {
   if (!manifest) return "unknown";
   if (manifest.type === "module") return "esm";
@@ -229,6 +261,11 @@ async function inspectRepo(full) {
   // workflow about. Flagged rather than rejected: `target-dir` exists for this,
   // and the recognizable repositories are mostly monorepos.
   if (pkg.workspaces) out.note = "monorepo - may need target-dir";
+
+  // Which population this row belongs to. See projectKind for why it decides
+  // whether the harness fix is honest.
+  out.kind = projectKind(pkg);
+  out.typescript = Boolean((pkg.devDependencies || {}).typescript || (pkg.dependencies || {}).typescript);
 
   const runtime = new Set(Object.keys(pkg.dependencies || {}));
   const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
@@ -315,6 +352,8 @@ if (isMain) {
           _runtime: b.runtime,
         _format: b.format,
         _apiOnly: b.apiOnly,
+          _kind: r.kind,
+          _ts: r.typescript,
         });
       }
       console.error("  " + r.bumps.length + " bump(s): " + r.bumps.map((b) => b.package + " " + b.from + "->" + b.to).join(", "));

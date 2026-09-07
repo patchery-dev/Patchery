@@ -1,0 +1,70 @@
+# Regenerates benchmark/candidates.json from benchmark/repos.txt.
+#
+# It lives here rather than on a laptop because of the token. Unauthenticated,
+# the GitHub API allows 60 requests an hour and this walks eighty repositories,
+# so a local run rate-limits halfway and produces a short list that looks like a
+# finished one - "we looked, there is nothing" and "we could not look" have the
+# same shape, which is the failure this whole pipeline exists to avoid. A runner
+# has a token for free.
+name: Patchery (refresh the candidate pool)
+
+on:
+  workflow_dispatch:
+    inputs:
+      max-per-repo:
+        description: "Most candidates to take from any one repository"
+        required: false
+        default: "3"
+      commit:
+        description: "Commit the result to main (otherwise it is only an artifact)"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Find the upgrades worth trying
+        run: |
+          node scripts/find-bumps.mjs benchmark/repos.txt \
+            --max-per-repo "$MAX" > /tmp/candidates.json
+        env:
+          MAX: ${{ inputs.max-per-repo }}
+          # The runner's own token: 5000 requests an hour instead of 60.
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Say what changed, in the terms that decide what we measure
+        run: node scripts/pool-summary.mjs /tmp/candidates.json benchmark/candidates.json
+
+      - name: Keep the pool even if it is not committed
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidates
+          path: /tmp/candidates.json
+
+      - name: Commit it
+        if: inputs.commit
+        run: |
+          cp /tmp/candidates.json benchmark/candidates.json
+          if git diff --quiet -- benchmark/candidates.json; then
+            echo "pool unchanged"
+            exit 0
+          fi
+          git config user.name "patchery-bot"
+          git config user.email "noreply@patchery.dev"
+          # By name, never -A: this repository has had three accidents where one
+          # process committed another's unstaged work.
+          git add benchmark/candidates.json
+          git commit -m "chore: refresh the candidate pool"
+          git push
