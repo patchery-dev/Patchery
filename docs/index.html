@@ -121,7 +121,8 @@
           Some breaks have no fix at the call site. A dependency that starts shipping as an ES
           module renames nothing — your code is fine and can no longer load it. Patchery reports
           which call sites are affected, why the obvious fix does not apply, and which decision
-          would unblock it. That report is the deliverable.
+          would unblock it. Where the fix does not exist at the call site, that report is what is
+          left — a fallback, not the thing Patchery is for.
         </p>
       </li>
     </ol>
@@ -140,7 +141,7 @@
     <p class="lede gate__lede">
       Any capable model can produce a patch that looks right. The question is what happens when it
       is wrong — and the answer most tools give is: it opens the pull request anyway. Patchery ends
-      a run in one of six states, and it would rather end in the second one than guess.
+      a run in one of seven states, and it would rather end in the second one than guess.
     </p>
 
     <ul class="out">
@@ -151,6 +152,14 @@
       <li data-tone="good">
         <dfn>REFUSED</dfn>
         <p>It found something it could not prove, so it sent nothing and said which check stopped it.</p>
+      </li>
+      <li>
+        <dfn>NEEDS-DECISION</dfn>
+        <p>
+          No change to your code fixes this one — the analysis names what would, and the decision
+          is yours. It counts in the denominator: the run happened, and calling it a non-event
+          would be scoring ourselves generously.
+        </p>
       </li>
       <li>
         <dfn>NO-CHANGE</dfn>
