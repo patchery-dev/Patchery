@@ -30,7 +30,7 @@ import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks } from "./check-workflows.mjs";
 import { planBatch } from "./batch-plan.mjs";
-import { sortRows, renderReport, guardCaught, guardVisible } from "./batch-report.mjs";
+import { sortRows, renderReport, guardCaught, guardVisible, objectedFixes } from "./batch-report.mjs";
 import {
   protectedReason,
   isHarnessConfig,
@@ -3039,6 +3039,57 @@ check("a guard that caught nothing on a recorded batch still says 0", () => {
   const text = renderReport([{ outcome: "FIXED", actionOutcome: "changed", repo: "a/a", package: "p", version: "2" }], { kind: "benchmark" });
   assert.match(text, /\| bad fixes caught by the guard \| 0 \|/);
 });
+
+// express with content-type@3: 1255 of 1255 passing, and the independent
+// reviewer objected to the fix. "1 fixed" alone is true and incomplete, and the
+// incompleteness is all in our favour.
+const REVIEWED = [
+  { outcome: "FIXED", review: "refuted", repo: "expressjs/express", package: "content-type", version: "3", detail: "tests green again" },
+  { outcome: "FIXED", review: "not-refuted", repo: "a/a", package: "p", version: "2", detail: "tests green again" },
+  { outcome: "NO-CHANGE", review: "", repo: "b/b", package: "p", version: "2", detail: "nothing to offer" },
+];
+
+check("an objection to a shipped fix is in the headline, not in a detail cell", () => {
+  const text = renderReport(REVIEWED, { kind: "benchmark" });
+  assert.match(text.split("\n")[0], /2 fixed of 3 cases it was able to attempt — the reviewer objected to 1 of them/);
+});
+
+// The point of putting it in the headline instead of splitting the taxonomy:
+// the suite really did go red to green, and a reviewer opinion does not undo a
+// measurement.
+check("FIXED stays one number - the objection is said, not subtracted", () => {
+  const text = renderReport(REVIEWED, { kind: "benchmark" });
+  assert.match(text, /\| fixed \| 2 \|/);
+  assert.ok(!/objected \| /.test(text), "no second FIXED row");
+});
+
+check("both of the reviewer's ways of disagreeing count", () => {
+  assert.strictEqual(objectedFixes([{ outcome: "FIXED", review: "refuted" }]), 1);
+  assert.strictEqual(objectedFixes([{ outcome: "FIXED", review: "concerns" }]), 1);
+  assert.strictEqual(objectedFixes([{ outcome: "FIXED", review: "not-refuted" }]), 0);
+  // Nobody reviewed it, so nobody objected - that is not an objection.
+  assert.strictEqual(objectedFixes([{ outcome: "FIXED", review: "not-reviewed" }]), 0);
+  assert.strictEqual(objectedFixes([{ outcome: "FIXED", review: "unavailable" }]), 0);
+  assert.strictEqual(objectedFixes([{ outcome: "FIXED" }]), 0);
+});
+
+check("an objection to something that did not ship is not a fixed-with-objection", () => {
+  assert.strictEqual(objectedFixes([{ outcome: "REFUSED", review: "refuted" }]), 0);
+  assert.strictEqual(objectedFixes([{ outcome: "WRONG", review: "refuted" }]), 0);
+});
+
+check("no objection means no clause - the headline stays the sentence it was", () => {
+  const text = renderReport([{ outcome: "FIXED", review: "not-refuted", repo: "a/a", package: "p", version: "2" }], { kind: "benchmark" });
+  assert.strictEqual(text.split("\n")[0], "## 1 fixed of 1 cases it was able to attempt");
+});
+
+// Same trip as actionOutcome: the reviewer's word has to survive from the action
+// into the row, or the headline silently reports "no objections" forever.
+check("the review status benchmark-outcome writes is the one the headline reads", () => {
+  const src = fs.readFileSync(path.join(root, "scripts", "benchmark-outcome.mjs"), "utf8");
+  assert.match(src, /review: a\.review \|\| ""/);
+});
+
 
 // The field has to survive the trip from the action to the table, and the two
 // files are joined by nothing but its name.

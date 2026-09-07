@@ -304,6 +304,11 @@ if (isMain) {
     // table - REFUSED covers the reviewer's refutations too, so it cannot be
     // read as the guard's catch count.
     actionOutcome: a["action-outcome"] || "",
+    // What the independent reviewer said, as its own field. It is already inside
+    // `detail` for FIXED rows, but a headline cannot parse prose, and an
+    // objection to a fix that shipped is the one thing a reader of the headline
+    // must not have to look for.
+    review: a.review || "",
     before,
     after,
     files: a.files || "",

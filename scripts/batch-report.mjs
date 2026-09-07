@@ -67,6 +67,29 @@ export function guardVisible(rows) {
   return rows.some((r) => String(r.actionOutcome || "").trim());
 }
 
+/**
+ * Fixes the independent reviewer did not agree with.
+ *
+ * The reviewer runs after the tests are green and it can only lower the claim,
+ * never raise it - so a fix it objected to is still FIXED: the suite really did
+ * go from red to green, and the same tests really are the ones passing. That is
+ * why splitting FIXED in two would be a lie in the other direction.
+ *
+ * But it happened on the one real result this project has (express with
+ * content-type@3, 1255 of 1255 passing, reviewer objected), and a headline that
+ * says only "1 fixed" invites a reader to find that out from somebody else.
+ *
+ * Both of the reviewer's ways of disagreeing count. `refuted` is "this change is
+ * wrong"; `concerns` is "something here needs a human" - and a headline that
+ * counted only the first would still be quietly rounding in our favour.
+ */
+export function objectedFixes(rows) {
+  return rows.filter(
+    (r) => label(r, "benchmark") === "FIXED" && /^(refuted|concerns)$/i.test(String(r.review || "").trim())
+  ).length;
+}
+
+
 
 /** Rows first, in the order a reader should meet them. */
 export function sortRows(rows, kind) {
@@ -94,7 +117,17 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
     // and a case nobody judged must not be counted as one the agent failed.
     const judged = sorted.length - n("BLOCKED") - n(UNREPORTED);
     const models = [...new Set(sorted.map((r) => r.model).filter(Boolean))];
-    out.push("## " + n("FIXED") + " fixed of " + judged + " cases it was able to attempt", "");
+    // The objection belongs in the headline, not three lines into a detail cell.
+    // FIXED stays one number - the suite went red to green and the census held,
+    // and no reviewer opinion changes that - but the one result this project can
+    // point at is also the one the reviewer objected to, and a reader should not
+    // learn that from anyone else.
+    const objected = objectedFixes(sorted);
+    out.push(
+      "## " + n("FIXED") + " fixed of " + judged + " cases it was able to attempt" +
+        (objected > 0 ? " — the reviewer objected to " + objected + " of them" : ""),
+      ""
+    );
     out.push(models.length ? "Fixer: " + models.join(", ") : "Fixer: the repository default", "");
     out.push("| | |", "|---|---|");
     out.push("| fixed | " + n("FIXED") + " |");
