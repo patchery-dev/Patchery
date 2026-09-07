@@ -21,6 +21,8 @@ import { testScriptUsable } from "./find-bumps.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import {
   protectedReason,
+  isHarnessConfig,
+  harnessConfigReason,
   parsePorcelain,
   parsePorcelainEntries,
   outOfScopeReason,
@@ -1176,17 +1178,73 @@ check("it restates the hard rules, which still apply in the second turn", () => 
   assert.match(p, /scripts in package\.json/);
 });
 
-console.log("\nprotectedReason - the test harness, not just the tests");
+// The harness configuration used to be refused outright. It is not any more, and
+// that is a deliberate change of policy rather than a hole: the agent's own
+// instructions say an ES-module break is often fixed by teaching the runner to
+// transform the dependency, and forbidding the file while asking for the fix sent
+// it looking for a third way - on express, copying the dependency's source into
+// the project. What replaced the ban is two mechanical checks, below.
+console.log("\nisHarnessConfig - recognised, no longer refused outright");
 for (const p of [
   "vitest.config.js", "jest.config.ts", "packages/x/vitest.config.mjs",
   "playwright.config.js", "cypress.config.js", "karma.conf.js",
-  ".mocharc.json", "vitest.setup.ts", "src/setupTests.js",
+  ".mocharc.json",
 ]) {
-  check(p + " is protected", () => assert.ok(protectedReason(p), p + " should be blocked"));
+  check(p + " is recognised as harness config", () => assert.ok(isHarnessConfig(p), p));
+  check(p + " is no longer blocked by path alone", () => assert.strictEqual(protectedReason(p), null, p));
 }
-check("an ordinary config file is still fair game", () => {
+// A setup file is not configuration. It runs arbitrary code before every test and
+// can stub any module in the process; the ES-module fix that opened this door
+// lives in the declarative config, and nothing about a dependency migration needs
+// the setup file.
+for (const p of ["vitest.setup.ts", "src/setupTests.js", "jest.setup.mjs", "src/SetupTests.ts"]) {
+  check(p + " is still refused - a setup file, not configuration", () =>
+    assert.match(protectedReason(p) || "", /setup file/)
+  );
+}
+check("an ordinary config file is neither", () => {
   assert.strictEqual(protectedReason("vite.config.js"), null);
-  assert.strictEqual(protectedReason("webpack.config.js"), null);
+  assert.strictEqual(isHarnessConfig("vite.config.js"), false);
+  assert.strictEqual(isHarnessConfig("webpack.config.js"), false);
+});
+
+console.log("\nharnessConfigReason - how it is built may change, what is tested may not");
+check("changing how a dependency is transformed is allowed", () => {
+  const before = "export default { test: { environment: 'node' } }";
+  const after = "export default { test: { environment: 'node' }, ssr: { noExternal: ['pkg'] } }";
+  assert.strictEqual(harnessConfigReason(before, after), null);
+});
+check("adding transformIgnorePatterns is allowed", () => {
+  const before = "module.exports = { preset: 'ts-jest' }";
+  const after = "module.exports = { preset: 'ts-jest', transformIgnorePatterns: ['node_modules/(?!pkg)'] }";
+  assert.strictEqual(harnessConfigReason(before, after), null);
+});
+// Every one of these is a way to make the suite agree without touching a test.
+check("changing which tests run is refused", () => {
+  const before = "module.exports = { preset: 'ts-jest' }";
+  for (const line of [
+    "testPathIgnorePatterns: ['broken']",
+    "testMatch: ['**/passing/*.js']",
+    "bail: 1",
+    "passWithNoTests: true",
+    "coverageThreshold: { global: { lines: 0 } }",
+    "exclude: ['test/broken.js']",
+  ]) {
+    const after = "module.exports = { preset: 'ts-jest', " + line + " }";
+    assert.ok(harnessConfigReason(before, after), line + " should be refused");
+  }
+});
+// Removing one is the same act as adding one.
+check("removing a which-tests-run setting is refused too", () => {
+  const before = "module.exports = { testMatch: ['**/*.test.js'] }";
+  const after = "module.exports = { }";
+  assert.ok(harnessConfigReason(before, after));
+});
+// A setting the project already had is its own business.
+check("an untouched setting is not held against the run", () => {
+  const same = "module.exports = { testMatch: ['**/*.test.js'], preset: 'ts-jest' }";
+  const after = "module.exports = { testMatch: ['**/*.test.js'], preset: 'ts-jest', transform: {} }";
+  assert.strictEqual(harnessConfigReason(same, after), null);
 });
 
 // The SDK's total_cost_usd prices tokens with Anthropic's rate table whatever
@@ -2348,9 +2406,15 @@ check("protectedReason is not fooled by capitalisation", () => {
   }
 });
 
-check("protectedReason still recognises the harness config in any case", () => {
-  for (const f of ["src/setupTests.ts", "src/SetupTests.ts", "Jest.Config.js", "vitest.config.ts"]) {
-    assert.ok(protectedReason(f), f + " should be protected");
+check("a setup file is refused whatever its capitalisation", () => {
+  for (const f of ["src/setupTests.ts", "src/SetupTests.ts", "Vitest.Setup.TS"]) {
+    assert.match(protectedReason(f) || "", /setup file/, f);
+  }
+});
+
+check("harness config is recognised whatever its capitalisation", () => {
+  for (const f of ["Jest.Config.js", "vitest.config.ts", "Karma.Conf.JS"]) {
+    assert.ok(isHarnessConfig(f), f);
   }
 });
 

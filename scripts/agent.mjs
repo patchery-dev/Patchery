@@ -20,6 +20,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { classifyFailure, briefing } from "./classify-break.mjs";
+import { census, censusHeld } from "./test-census.mjs";
 import {
   protectedReason,
   parsePorcelainEntries,
@@ -45,6 +46,8 @@ import {
   REVIEW_SYSTEM_PROMPT,
   REVIEW_NO_TOOLS_NOTE,
   scriptsTamperReason,
+  isHarnessConfig,
+  harnessConfigReason,
   dependencyMisuseReasons,
   failureChanged,
   chainedFailureMessage,
@@ -969,6 +972,41 @@ if (violations.length > 0) {
   }
 }
 
+// The same question one level out: the runner's configuration is no longer refused
+// by path, because teaching a runner to transform an ES-module dependency is often
+// the only legitimate fix - and forbidding the file while instructing the agent to
+// consider that fix sent it looking for worse ideas. What is refused is the part
+// that decides which tests run.
+//
+// Before the re-run, for the same reason as the scripts: a suite narrowed here
+// would make the re-run prove nothing.
+for (const entry of changedEntries) {
+  if (entry.deleted || !isHarnessConfig(entry.path)) continue;
+  let before = "";
+  try {
+    before = git(["show", "HEAD:" + entry.path], { trim: false });
+  } catch {
+    // A config file this run created has no "before", and every setting in it is
+    // therefore something this run added.
+    before = "";
+  }
+  let now = "";
+  try {
+    now = fs.readFileSync(path.join(repoRoot, entry.path), "utf8");
+  } catch {
+    continue;
+  }
+  const reason = harnessConfigReason(before, now);
+  if (!reason) continue;
+  log("\n[SAFETY] " + entry.path + ": " + reason);
+  revertAll();
+  fail(
+    "Blocked and reverted, no PR will be opened. `" + entry.path + "` - " + reason +
+      " Changing how a dependency is compiled is a legitimate migration and is allowed; " +
+      "changing what the runner looks at is not."
+  );
+}
+
 // Checked here, before the tests: these are all changes that PASS the tests. That is
 // the point of them - the test re-run cannot see any of this, because from its side
 // nothing is wrong.
@@ -1019,6 +1057,29 @@ const after = runTests();
 log(after.output.slice(-4000) || "(no output)");
 log("\n-> after the fix: " + (after.ok ? "PASS" : "FAIL (exit " + after.code + ")"));
 
+// How many tests ran, before and after.
+//
+// A green suite is not proof. The one failure a green light cannot catch is a
+// suite made to agree - a spec excluded by a config pattern, a describe block
+// renamed out of a match, a file that no longer matches. Every one of those ends
+// in "all tests passed", and the count is where it shows.
+//
+// This lived only in the benchmark until now, which meant the product shipped
+// without the check its own benchmark relied on. It also decides what the agent
+// is allowed to touch: build and test configuration can only be opened up where
+// this comparison is possible, so the permission and the protection arrive
+// together.
+const censusBefore = census(baseline.output);
+const censusAfter = census(after.output);
+const censusVerdict = censusHeld(censusBefore, censusAfter);
+if (censusBefore.total != null) {
+  log(
+    "\n-> tests counted: " + censusBefore.passed + " passing before, " +
+      (censusAfter.total != null ? censusAfter.passed + " passing after" : "after not countable") +
+      " (" + censusBefore.runner + ")"
+  );
+}
+
 if (!after.ok) {
   // Same failure, or a different one? Until now both ended here identically, and the
   // difference is most of what the run learned: a NEW failure means the migration was
@@ -1066,6 +1127,26 @@ if (!after.ok) {
           " new failure(s) on top. Everything was reverted, no PR will be opened."
         : "Tests still fail after the fix. Everything was reverted, no PR will be opened."
   );
+}
+
+// The tests pass. Do the same tests pass?
+//
+// This is the only check that can catch a green run that is green because the
+// suite got smaller, and it is deliberately placed after the pass so that the
+// happy path is where it applies. `ok: null` - a runner whose output we cannot
+// count - does not block: refusing every project we cannot parse would be a
+// large silent narrowing, and the guard's other rules still stand.
+if (censusVerdict.ok === false) {
+  log("\n[SAFETY] " + censusVerdict.why);
+  revertAll();
+  fail(
+    "Blocked and reverted, no PR will be opened. " + censusVerdict.why + " A change that " +
+      "makes the suite pass by running less of it has not been proved by that suite - it has " +
+      "been excused by it."
+  );
+}
+if (censusVerdict.ok === null && censusBefore.total == null) {
+  log("\nnote: could not count this runner's tests, so the suite-size check did not run.");
 }
 
 /**

@@ -57,7 +57,8 @@ const KINDS = [
       "signature. There are exactly two legitimate fixes. One: convert the call site to a dynamic " +
       "import(), which is only possible if the surrounding function can become async without changing " +
       "its public behaviour. Two: adjust the build or test configuration so the dependency is " +
-      "transformed for this project. " +
+      "transformed for this project - the runner's config file is yours to edit for that, " +
+      "though any setting deciding WHICH tests run is refused. " +
       "If neither applies - a synchronous public API that cannot become async, and no build step to " +
       "adjust - then this break cannot be fixed at the call site. Stop editing, and write the " +
       "recommendation instead: name which call sites are affected, why an async conversion would change " +
