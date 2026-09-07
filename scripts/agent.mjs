@@ -797,27 +797,35 @@ if (changed.length === 0) {
     agentNotes: notes,
     classification,
   });
-  if (notes) log("\nWhat it concluded:\n" + notes);
-  stop(
-    "no-changes",
-    [
-      "The agent finished without changing any files, so there is nothing to open a PR for.",
-      classification.kind
-        ? "It was looking at a `" + classification.kind + "` break - " + classification.what + "."
-        : "",
-      classification.inScope === false
-        ? "That class cannot be fixed by editing call sites, so no run of this agent will fix it."
-        : "",
-      "It read " +
-        s.keys.filter((k) => k.startsWith("read:")).length +
-        " file(s) over " +
-        s.toolTurns +
-        " turn(s); its own account of why is in the diagnosis file.",
-    ]
-      .filter(Boolean)
-      .join(" "),
-    { tests_passed: "false", diagnosis_file: diagnosisFile }
+  // Written as a handover, not a status line. Whoever reads this is now the one
+  // who has to decide something, and everything they need to decide it was in
+  // this run: what broke, why the obvious fix does not apply, what the agent
+  // concluded in its own words, and which choice is theirs to make. Pointing at
+  // a file for the important half wastes the run.
+  const readCount = s.keys.filter((k) => k.startsWith("read:")).length;
+  const handover = ["### Patchery found no change it could make", ""];
+  if (classification.kind) {
+    handover.push("**What broke.** " + classification.what + ".");
+    if (classification.evidence) handover.push("", "```", classification.evidence, "```");
+    handover.push("");
+  }
+  if (classification.inScope === false) {
+    handover.push(
+      "**This is not a call-site problem.** No run of this agent will fix it, however many turns it is given.",
+      ""
+    );
+  }
+  if (notes) {
+    handover.push("**What the agent concluded.**", "", notes.slice(0, 1500), "");
+  }
+  if (classification.next) handover.push("**What would unblock it.** " + classification.next, "");
+  handover.push(
+    "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) and changed none. " +
+      "Nothing was delivered because nothing could be proved."
   );
+  const message = handover.join("\n");
+  log("\n" + message);
+  stop("no-changes", message, { tests_passed: "false", diagnosis_file: diagnosisFile });
 }
 
 log(changed.map((f) => "  " + f).join("\n"));

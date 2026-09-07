@@ -2562,4 +2562,40 @@ check("a NO-CHANGE row still says something when there is no summary", () => {
   assert.match(r.detail, /no-changes/);
 });
 
+
+// A step written for whoever has to decide, separate from the strategy written
+// to steer the model mid-run. Pasting "do not go looking for a renamed function"
+// at a maintainer is talking past them.
+check("every classified break offers a human-facing next step", () => {
+  for (const src of [
+    "Error [ERR_REQUIRE_ESM]: require() of ES Module x",
+    "Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './lib'",
+    "Cannot find module 'x'",
+    "npm warn EBADENGINE Unsupported engine",
+    "TypeError: parse is not a function",
+    "TypeError: Cannot read properties of undefined (reading 'x')",
+    "error TS2554: expected 2 arguments",
+  ]) {
+    const c = classifyFailure(src);
+    assert.ok(c.kind, src);
+    assert.ok(c.next && c.next.length > 40, "no next step for " + c.kind);
+    // The two must not be the same text - one addresses a model, the other a person.
+    assert.notStrictEqual(c.next, c.strategy, c.kind);
+  }
+});
+
+// The out-of-scope class has to say plainly that the decision is not ours.
+check("the engine class hands the decision back explicitly", () => {
+  const c = classifyFailure("npm warn EBADENGINE Unsupported engine");
+  assert.strictEqual(c.inScope, false);
+  assert.match(c.next, /No code change fixes this/);
+  assert.match(c.next, /yours/);
+});
+
+check("an unrecognised failure offers no next step rather than a guess", () => {
+  const c = classifyFailure("something nobody has taught us about");
+  assert.strictEqual(c.kind, null);
+  assert.strictEqual(c.next, "");
+});
+
 console.log("\n" + pass + " checks passed.\n");

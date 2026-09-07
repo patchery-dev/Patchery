@@ -42,6 +42,8 @@ export function stripAnsi(text) {
 const KINDS = [
   {
     kind: "esm-require",
+    next:
+      "Two decisions unblock this, both yours: raise the project to a Node that can require an ES module, or transform this dependency in your build and test configuration. If neither is acceptable, the dependency has to change - it no longer ships in a form this codebase can load.",
     inScope: "partial",
     test: /ERR_REQUIRE_ESM|require\(\) of ES Module/,
     what: "the package now ships only as an ES module, and the code still loads it the old way",
@@ -68,6 +70,8 @@ const KINDS = [
   },
   {
     kind: "exports-blocked",
+    next:
+      "Reach the same value through the package entry point instead of the deep path. If the entry point does not expose it, the package has stopped supporting that use and the choice is between a different API and a different package.",
     inScope: true,
     test: /ERR_PACKAGE_PATH_NOT_EXPORTED|is not exported from package/,
     what: "the package stopped exposing the exact file the code reaches into",
@@ -77,6 +81,8 @@ const KINDS = [
   },
   {
     kind: "missing-module",
+    next:
+      "Check the changelog for a rename or a split before treating this as a broken install - the piece you import has usually moved to its own package.",
     inScope: true,
     test: /Cannot find module|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND/,
     what: "something the code imports is not there any more",
@@ -86,6 +92,8 @@ const KINDS = [
   },
   {
     kind: "engine",
+    next:
+      "No code change fixes this. Raising the project minimum Node is the decision, and it is yours because it breaks your own users; the alternative is staying on the previous major of this dependency.",
     inScope: false,
     test: /EBADENGINE|Unsupported engine|requires Node\.js version/,
     what: "the new version of the package needs a newer Node than this project runs on",
@@ -99,6 +107,8 @@ const KINDS = [
   },
   {
     kind: "not-a-function",
+    next:
+      "This is an ordinary migration and should be fixable - if this run could not do it, the changelog is likely thin or the rename is not mechanical.",
     inScope: true,
     test: /is not a function|is not a constructor/,
     what: "something the code calls no longer exists under that name, or is no longer callable that way",
@@ -108,6 +118,8 @@ const KINDS = [
   },
   {
     kind: "shape-change",
+    next:
+      "Read what the new version returns before changing anything: a promise instead of a value, or a named export instead of a default, changes every call site rather than one.",
     inScope: true,
     // `propert(y|ies)` is followed directly by " of" in Node's own wording, so
     // the middle has to be allowed to be empty - " .* of" quietly demands two
@@ -121,6 +133,8 @@ const KINDS = [
   },
   {
     kind: "type-error",
+    next:
+      "Follow the compiler to every call site. A cast that silences the error ships the break.",
     inScope: true,
     test: /\bTS\d{4}\b|error TS\d/,
     what: "the types no longer line up",
@@ -148,11 +162,13 @@ export function classifyFailure(output) {
         inScope: k.inScope,
         what: k.what,
         strategy: k.strategy,
+        // Written for whoever has to decide, not for the model mid-run.
+        next: k.next || "",
         evidence: line.trim().slice(0, 300),
       };
     }
   }
-  return { kind: null, inScope: null, what: null, strategy: null, evidence: null };
+  return { kind: null, inScope: null, what: null, strategy: null, next: "", evidence: null };
 }
 
 /**
