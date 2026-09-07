@@ -64,7 +64,7 @@
     <p class="lede">
       A major version lands, your test suite goes red, and someone loses an afternoon to it.
       Patchery reproduces the break, works the fix, and re-runs your tests — then opens a pull
-      request only if it can show the evidence.
+      request that carries the evidence and says how far it goes.
     </p>
     <div class="hero__acts">
       <a class="btn btn--go" href="#install">Install it<i aria-hidden="true">→</i></a>
@@ -104,8 +104,9 @@
         <h3>Prove</h3>
         <p>
           The patch ships with its evidence: the failing run before, the passing run after, the
-          files it touched, and a read-only second agent's review — attached whether it agrees or
-          not. If your tests do not pass, nothing is delivered.
+          files it touched, and a read-only second agent's review. And it says how far that proof
+          goes — a change nothing mechanical ever exercised opens as a draft marked
+          <i>Not verified</i>, instead of borrowing a header it did not earn.
         </p>
       </li>
       <li class="step">
