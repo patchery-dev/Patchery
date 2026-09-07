@@ -226,6 +226,30 @@ export function projectKind(pkg) {
  *   excalidraw/excalidraw   application
  *   somebody/something                  <- falls back to projectKind
  */
+/**
+ * The per-repository cap, applied so that what it dropped is countable.
+ *
+ * A repository can offer more breaking majors than we take. Taking the first
+ * few is a deliberate cost control, but until now it was a bare `slice` and the
+ * pool carried no trace of it - so "133 candidates from 55 repositories" read
+ * as the population, when it is a sample with the tail cut off. The sort above
+ * this call puts API-only bumps first, which means the tail that gets cut is
+ * disproportionately the packaging ones, and the pool's own class split is a
+ * property of the cap as much as of the repositories.
+ *
+ * Same shape as planBatch in batch-plan.mjs, and for the same stated reason:
+ * "a truncation nobody announced reads as 'we ran everything'".
+ *
+ * @param {object[]} bumps  already sorted into the order we want to keep
+ * @param {number} max
+ * @returns {{picked: object[], dropped: number}}
+ */
+export function capBumps(bumps, max) {
+  const list = bumps || [];
+  const ceiling = Number.isFinite(max) && max > 0 ? max : list.length;
+  return { picked: list.slice(0, ceiling), dropped: Math.max(0, list.length - ceiling) };
+}
+
 export function parseRepoLine(line) {
   const clean = String(line || "").replace(/#.*/, "").trim();
   if (!clean) return null;
@@ -523,7 +547,9 @@ async function inspectRepo(full) {
       Number(b.runtime) - Number(a.runtime) ||
       b.to - b.from - (a.to - a.from)
   );
-  out.bumps = bumps.slice(0, MAX_PER_REPO);
+  const capped = capBumps(bumps, MAX_PER_REPO);
+  out.bumps = capped.picked;
+  out.bumpsDropped = capped.dropped;
   if (!out.bumps.length) return { ...out, reject: "every dependency is already on its latest major" };
   return out;
 }
@@ -541,6 +567,7 @@ if (isMain) {
 
   const cases = [];
   const rejected = [];
+  let cappedTotal = 0;
 
   for (const entry of repos) {
     const full = entry.repo;
@@ -576,9 +603,18 @@ if (isMain) {
         _apiOnly: b.apiOnly,
           _kind: r.kind,
           _ts: r.typescript,
+          // How many further breaking majors this repository had that the cap
+          // left behind. Carried on the row because candidates.json is a flat
+          // array with nowhere else to put it, and because anyone computing a
+          // class split from this pool needs to know the tail was cut.
+          _capped: r.bumpsDropped || 0,
         });
       }
-      console.error("  " + r.bumps.length + " bump(s): " + r.bumps.map((b) => b.package + " " + b.from + "->" + b.to).join(", "));
+      cappedTotal += r.bumpsDropped || 0;
+      console.error(
+        "  " + r.bumps.length + " bump(s): " + r.bumps.map((b) => b.package + " " + b.from + "->" + b.to).join(", ") +
+          (r.bumpsDropped ? "  (+" + r.bumpsDropped + " not taken, cap " + MAX_PER_REPO + "/repo)" : "")
+      );
     } catch (err) {
       rejected.push({ repo: full, reject: err.message });
       console.error("  error: " + err.message);
@@ -587,6 +623,16 @@ if (isMain) {
   }
 
   console.error("\n" + cases.length + " candidate upgrade(s) from " + repos.length + " repositories");
+  // Never silent, the same rule batch-plan.mjs states: a pool that does not say
+  // what it left out reads as the whole population. It is not - and because the
+  // sort puts API-only bumps first, the part left out leans packaging, which is
+  // exactly the class this benchmark's headline finding is about.
+  if (cappedTotal > 0) {
+    console.error(
+      "::warning::" + cappedTotal + " further breaking major(s) not taken - cap is " +
+        MAX_PER_REPO + " per repository, and the sort keeps API-only bumps first"
+    );
+  }
   for (const r of rejected) console.error("  skipped " + r.repo + ": " + r.reject);
 
   process.stdout.write(JSON.stringify(cases, null, 2) + "\n");

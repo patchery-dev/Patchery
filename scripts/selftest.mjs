@@ -25,7 +25,7 @@ import {
   FALLBACK,
 } from "./node-version.mjs";
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
-import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace } from "./find-bumps.mjs";
+import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
@@ -3544,6 +3544,46 @@ check("private with nothing to import is the one confident application", () => {
 
 check("private: false is not private: true", () => {
   assert.strictEqual(projectKind({ private: false, main: "i.js" }), "library");
+});
+
+console.log("\nfind-bumps.capBumps - the cap must be countable, not silent");
+
+check("what the cap left behind is returned, not discarded", () => {
+  const bumps = [1, 2, 3, 4, 5].map((n) => ({ package: "p" + n }));
+  const r = capBumps(bumps, 3);
+  assert.strictEqual(r.picked.length, 3);
+  // The whole point: a caller can say how much it did not take.
+  assert.strictEqual(r.dropped, 2);
+});
+
+check("a repository under the cap drops nothing and says so", () => {
+  const r = capBumps([{ package: "a" }, { package: "b" }], 3);
+  assert.strictEqual(r.picked.length, 2);
+  assert.strictEqual(r.dropped, 0);
+});
+
+check("the order it was handed is the order it keeps", () => {
+  // The sort above the call puts API-only bumps first on purpose. A cap that
+  // reordered would cut a different tail than the one the sort intended.
+  const bumps = [{ package: "api" }, { package: "pkg" }, { package: "other" }];
+  assert.deepStrictEqual(capBumps(bumps, 2).picked.map((b) => b.package), ["api", "pkg"]);
+});
+
+check("no usable cap takes everything rather than nothing", () => {
+  // A missing or nonsense --max-per-repo must not silently empty the pool: an
+  // empty candidates.json and "this repository had no breaking majors" look
+  // identical from the outside, which is the failure this project keeps hitting.
+  const bumps = [{ package: "a" }, { package: "b" }];
+  for (const bad of [0, -1, NaN, undefined, null]) {
+    const r = capBumps(bumps, bad);
+    assert.strictEqual(r.picked.length, 2, String(bad));
+    assert.strictEqual(r.dropped, 0, String(bad));
+  }
+});
+
+check("no bumps at all is zero taken and zero dropped, never a throw", () => {
+  assert.deepStrictEqual(capBumps([], 3), { picked: [], dropped: 0 });
+  assert.deepStrictEqual(capBumps(undefined, 3), { picked: [], dropped: 0 });
 });
 
 console.log("\nfind-bumps.parseRepoLine");
