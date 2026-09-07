@@ -179,6 +179,23 @@ work is in noticing.
 together, they should move in one verified change rather than a sequence of
 half-migrations.
 
-## License
+## Licence and pricing
 
-MIT
+The source is public and stays public — being auditable is the point of a tool
+that edits your code.
+
+**Free, no subscription:**
+
+- any repository whose source is publicly readable, including every open source project
+- personal, academic, research and non-commercial use
+- evaluating it against your own private repositories
+
+**Requires a subscription:** running it in production against a private
+repository of a commercial organisation.
+
+That is the whole distinction, and it is in the [licence](LICENSE) rather than
+only on a pricing page — [BUSL-1.1](https://mariadb.com/bsl11/), which becomes
+Apache-2.0 on 2030-09-07.
+
+Versions published before 2026-09-07 were released under MIT and remain
+available under it. That grant is not revoked; the LICENSE file carries both.

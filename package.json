@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Patchery — when a dependency breaks your code, Patchery fixes it and proves the fix.",
+  "license": "BUSL-1.1",
   "scripts": {
     "check": "node --check scripts/agent.mjs",
     "selftest": "node scripts/selftest.mjs",
