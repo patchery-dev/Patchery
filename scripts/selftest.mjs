@@ -1758,6 +1758,37 @@ check("a threshold of 0 does nothing at all", () => {
   const row = r.rows.find((x) => x.threshold === 0);
   assert.deepStrictEqual([row.helped, row.falseAlarms, row.defused, row.net], [0, 0, 0, 0]);
 });
+// `verdict` has three values and caught/missed named two, so a bad diff the
+// reviewer would not take a side on fell out of BOTH - and out of the
+// denominator calibrate.mjs prints. Measured: 2/3 shown where 2/7 was true.
+// The asymmetry ran one way: `doubted` on the good side is `!== not_refuted`
+// and absorbs the unsure ones, so being unsure about a GOOD diff counted
+// against us while being unsure about a BAD one vanished.
+check("a bad diff the reviewer would not judge is counted, not dropped", () => {
+  const r = confidenceThresholdReport([
+    sample("bad", "refuted", 80),
+    sample("bad", "refuted", 80),
+    sample("bad", "not_refuted", 80),
+    sample("bad", "insufficient_evidence", 80),
+    sample("bad", "insufficient_evidence", 80),
+    sample("bad", "insufficient_evidence", 80),
+    sample("bad", "insufficient_evidence", 80),
+  ]);
+  assert.strictEqual(r.caught, 2);
+  assert.strictEqual(r.missed, 1);
+  assert.strictEqual(r.unsure, 4);
+  // The whole point: every bad sample is somewhere.
+  assert.strictEqual(r.caught + r.missed + r.unsure, 7);
+});
+
+check("unsure stays its own count and is not folded into missed", () => {
+  // "it did not catch this" and "it declined to say" are different results;
+  // merging them would replace one wrong number with a smaller wrong number.
+  const r = confidenceThresholdReport([sample("bad", "insufficient_evidence", 50)]);
+  assert.strictEqual(r.missed, 0);
+  assert.strictEqual(r.unsure, 1);
+});
+
 check("flagging a low-confidence approval of a bad diff is the benefit", () => {
   const r = confidenceThresholdReport([sample("bad", "not_refuted", 30)]);
   assert.strictEqual(r.rows.find((x) => x.threshold === 50).helped, 1);

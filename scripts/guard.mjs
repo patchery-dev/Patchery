@@ -1451,8 +1451,31 @@ export function confidenceThresholdReport(samples = [], { step = 5 } = {}) {
     recommended: best ? best.threshold : 0,
     net: best ? best.net : 0,
     // How often the reviewer was simply right, before any threshold is applied.
+    //
+    // `verdict` has THREE values - refuted, not_refuted, insufficient_evidence -
+    // and caught/missed only name two of them. A bad diff the reviewer was
+    // unsure about therefore fell out of both counts, and out of the
+    // "caught / (caught + missed)" denominator printed by calibrate.mjs.
+    //
+    // Measured on 7 bad samples, 2 refuted, 1 not_refuted, 4 unsure:
+    //   printed  2/3 = 67%
+    //   honest   2/7 = 29%
+    //
+    // And it was asymmetric in our favour, which is the part that matters. The
+    // good side is complete, because `doubted` is `!== "not_refuted"` and so
+    // absorbs insufficient_evidence: being unsure about a GOOD diff counts
+    // against us. Being unsure about a BAD one disappeared. Both directions
+    // made the reviewer look more discriminating than it is.
+    //
+    // `unsure` is named rather than folded into `missed`: "it did not catch
+    // this" and "it declined to say" are different results, and merging them
+    // would replace one lie with a smaller one. The caller decides the
+    // denominator, but it can no longer be handed an incomplete one.
     caught: clean.filter((s) => s.label === "bad" && s.verdict === "refuted").length,
     missed: clean.filter((s) => s.label === "bad" && s.verdict === "not_refuted").length,
+    unsure: clean.filter(
+      (s) => s.label === "bad" && s.verdict !== "refuted" && s.verdict !== "not_refuted"
+    ).length,
     cleared: clean.filter((s) => s.label === "good" && s.verdict === "not_refuted").length,
     doubted: clean.filter((s) => s.label === "good" && s.verdict !== "not_refuted").length,
     confidence: { good: spread("good"), bad: spread("bad") },

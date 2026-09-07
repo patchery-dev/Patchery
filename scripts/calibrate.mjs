@@ -286,7 +286,14 @@ const anthropicList = samples.reduce((n, s) => n + (s.costUsd || 0), 0);
 
 console.log("\n" + "=".repeat(72));
 console.log("Before any threshold - how often the reviewer was simply right:");
-console.log("  bad diffs refuted        : " + report.caught + " / " + (report.caught + report.missed));
+// The denominator is every bad diff, not just the ones it took a side on.
+// Dropping the unsure ones printed 2/3 where the honest number was 2/7.
+console.log(
+  "  bad diffs refuted        : " + report.caught + " / " + (report.caught + report.missed + report.unsure) +
+    (report.unsure
+      ? "   (" + report.missed + " cleared, " + report.unsure + " it would not say either way)"
+      : "")
+);
 console.log("  good diffs left alone    : " + report.cleared + " / " + (report.cleared + report.doubted));
 const g = report.confidence.good;
 const b = report.confidence.bad;
