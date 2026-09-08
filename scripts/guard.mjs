@@ -1753,11 +1753,46 @@ export function parseReview(raw) {
   if (raw && typeof raw === "object" && "verdict" in raw) {
     obj = raw;
   } else if (typeof raw === "string") {
-    // Take the LAST parseable object with a verdict: models often restate the
-    // schema before answering, and the first match would parse the template.
+    // Take the MOST SEVERE parseable verdict, not the last one.
+    //
+    // "Last wins" was written for a real case - models restate the schema before
+    // answering, and the first match would parse the template - and it handles
+    // that. It breaks on the mirror image, which is just as common: a model that
+    // answers and THEN appends the schema for reference. Measured on 2026-09-08:
+    //
+    //   {"verdict":"refuted","confidence":90}                    -> refuted
+    //   the same, plus a trailing {"verdict":"not_refuted",...}   -> not_refuted
+    //
+    // A refusal became an approval, which is the direction that costs us: this
+    // reviewer exists to lower a claim, and a parsing rule that can raise one
+    // has inverted the only thing it is for.
+    //
+    // Severity ordering fixes both halves at once and needs no guess about which
+    // JSON was the template. A leading schema cannot approve over a real
+    // refusal, and neither can a trailing one. It can err the other way - a
+    // schema example saying "refuted" would outrank a genuine "not_refuted" -
+    // and that is the acceptable direction here for the same reason the whole
+    // review step is advisory-downward: being too strict costs a fix we could
+    // have shipped, being too lenient ships one we could not prove.
+    //
+    // Ties keep the last, so a model that simply repeats its own answer behaves
+    // exactly as before.
+    const SEVERITY = { refuted: 2, insufficient_evidence: 1, not_refuted: 0 };
+    const severityOf = (v) => {
+      const norm = String(v ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+      // An unrecognised verdict becomes insufficient_evidence below, so it ranks
+      // there for the comparison too.
+      return SEVERITY[norm] ?? SEVERITY.insufficient_evidence;
+    };
+    let best = -1;
     for (const candidate of jsonCandidates(raw)) {
       const parsed = tryParse(candidate);
-      if (parsed && typeof parsed === "object" && "verdict" in parsed) obj = parsed;
+      if (!parsed || typeof parsed !== "object" || !("verdict" in parsed)) continue;
+      const s = severityOf(parsed.verdict);
+      if (s >= best) {
+        best = s;
+        obj = parsed;
+      }
     }
   }
   if (!obj) return { ok: false, reason: "unparsable" };

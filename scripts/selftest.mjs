@@ -816,14 +816,45 @@ check("a clean structured object parses", () => {
   assert.strictEqual(r.review.confidence, 90);
 });
 // A GLM-compatible endpoint may ignore outputFormat entirely, and models restate
-// the schema before answering - so the FIRST object in the text is the template.
-check("the LAST json object in prose wins", () => {
+// the schema around their answer. This used to take the LAST object, which reads
+// a LEADING template correctly and inverts a TRAILING one - measured 2026-09-08:
+// a genuine "refuted" plus a schema example appended for reference came back
+// "not_refuted", turning the reviewer's refusal into its approval.
+//
+// The rule is now the most SEVERE verdict, which needs no guess about which JSON
+// was the template and matches what this step is for: the reviewer may lower a
+// claim and never raise one.
+check("a template before the answer does not become the answer", () => {
   const text =
     'Here is the schema: {"verdict":"not_refuted","confidence":0}\n' +
     "Now my answer:\n```json\n" + JSON.stringify(goodReview({ confidence: 77 })) + "\n```";
   const r = parseReview(text);
   assert.ok(r.ok);
   assert.strictEqual(r.review.confidence, 77);
+});
+
+check("a template AFTER the answer cannot turn a refusal into an approval", () => {
+  const real = '{"verdict":"refuted","confidence":90,"concerns":[]}';
+  const template = '{"verdict":"not_refuted","confidence":0,"concerns":[]}';
+  const r = parseReview("My verdict.\n" + real + "\n\nSchema for reference:\n" + template);
+  assert.strictEqual(r.review.verdict, "refuted");
+  assert.strictEqual(r.review.confidence, 90);
+});
+
+check("an approval repeated twice is still an approval", () => {
+  const t = '{"verdict":"not_refuted","confidence":55,"concerns":[]}';
+  const r = parseReview(t + "\nrestating:\n" + t);
+  assert.strictEqual(r.review.verdict, "not_refuted");
+  assert.strictEqual(r.review.confidence, 55);
+});
+
+// insufficient_evidence outranks not_refuted for the same reason: "I could not
+// tell" must not be overwritten by a template that says "I could not refute it".
+check("uncertainty outranks approval", () => {
+  const r = parseReview(
+    '{"verdict":"insufficient_evidence","confidence":40}\n{"verdict":"not_refuted","confidence":0}'
+  );
+  assert.strictEqual(r.review.verdict, "insufficient_evidence");
 });
 check("prose with no json is not an approval", () => {
   const r = parseReview("The change looks completely fine to me, ship it.");
