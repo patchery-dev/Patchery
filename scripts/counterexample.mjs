@@ -207,6 +207,62 @@ export function differentialVerdict({ oldRuns, newRuns, expectedFailure = "", k 
 }
 
 /**
+ * How many counterexamples one review may attempt.
+ *
+ * A reviewer given unlimited attempts is a reviewer that eventually produces a
+ * test that fails for some unrelated reason, and every attempt is a model call
+ * against a repository we do not own. Three is enough to recover from a typo
+ * and few enough that the cost is bounded before the run starts.
+ */
+export const MAX_ATTEMPTS = 3;
+
+/**
+ * Whether to ask the reviewer for another counterexample, and why we stopped.
+ *
+ * Two terminating conditions and nothing else, so the loop cannot run away:
+ *
+ *   - SHORT CIRCUIT. The first counterexample that establishes itself ends the
+ *     search immediately. There is no point asking for a second accusation once
+ *     one has been proven, and continuing would only give the reviewer more
+ *     chances to produce a flaky one.
+ *   - BUDGET. Attempts run out.
+ *
+ * The direction of the budget is the part worth being careful about: running
+ * out of attempts means THIS REVIEWER FAILED TO SUPPORT ITS ACCUSATION. It does
+ * not mean the patch was examined and cleared. `exhausted` is reported so the
+ * pull request can say which of those two happened, because they read
+ * identically in a table and mean opposite things.
+ *
+ * @param {Array<{established: boolean|null}>} attempts  results so far
+ * @param {number} [max]
+ * @returns {{keepTrying: boolean, stopReason: string|null, established: boolean|null, exhausted: boolean}}
+ */
+export function attemptPolicy(attempts = [], max = MAX_ATTEMPTS) {
+  const seen = Array.isArray(attempts) ? attempts : [];
+  const proven = seen.find((a) => a?.established === true);
+  if (proven) {
+    return {
+      keepTrying: false,
+      stopReason: "a counterexample established the claim",
+      established: true,
+      exhausted: false,
+    };
+  }
+  if (seen.length >= max) {
+    return {
+      keepTrying: false,
+      stopReason: "the reviewer used all " + max + " attempts without establishing a claim",
+      // Not `false`: the accusations failed, which is not the same as the patch
+      // having been checked and found sound. Only the fixer's own test run and
+      // the mechanical guard get to say anything in that direction.
+      established: null,
+      exhausted: true,
+    };
+  }
+  return { keepTrying: true, stopReason: null, established: null, exhausted: false };
+}
+
+/**
  * What a counterexample is allowed to do to the review's rank.
  *
  * Strictly one-directional, the same rule `reviewOutcome` already follows: this

@@ -33,6 +33,7 @@ import {
   counterexampleReasons,
   differentialVerdict,
   applyCounterexample,
+  attemptPolicy,
 } from "./counterexample.mjs";
 import { benchmarkOutcome, parseArgs, renderOutcome } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
@@ -5256,6 +5257,42 @@ check("applyCounterexample lowers an accusation whose code we refused to run", (
 check("applyCounterexample never invents severity out of an inconclusive run", () => {
   const r = applyCounterexample({ rank: 0, verdict: { established: null, why: "w" } });
   assert.strictEqual(r.rank, 0);
+});
+
+
+// The search has exactly two exits, and the second one is the dangerous one:
+// running out of attempts must never read as "we checked and it was fine".
+
+check("attemptPolicy short-circuits on the first established counterexample", () => {
+  const r = attemptPolicy([{ established: false }, { established: true }]);
+  assert.strictEqual(r.keepTrying, false);
+  assert.strictEqual(r.established, true);
+  assert.strictEqual(r.exhausted, false);
+});
+
+check("attemptPolicy keeps going while attempts remain and nothing is proven", () => {
+  assert.strictEqual(attemptPolicy([]).keepTrying, true);
+  assert.strictEqual(attemptPolicy([{ established: false }]).keepTrying, true);
+  assert.strictEqual(attemptPolicy([{ established: null }, { established: false }]).keepTrying, true);
+});
+
+check("attemptPolicy stops at the budget", () => {
+  const r = attemptPolicy([{ established: false }, { established: false }, { established: null }]);
+  assert.strictEqual(r.keepTrying, false);
+  assert.strictEqual(r.exhausted, true);
+  assert.match(r.stopReason, /all 3 attempts/);
+});
+
+// A reviewer that ran out of attempts has failed to support its accusation.
+// That is not the same sentence as "the patch was examined and cleared", and
+// only the guard and the project's own tests get to say the second one.
+check("attemptPolicy does not turn an exhausted search into a clean bill of health", () => {
+  const r = attemptPolicy([{ established: false }, { established: false }, { established: false }]);
+  assert.strictEqual(r.established, null);
+});
+
+check("attemptPolicy honours a smaller budget", () => {
+  assert.strictEqual(attemptPolicy([{ established: false }], 1).keepTrying, false);
 });
 
 console.log("\n" + pass + " checks passed.\n");
