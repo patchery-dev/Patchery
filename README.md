@@ -30,7 +30,7 @@ It runs as a GitHub Action, inside your own CI. Your code is never uploaded
 anywhere.
 
 ```yaml
-- uses: patchery-dev/Patchery@v0.1
+- uses: patchery-dev/Patchery@v0.2
   with:
     package: react-router
     anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
@@ -126,7 +126,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: patchery-dev/Patchery@v0.1
+      - uses: patchery-dev/Patchery@v0.2
         id: patchery
         with:
           package: ${{ inputs.package }}

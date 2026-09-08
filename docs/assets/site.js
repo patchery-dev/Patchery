@@ -42,7 +42,7 @@
     "        working-directory: ${{ inputs.target-dir }}",
     "",
     "      - id: patchery",
-    "        uses: patchery-dev/Patchery@v0.1",
+    "        uses: patchery-dev/Patchery@v0.2",
     "        with:",
     "          package:              ${{ inputs.package }}",
     "          target-dir:           ${{ inputs.target-dir }}",
