@@ -27,6 +27,7 @@ import {
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
 import { pendingMajors, renderScan, importSites, withImpact } from "./scan-deps.mjs";
+import { knownGuardReasons, documentedOutcomes, gateCensus, renderCensus } from "./gate-census.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs, renderOutcome } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
@@ -4556,6 +4557,72 @@ check("a new pool compared against an old one shows no bogus difference", () => 
   const text = renderShape(now, poolShape([{ repo: "a/b" }]));
   const line = text.split("\n").find((l) => l.includes("in a workspace"));
   assert.match(line, /\| 1 \| - \| - \|/, "1 minus 'not measured' is not +1");
+});
+
+// A test says a rule works on the input the test hands it. It cannot say the
+// rule is REACHABLE - that a real run ever arrives at that branch - and two of
+// this project's own bugs lived exactly there: NEEDS-DECISION shipped and fired
+// zero times in a 14-case run, and .mocharc.json sat on the protected list while
+// harnessConfigReason returned null every time. Both were invisible to the suite
+// and obvious to a census.
+console.log("\ngate census - a rule that never fires is unnecessary or broken");
+
+check("the gate list is derived from the source, never typed", () => {
+  const src = `
+    function refuse(message, reason = "unspecified") {}
+    refuse("a message about paths", "protected-path");
+    refuse(
+      "a message that spans lines",
+      "census-shrunk"
+    );
+  `;
+  assert.deepStrictEqual(knownGuardReasons(src), ["census-shrunk", "protected-path"]);
+});
+
+// A census over zero known gates would print "0 gates never fired" and read as a
+// clean bill of health - the "0 results means the search is broken" failure this
+// repository has already paid for once.
+check("a census that found no gates refuses to run rather than pass", () => {
+  assert.throws(() => knownGuardReasons("nothing here calls refuse"), /cannot run blind/);
+});
+
+check("a gate that never fired is named, with the sample size beside it", () => {
+  const c = gateCensus({
+    guardReasons: ["protected-path", "census-shrunk"],
+    docOutcomes: ["fixed"],
+    rows: [{ actionOutcome: "fixed", guardReason: "protected-path" }],
+  });
+  const text = renderCensus(c);
+  assert.match(text, /\*\*census-shrunk\*\*/, "a silent gate must be marked");
+  assert.match(text, /1 gate\(s\) never fired/);
+  assert.match(text, /1 runs is a small sample/, "silence in a tiny sample is not a finding");
+});
+
+// The direction a documented list cannot see: an outcome the product emits that
+// the action's contract never mentions. Found on the first real run -
+// `harness-error`, three times, absent from action.yml.
+check("an outcome that is emitted but undocumented is reported", () => {
+  const c = gateCensus({ guardReasons: [], docOutcomes: ["fixed"], rows: [{ actionOutcome: "harness-error" }] });
+  assert.strictEqual(c.undocumented.length, 1);
+  assert.match(renderCensus(c), /not in action\.yml's list.*harness-error/s);
+});
+
+// The description names some values twice - the list, then "everything except
+// 'failed'" - and the first census run printed `failed` as two gates.
+check("an outcome named twice in the description is one gate", () => {
+  const action = [
+    "inputs:",
+    "  x:",
+    "    description: y",
+    "outputs:",
+    "  outcome:",
+    "    description: >-",
+    "      How it ended: 'fixed' or 'failed'. Everything except 'failed' exits 0.",
+    "    value: z",
+    "  changed:",
+    "    description: q",
+  ].join("\n");
+  assert.deepStrictEqual(documentedOutcomes(action), ["failed", "fixed"]);
 });
 
 // Repeats exist because of one measurement, not a theory: body-parser +
