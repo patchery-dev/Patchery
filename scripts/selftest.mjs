@@ -4578,6 +4578,72 @@ check("a new pool compared against an old one shows no bogus difference", () => 
   assert.match(line, /\| 1 \| - \| - \|/, "1 minus 'not measured' is not +1");
 });
 
+// A run that produced nothing still spent, and "did a no-change run cost as much
+// as a fix" is a question no per-exit field can answer - there are forty-two
+// exits and the one that forgets is the one that matters. So the totals ride
+// along in writeOutputs, and every model call goes through the accumulating
+// wrapper rather than calling renderSpend directly.
+//
+// This check is what makes a sixth agent, added later, counted without anyone
+// remembering to count it.
+// The dashboard says what five days cost. It cannot say whether the runs that
+// produced nothing cost as much as the ones that produced a fix, and that is the
+// question worth asking - nine of fourteen cases in run #10 shipped no patch and
+// every one of them wrote a long diagnosis.
+check("the table says what each outcome cost, per run", () => {
+  const text = renderReport(
+    [
+      { outcome: "FIXED", repo: "a/a", package: "p", version: "1", tokensInput: 100000, tokensOutput: 20000 },
+      { outcome: "NO-CHANGE", repo: "b/b", package: "q", version: "1", tokensInput: 200000, tokensOutput: 60000 },
+      { outcome: "NO-CHANGE", repo: "c/c", package: "r", version: "1", tokensInput: 100000, tokensOutput: 40000 },
+    ],
+    { kind: "benchmark", queued: 3 }
+  );
+  assert.match(text, /what it cost \| runs \| output tokens each/);
+  // NO-CHANGE averages 50,000 output over two runs and must sort above FIXED's
+  // 20,000 - the expensive-and-empty case is the one to see first.
+  const cost = text.slice(text.indexOf("what it cost"));
+  assert.ok(cost.indexOf("NO-CHANGE") < cost.indexOf("FIXED"), "the costliest outcome must come first");
+  assert.match(cost, /50,000/);
+});
+
+// Absent is not zero. A batch collected before the field existed would otherwise
+// report every outcome as free.
+check("rows with no token count are excluded and counted, not read as zero", () => {
+  const text = renderReport(
+    [
+      { outcome: "FIXED", repo: "a/a", package: "p", version: "1", tokensOutput: 20000 },
+      { outcome: "NO-CHANGE", repo: "b/b", package: "q", version: "1" },
+    ],
+    { kind: "benchmark", queued: 2 }
+  );
+  assert.match(text, /1 row\(s\) recorded no token count/);
+});
+
+check("a batch with no token counts at all prints no cost table", () => {
+  const text = renderReport([{ outcome: "FIXED", repo: "a/a", package: "p", version: "1" }], {
+    kind: "benchmark",
+    queued: 1,
+  });
+  assert.ok(!/what it cost/.test(text));
+});
+
+check("no model call reaches renderSpend without being counted", () => {
+  const src = fs.readFileSync(new URL("agent.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const calls = [...src.matchAll(/renderSpend\(/g)].length;
+  assert.strictEqual(calls, 1, "renderSpend is called " + calls + " times; only the spend() wrapper may call it");
+  assert.match(src, /function spend\(args\)/);
+});
+
+check("every exit carries the token totals", () => {
+  const src = fs.readFileSync(new URL("agent.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const writer = /function writeOutputs\(obj\) \{([\s\S]*?)\n\}/.exec(src);
+  assert.ok(writer, "writeOutputs not found");
+  for (const field of ["tokens_input", "tokens_output", "tokens_total"]) {
+    assert.match(writer[1], new RegExp(field + ":"), field + " is not written on every exit");
+  }
+});
+
 // The outcome list in action.yml is the contract a user reads, and it was wrong
 // in two ways at once: it omitted blocked-by-guard, needs-decision,
 // harness-error, budget and stall, and its sentence "everything except 'failed'

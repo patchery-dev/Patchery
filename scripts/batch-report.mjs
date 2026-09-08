@@ -223,6 +223,39 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
     }
     out.push("");
 
+    // What each outcome cost, when the runs recorded it.
+    //
+    // The question this answers is the one a total on a provider dashboard
+    // cannot: does a run that shipped nothing cost as much as one that shipped a
+    // fix? In run #10 nine of fourteen cases produced no patch and every one of
+    // them wrote a long diagnosis, and nothing said what that was worth.
+    //
+    // Absent for rows recorded before the field existed, and absent is not zero:
+    // same rule as the node column and the census.
+    const withTokens = sorted.filter((r) => Number(r.tokensOutput) > 0 || Number(r.tokensInput) > 0);
+    if (withTokens.length) {
+      const byOutcome = new Map();
+      for (const r of withTokens) {
+        const k = label(r, kind);
+        const acc = byOutcome.get(k) || { runs: 0, input: 0, output: 0 };
+        acc.runs++;
+        acc.input += Number(r.tokensInput) || 0;
+        acc.output += Number(r.tokensOutput) || 0;
+        byOutcome.set(k, acc);
+      }
+      out.push("| what it cost | runs | output tokens each | input tokens each |", "|---|---|---|---|");
+      for (const [name, a] of [...byOutcome.entries()].sort((x, y) => y[1].output / y[1].runs - x[1].output / x[1].runs)) {
+        out.push(
+          "| " + name + " | " + a.runs + " | " + Math.round(a.output / a.runs).toLocaleString("en-US") +
+            " | " + Math.round(a.input / a.runs).toLocaleString("en-US") + " |"
+        );
+      }
+      if (withTokens.length < sorted.length) {
+        out.push("", (sorted.length - withTokens.length) + " row(s) recorded no token count and are not in this table.");
+      }
+      out.push("");
+    }
+
     // And WHICH rule caught them, because the count alone hides the finding.
     //
     // The first two runs blocked four patches and all four were one escape:

@@ -280,6 +280,12 @@ outputs:
   # pending-count without checking the mode would see "" and must not print it as
   # "0 upgrades waiting". Same rule the census follows for a suite it could not
   # count.
+  tokens-input:
+    description: "Input tokens this run spent across every model call, fixer and reviewer."
+    value: ${{ steps.run.outputs.tokens_input }}
+  tokens-output:
+    description: "Output tokens this run spent across every model call."
+    value: ${{ steps.run.outputs.tokens_output }}
   pending-count:
     description: >-
       mode=scan only. How many dependencies have shipped a new major. Says

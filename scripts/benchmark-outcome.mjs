@@ -413,6 +413,16 @@ if (isMain) {
     // model produced it cannot be reproduced or compared, and invites the
     // reader to assume the best one.
     model: a.model || "",
+    // Tokens, not money. The SDK prices with Anthropic's own table whatever
+    // endpoint served the request - it was wrong by a factor of 195 once - so
+    // the honest half is the quantity the provider actually bills for.
+    //
+    // Per case, because the question worth asking is per OUTCOME: does a run
+    // that shipped nothing cost as much as one that shipped a fix? In run #10
+    // nine of fourteen cases produced no patch and every one of them wrote a
+    // long diagnosis, and nothing in the table said what that cost.
+    tokensInput: Number(a["tokens-input"]) || 0,
+    tokensOutput: Number(a["tokens-output"]) || 0,
     guardReason: a["guard-reason"] || "",
     outcome,
     detail,

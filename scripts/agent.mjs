@@ -35,6 +35,7 @@ import {
   normalizeVerifyTools,
   reviewPassPlan,
   renderSpend,
+  tokenTotals,
   normalizeModelTimeout,
   normalizeRunBudget,
   budgetDelayMs,
@@ -285,9 +286,47 @@ const clean = (text) => redactSecrets(text, SECRET_VALUES);
 const log = (...a) => console.log(...a.map((x) => (typeof x === "string" ? clean(x) : x)));
 const group = (title) => log("\n" + "=".repeat(8) + " " + title + " " + "=".repeat(8));
 
+/**
+ * Everything every model call in this run has cost, in tokens.
+ *
+ * Kept at module scope and added to writeOutputs rather than to each exit,
+ * because there are forty-two exits and the one that forgets is the one that
+ * matters: a run that produced nothing still spent, and "did a no-change run
+ * cost as much as a fix" is exactly the question a per-exit field would fail to
+ * answer.
+ *
+ * Tokens, not money. The SDK's own total_cost_usd prices with Anthropic's table
+ * whatever endpoint served the request - it was wrong by a factor of 195 once -
+ * so the true figure has to come from the provider's dashboard. What is recorded
+ * here is the quantity that dashboard charges for, which is the half we can
+ * measure honestly.
+ */
+const SPEND = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
+
+/**
+ * Accumulate, then render. Every model call in this file goes through here, and
+ * a check pins that no call site reaches renderSpend directly - so a sixth agent
+ * added later is counted without anyone remembering to count it.
+ */
+function spend(args) {
+  const t = tokenTotals(args?.modelUsage);
+  SPEND.input += t.input;
+  SPEND.output += t.output;
+  SPEND.cacheRead += t.cacheRead;
+  SPEND.cacheCreation += t.cacheCreation;
+  return renderSpend(args);
+}
+
 function writeOutputs(obj) {
   const file = process.env.GITHUB_OUTPUT;
   if (!file) return;
+  obj = {
+    ...obj,
+    tokens_input: String(SPEND.input),
+    tokens_output: String(SPEND.output),
+    tokens_cache_read: String(SPEND.cacheRead),
+    tokens_total: String(SPEND.input + SPEND.output + SPEND.cacheRead + SPEND.cacheCreation),
+  };
   const lines = Object.entries(obj).map(([k, v]) => {
     const delimiter = "__sma_" + k + "_" + Date.now() + "__";
     return k + "<<" + delimiter + "\n" + clean(String(v)) + "\n" + delimiter;
@@ -818,7 +857,7 @@ log(
     " | turns: " +
     result.num_turns +
     " | spend: " +
-    renderSpend({
+    spend({
       modelUsage: result.modelUsage,
       costUsd: result.total_cost_usd,
       customEndpoint: usingCustomEndpoint,
@@ -855,7 +894,7 @@ if (result.subtype === "error_max_turns") {
     changelog: CHANGELOG,
     turns: s.toolTurns,
     edits: s.edits,
-    spend: renderSpend({
+    spend: spend({
       modelUsage: result.modelUsage,
       costUsd: result.total_cost_usd,
       customEndpoint: usingCustomEndpoint,
@@ -939,7 +978,7 @@ if (changed.length === 0) {
     changelog: CHANGELOG,
     turns: s.toolTurns,
     edits: s.edits,
-    spend: renderSpend({
+    spend: spend({
       modelUsage: result.modelUsage,
       costUsd: result.total_cost_usd,
       customEndpoint: usingCustomEndpoint,
@@ -1639,7 +1678,7 @@ async function runReviewPass(entries) {
       // telemetry - it is true because the run was configured to send the review
       // somewhere else, which is a fact about this process, not about the answer.
       differentProvider: !!VERIFY_BASE_URL && VERIFY_BASE_URL !== baseUrl,
-      spend: renderSpend({
+      spend: spend({
         modelUsage: reviewResult?.modelUsage,
         costUsd: reviewResult?.total_cost_usd,
         customEndpoint: usingCustomEndpoint || !!VERIFY_BASE_URL,
@@ -1881,7 +1920,7 @@ const prBody = [
     "` - turns: " +
     result.num_turns +
     " - spend: " +
-    renderSpend({
+    spend({
       modelUsage: result.modelUsage,
       costUsd: result.total_cost_usd,
       customEndpoint: usingCustomEndpoint,
