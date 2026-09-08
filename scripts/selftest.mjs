@@ -4040,4 +4040,41 @@ check("a new pool compared against an old one shows no bogus difference", () => 
   assert.match(line, /\| 1 \| - \| - \|/, "1 minus 'not measured' is not +1");
 });
 
+// The founder's ruling, pinned so it survives the next rewrite of this text:
+// the report Patchery hands over when no patch is possible is a FALLBACK, never
+// a sales argument. "The analysis above is the deliverable" shipped anyway - in
+// agent.mjs's closing line and, worse, inside the strategy prompt the model
+// reads before writing its own summary, so the framing was being taught rather
+// than merely printed. Both were corrected on the README and the site first and
+// missed here, which is how a claim ends up true on every surface except the
+// product's own mouth.
+//
+// This is a grep, not a behaviour test, and that is deliberate: the sentence can
+// come back in any number of phrasings, but it cannot come back in these files
+// without someone reading this comment.
+console.log("\nThe fallback report must not be sold as the deliverable");
+
+check("no user-facing text calls the fallback report the deliverable", () => {
+  for (const file of ["agent.mjs", "classify-break.mjs", "guard.mjs"]) {
+    const src = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    // Only the lines that reach a user: strings, not the comments explaining why
+    // the strings say what they say.
+    const speech = src
+      .split("\n")
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join("\n");
+    assert.ok(
+      !/(is|as) the deliverable/i.test(speech),
+      file + " tells the reader the analysis is the deliverable; it is the fallback"
+    );
+  }
+});
+
+check("but saying no patch was possible is still allowed to be honest", () => {
+  const src = fs.readFileSync(new URL("classify-break.mjs", import.meta.url), "utf8");
+  // The other half of the ruling: a break we cannot patch is not our failure, and
+  // the model still needs permission to stop rather than thrash for a patch.
+  assert.match(src, /it is not a failure/i);
+});
+
 console.log("\n" + pass + " checks passed.\n");

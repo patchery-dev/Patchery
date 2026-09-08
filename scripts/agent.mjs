@@ -965,10 +965,16 @@ if (changed.length === 0) {
   // unblock it. The banner over all of that read "Patchery found no change it
   // could make ... Nothing was delivered because nothing could be proved."
   //
-  // That is the deliverable the README, the site and action.yml all promise,
-  // described as an absence. Worse, it is ambiguous in the direction that costs
-  // most: a reader cannot tell whether the tool found nothing or was not able to
-  // do it - and "not able to do it" is the reading people default to.
+  // That is real work, described as an absence. Worse, it is ambiguous in the
+  // direction that costs most: a reader cannot tell whether the tool found
+  // nothing or was not able to do it - and "not able to do it" is the reading
+  // people default to.
+  //
+  // The correction is to stop calling it a failure, NOT to start calling it the
+  // product. The founder's ruling, and it is binding: the report is a fallback,
+  // never a sales argument. A patch is what was promised; when none is possible
+  // the run says so and hands over what it found, without promoting the
+  // consolation into the headline.
   //
   // So the two cases are separated. The test is what actually came out of the
   // run - a break class from classifyFailure, which is a regex over the test
@@ -1013,17 +1019,24 @@ if (changed.length === 0) {
   // the last thing read: "Nothing was delivered because nothing could be proved"
   // sat under a page of delivered analysis.
   //
-  // The replacement still refuses to overclaim. A fix is machine-checked - the
-  // suite went red to green and the census held - and an analysis is not checked
-  // at all, so it is handed over as a diagnosis to be read, not a result to be
-  // trusted. That limit is stated because it is real, and stating it is what
-  // makes the rest of the report worth believing.
+  // "The analysis above is the deliverable" stood here and had to go. It is the
+  // sales argument the founder ruled out: it promotes the fallback to the thing
+  // promised, and a reader who wanted a patch is told they got the better item.
+  // Saying no patch was possible is honest; saying the consolation was the point
+  // is not, and a product that does it once is not believed the next time.
+  //
+  // What survives is the part that is true in both directions: no patch shipped,
+  // here is why, and here is the limit of what is above. A fix is machine-checked
+  // - the suite went red to green and the census held - and an analysis is not
+  // checked at all, so it is handed over as a diagnosis to be read rather than a
+  // result to be trusted. Stating that limit is what makes the rest worth
+  // believing.
   handover.push(
     isVerdict
       ? "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) and shipped no patch, " +
-        "because on this break a patch would be the wrong deliverable - it would encode a decision " +
-        "that is yours, in a place you would not look for it. The analysis above is the deliverable. " +
-        "Unlike a fix, none of it has been machine-checked: read it as a diagnosis and check its claims."
+        "because on this break a patch would encode a decision that is yours, in a place you would " +
+        "not look for it. Above is the reasoning that got there. Unlike a fix, none of it has been " +
+        "machine-checked: read it as a diagnosis and check its claims."
       : "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) and changed none. " +
         "Nothing was delivered because nothing could be proved."
   );
