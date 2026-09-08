@@ -48,6 +48,34 @@ export function knownGuardReasons(agentSource = "") {
   return [...found].sort();
 }
 
+/**
+ * Every outcome agent.mjs can actually write.
+ *
+ * `stop(outcome, ...)` and `fail(message, outcome)` both put their argument
+ * straight into the output, and `refuse` writes a fixed one. needs-decision is
+ * produced by a ternary rather than a literal call, so it is matched from the
+ * expression instead.
+ *
+ * Throws on an empty result for the same reason knownGuardReasons does: a
+ * contract checked against nothing passes.
+ */
+export function emittedOutcomes(agentSource = "") {
+  const src = String(agentSource);
+  const out = new Set(["failed"]); // fail()'s default, never written literally
+  for (const m of src.matchAll(/\b(?:stop|fail)\(\s*(?:\n\s*)?"([a-z][a-z0-9-]*)"/g)) out.add(m[1]);
+  for (const m of src.matchAll(/\bfail\([^)]*?,\s*"([a-z][a-z0-9-]*)"\s*\)/g)) out.add(m[1]);
+  for (const m of src.matchAll(/outcome:\s*"([a-z][a-z0-9-]*)"/g)) out.add(m[1]);
+  // Anchored to `stop(` on purpose. An unanchored ternary matched every
+  // "true"/"false" pair in the file and reported them as outcomes - the same
+  // over-broad pattern that let an npm warning decide a classification.
+  for (const m of src.matchAll(/\bstop\(\s*[^;]{0,80}?\?\s*"([a-z][a-z0-9-]*)"\s*:\s*"([a-z][a-z0-9-]*)"/g)) {
+    out.add(m[1]);
+    out.add(m[2]);
+  }
+  if (out.size <= 1) throw new Error("no outcomes found in agent.mjs - the contract cannot be checked blind");
+  return [...out].sort();
+}
+
 /** Every outcome action.yml tells a user to expect. */
 export function documentedOutcomes(actionSource = "") {
   const block = /^ {2}outcome:\n([\s\S]*?)(?=^ {2}\S)/m.exec(String(actionSource).replace(/\r\n/g, "\n"));

@@ -294,9 +294,12 @@ outputs:
     value: ${{ steps.scan.outputs.pending }}
   outcome:
     description: >-
-      How the run ended: 'fixed', 'nothing-to-do', 'flaky', 'inconclusive',
-      'no-changes', 'dry-run', 'blocked-by-review' or 'failed'. Everything except
-      'failed' exits 0.
+      How the run ended, one of: 'fixed', 'nothing-to-do', 'flaky',
+      'inconclusive', 'no-changes', 'needs-decision', 'dry-run', 'budget',
+      'stall', 'blocked-by-guard', 'blocked-by-review', 'harness-error' or
+      'failed'. The run exits 1 for 'failed' and 'harness-error', and 0 for
+      everything else - including 'blocked-by-guard', which is the product
+      working rather than breaking.
     value: ${{ steps.run.outputs.outcome }}
   changed:
     description: "Whether the agent actually changed files ('true' / 'false')."

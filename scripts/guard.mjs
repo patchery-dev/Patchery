@@ -93,7 +93,18 @@ export function isHarnessConfig(relPath) {
   const p = String(relPath).replace(/\\/g, "/").toLowerCase();
   return (
     /(^|\/)(jest|vitest|playwright|cypress|karma)\.(config|conf)\.[cm]?[jt]s$/.test(p) ||
+    // vitest reads vite.config.* when no vitest.config.* exists, so the same
+    // settings live there and were judged by nothing. Only the JUDGE_SETTINGS
+    // keys are compared, so a build change in the same file still passes.
+    /(^|\/)vite\.(config|conf)\.[cm]?[jt]s$/.test(p) ||
     /(^|\/)\.mocharc\.[^/]+$/.test(p) ||
+    // Jest and vitest both accept their whole configuration inside package.json.
+    // scriptsTamperReason watches the `scripts` field there and nothing watched
+    // the rest, so `testPathIgnorePatterns` in package.json was the one place a
+    // run could narrow the suite without any rule looking. The dependency bump
+    // this action exists to make edits `dependencies`, which is not a judged
+    // setting, so ordinary runs are unaffected.
+    /(^|\/)package\.json$/.test(p) ||
     /(^|\/)(jest|vitest)\.setup\.[cm]?[jt]s$/.test(p) ||
     // Lowercase, because `p` is. The file is conventionally `setupTests.js`.
     /(^|\/)setuptests\.[cm]?[jt]sx?$/.test(p)

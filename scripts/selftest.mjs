@@ -27,7 +27,7 @@ import {
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
 import { pendingMajors, renderScan, importSites, withImpact } from "./scan-deps.mjs";
-import { knownGuardReasons, documentedOutcomes, gateCensus, renderCensus } from "./gate-census.mjs";
+import { knownGuardReasons, documentedOutcomes, emittedOutcomes, gateCensus, renderCensus } from "./gate-census.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs, renderOutcome } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
@@ -1372,10 +1372,29 @@ for (const p of ["vitest.setup.ts", "src/setupTests.js", "jest.setup.mjs", "src/
     assert.match(protectedReason(p) || "", /setup file/)
   );
 }
-check("an ordinary config file is neither", () => {
-  assert.strictEqual(protectedReason("vite.config.js"), null);
-  assert.strictEqual(isHarnessConfig("vite.config.js"), false);
+// vite.config.js used to be asserted here as "neither", on the reading that it
+// is a build config. That reading is half right and the half it misses matters:
+// vitest reads vite.config.* when no vitest.config.* exists, so `exclude` and
+// `include` - which decide WHICH TESTS RUN - live in it. Reclassified 2026-09-08
+// with the decision written down rather than quietly reversed.
+//
+// It costs nothing, because only the JUDGE_SETTINGS keys are compared: changing
+// plugins, resolve or define in the same file still passes, and the next check
+// holds that.
+//
+// webpack.config.js stays out. No test runner reads it.
+check("a config a test runner reads is harness config; a build-only one is not", () => {
+  assert.strictEqual(isHarnessConfig("vite.config.js"), true);
   assert.strictEqual(isHarnessConfig("webpack.config.js"), false);
+  // Harness config is judged on specific settings, not refused outright - the
+  // distinction protectedReason exists to keep.
+  assert.strictEqual(protectedReason("vite.config.js"), null);
+});
+
+check("a build-only change inside vite.config is still allowed", () => {
+  const before = 'export default { plugins: [react()], test: { include: ["**/*.test.ts"] } }';
+  const after = 'export default { plugins: [react(), svgr()], test: { include: ["**/*.test.ts"] } }';
+  assert.strictEqual(harnessConfigReason(before, after), null);
 });
 
 console.log("\nharnessConfigReason - how it is built may change, what is tested may not");
@@ -4557,6 +4576,57 @@ check("a new pool compared against an old one shows no bogus difference", () => 
   const text = renderShape(now, poolShape([{ repo: "a/b" }]));
   const line = text.split("\n").find((l) => l.includes("in a workspace"));
   assert.match(line, /\| 1 \| - \| - \|/, "1 minus 'not measured' is not +1");
+});
+
+// The outcome list in action.yml is the contract a user reads, and it was wrong
+// in two ways at once: it omitted blocked-by-guard, needs-decision,
+// harness-error, budget and stall, and its sentence "everything except 'failed'
+// exits 0" was false because harness-error goes through fail() and exits 1.
+//
+// Found by the gate census rather than by anyone reading the file, which is the
+// point of the census - but a contract deserves a hard check, not a report.
+check("action.yml documents every outcome the agent can emit, and no others", () => {
+  const agentSrc = fs.readFileSync(new URL("agent.mjs", import.meta.url), "utf8");
+  const actionSrc = fs.readFileSync(new URL("../action.yml", import.meta.url), "utf8");
+  const emitted = emittedOutcomes(agentSrc);
+  const documented = documentedOutcomes(actionSrc);
+  assert.deepStrictEqual(
+    emitted.filter((o) => !documented.includes(o)),
+    [],
+    "emitted but undocumented"
+  );
+  assert.deepStrictEqual(
+    documented.filter((o) => !emitted.includes(o)),
+    [],
+    "documented but never emitted"
+  );
+});
+
+check("the outcome reader refuses to check a contract against nothing", () => {
+  assert.throws(() => emittedOutcomes("nothing here"), /cannot be checked blind/);
+});
+
+// vitest reads vite.config.* when vitest.config.* is absent, and both jest and
+// vitest accept their whole configuration inside package.json. Neither was
+// recognised, so the settings that decide which tests run lived in two files no
+// rule looked at.
+check("the harness config a runner actually reads is recognised", () => {
+  for (const p of ["vite.config.ts", "vite.config.js", "vitest.config.ts", "package.json", ".mocharc.json"]) {
+    assert.strictEqual(isHarnessConfig(p), true, p + " is not treated as harness config");
+  }
+});
+
+check("narrowing the suite from inside package.json is refused", () => {
+  const before = '{"name":"x","jest":{"testPathIgnorePatterns":[]}}';
+  const after = '{"name":"x","jest":{"testPathIgnorePatterns":["broken.test.js"]}}';
+  assert.ok(harnessConfigReason(before, after));
+});
+
+// The bump this action exists to make must still pass through the same file.
+check("a dependency bump in package.json is not a harness edit", () => {
+  const before = '{"name":"x","dependencies":{"content-type":"^2.0.0"}}';
+  const after = '{"name":"x","dependencies":{"content-type":"^3.0.0"}}';
+  assert.strictEqual(harnessConfigReason(before, after), null);
 });
 
 // The same reachability question as the gate census, asked of the wiring: an
