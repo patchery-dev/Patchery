@@ -94,7 +94,11 @@ const KINDS = [
       "recommendation instead: name which call sites are affected, why an async conversion would change " +
       "the project's public behaviour, and which of the two decisions would unblock it - raising the " +
       "project's minimum runtime, or replacing the dependency - with what you checked to be sure. " +
-      "That report is the deliverable; it is not a failure to produce it. " +
+      // Not "that report is the deliverable" - the founder ruled that out, and a
+      // strategy prompt is the worst place for it: the model reads this and then
+      // writes the sales argument into the user's own summary. What the model
+      // actually needs is permission to stop, which is the second half.
+      "Stopping there and writing that recommendation is the right end to this run; it is not a failure. " +
       "Do NOT copy the dependency's source into this project, do not re-implement it, and do not pin " +
       "the old version. Those three are the same evasion in different clothes, and each hides a " +
       "decision that belongs to whoever maintains this repository.",

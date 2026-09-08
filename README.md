@@ -191,7 +191,7 @@ breaking changes in the ecosystem, and across **five** repositories that depend
 on it, not one suite noticed. Closing that gap needs a second trigger that does
 not wait for red, which is the next thing being built.
 
-The engine has 590 offline checks covering the guard, the census and the outcome
+The engine has 592 offline checks covering the guard, the census and the outcome
 rules. None of them need an API key: `node scripts/selftest.mjs`.
 
 ## Where it is going
@@ -248,6 +248,6 @@ what is current, never on what is old.
 Versions published before 2026-09-07 were released under MIT and remain
 available under it. That grant is not revoked; the LICENSE file carries both.
 
-**Patchery™** is a trademark of Ugur (ugursku), first used in commerce on
+**Patchery™** is a trademark of Uğur Şişkolu (ugursku), first used in commerce on
 2026-09-05. The licence covers the code and grants no rights in the name: a
 fork is free to exist, under its own name.
