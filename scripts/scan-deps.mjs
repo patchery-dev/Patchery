@@ -22,6 +22,39 @@
  */
 
 import { rangeMajor, isOutOfScope } from "./find-bumps.mjs";
+import { packageBindings } from "./guard.mjs";
+
+/**
+ * How many of this project's own files import a package.
+ *
+ * Impact, not risk, and the report has to keep those apart. Three files that
+ * import a package are three places a change lands; none of them is evidence
+ * that the change breaks anything. Calling the first the second is how a scan
+ * turns into an alarm.
+ *
+ * Reuses the guard's reader rather than writing a second one, so the two never
+ * disagree about what an import is - and inherits its honest limit with it: it
+ * is a regex, so `require(name)` through a variable and an import built from a
+ * template literal are not seen. The count is therefore a floor, and the text
+ * says "at least" for that reason and no other.
+ *
+ * @param {{path: string, text: string}[]} files
+ */
+export function importSites(files, packageName) {
+  const paths = [];
+  for (const f of files || []) {
+    if (packageBindings(f.text || "", packageName).count > 0) paths.push(f.path);
+  }
+  return { files: paths.length, paths };
+}
+
+/** Attach the measured impact to each candidate. Pure; the walk happens in the CLI. */
+export function withImpact(candidates, sitesByName = {}) {
+  return (candidates || []).map((c) => {
+    const site = sitesByName[c.package];
+    return site ? { ...c, files: site.files, paths: site.paths } : { ...c };
+  });
+}
 
 /**
  * Which dependencies have a newer major than the one this project is on.
@@ -107,7 +140,20 @@ export function renderScan({ candidates = [], skipped = [] } = {}) {
     "",
   ];
   for (const c of candidates) {
-    lines.push("  " + c.package + "  " + c.from + " -> " + c.to + "  (" + c.latest + ")" + (c.runtime ? "" : "  [dev]"));
+    // Two measured facts, in the order that matters to a reader deciding what to
+    // look at first: does it ship, and how much of the codebase touches it.
+    // Neither is a risk score. A dependency imported in eight files is eight
+    // places a change lands, and might upgrade without a murmur.
+    const where =
+      c.files === undefined
+        ? ""
+        : c.files === 0
+          ? "  no file here imports it"
+          : "  imported in at least " + c.files + " file" + (c.files === 1 ? "" : "s");
+    lines.push(
+      "  " + c.package + "  " + c.from + " -> " + c.to + "  (" + c.latest + ")" +
+        (c.runtime ? "  runtime" : "  dev") + where
+    );
   }
   lines.push(
     "",
@@ -120,6 +166,7 @@ export function renderScan({ candidates = [], skipped = [] } = {}) {
 const isMain = process.argv[1] && process.argv[1].endsWith("scan-deps.mjs");
 if (isMain) {
   const fs = await import("node:fs");
+  const path = await import("node:path");
   const argv = process.argv.slice(2);
   const asJson = argv.includes("--json");
   const file = argv.find((a) => !a.startsWith("--")) || "package.json";
@@ -158,6 +205,42 @@ if (isMain) {
   }
 
   const scan = pendingMajors(pkg, latestByName);
+
+  // Walk the project's own source once, then ask each candidate about it. Read
+  // in one pass rather than per package: forty dependencies over a large tree is
+  // the same files forty times.
+  //
+  // The cap is announced, never silent. A tree bigger than this gives a count
+  // that is low for a second reason on top of the regex, and a reader who is not
+  // told that will take the floor for the number.
+  const MAX_FILES = 4000;
+  const SKIP = new Set(["node_modules", ".git", "dist", "build", "coverage", ".next", "out", "vendor"]);
+  const CODE = /\.(m?[jt]sx?|cjs|cts|mts)$/i;
+  const dir = path.dirname(path.resolve(file));
+  const files = [];
+  let truncated = false;
+  const walk = (d) => {
+    if (files.length >= MAX_FILES) { truncated = true; return; }
+    let entries = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (files.length >= MAX_FILES) { truncated = true; return; }
+      if (e.name.startsWith(".") && e.name !== ".") { if (SKIP.has(e.name)) continue; }
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { if (!SKIP.has(e.name)) walk(p); continue; }
+      if (!CODE.test(e.name)) continue;
+      try { files.push({ path: path.relative(dir, p), text: fs.readFileSync(p, "utf8") }); } catch {}
+    }
+  };
+  walk(dir);
+  if (truncated) console.error("read the first " + MAX_FILES + " source files only - import counts are low");
+
+  const sitesByName = {};
+  for (const c of scan.candidates) sitesByName[c.package] = importSites(files, c.package);
+  scan.candidates = withImpact(scan.candidates, sitesByName);
+  scan.filesRead = files.length;
+  scan.filesTruncated = truncated;
+
   if (asJson) {
     console.log(JSON.stringify(scan, null, 2));
   } else {

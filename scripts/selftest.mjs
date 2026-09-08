@@ -26,7 +26,7 @@ import {
 } from "./node-version.mjs";
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
-import { pendingMajors, renderScan } from "./scan-deps.mjs";
+import { pendingMajors, renderScan, importSites, withImpact } from "./scan-deps.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs, renderOutcome } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
@@ -4583,6 +4583,60 @@ check("a devDependency is a candidate but is marked as one", () => {
 // The rendered text is what a person reads, and "6 upgrades pending" must not
 // arrive sounding like "6 problems": the last sweep across 55 repositories found
 // most pending majors upgraded without turning anything red.
+// Impact, and the line between impact and risk. Three files importing a package
+// are three places a change lands; none of them is evidence that the change
+// breaks anything, and a report that blurs the two turns a scan into an alarm.
+check("import sites are counted from the project's own files", () => {
+  const files = [
+    { path: "lib/utils.js", text: "var contentType = require('content-type');" },
+    { path: "lib/response.js", text: "import { parse } from 'content-type'" },
+    { path: "lib/other.js", text: "const x = require('express')" },
+  ];
+  const r = importSites(files, "content-type");
+  assert.strictEqual(r.files, 2);
+  assert.deepStrictEqual(r.paths, ["lib/utils.js", "lib/response.js"]);
+});
+
+check("a package nothing imports counts zero, not missing", () => {
+  const r = importSites([{ path: "a.js", text: "const x = 1" }], "content-type");
+  assert.strictEqual(r.files, 0);
+  assert.deepStrictEqual(r.paths, []);
+});
+
+// A subpath import is still an import of the package: `require('pkg/sub')` breaks
+// when pkg's major changes exactly as `require('pkg')` does.
+check("a subpath import counts as importing the package", () => {
+  const r = importSites([{ path: "a.js", text: "const q = require('marked/lib/x')" }], "marked");
+  assert.strictEqual(r.files, 1);
+});
+
+check("impact is attached without inventing it for packages not walked", () => {
+  const out = withImpact([{ package: "a" }, { package: "b" }], { a: { files: 3, paths: ["x", "y", "z"] } });
+  assert.strictEqual(out[0].files, 3);
+  assert.ok(!("files" in out[1]), "a package we did not walk must not get a count");
+});
+
+// The wording is the check. "imported in at least N" is not decoration: the
+// counter is the guard's regex, so `require(name)` through a variable is not
+// seen, and a floor presented as a total is a number that will be wrong.
+check("the count is presented as a floor and never as a risk", () => {
+  const text = renderScan({
+    candidates: [{ package: "content-type", from: 2, to: 3, latest: "3.0.0", runtime: true, files: 3 }],
+    skipped: [],
+  });
+  assert.match(text, /imported in at least 3 files/);
+  assert.match(text, /runtime/);
+  assert.ok(!/risk|severe|critical|danger/i.test(text), "impact must not be dressed as risk");
+});
+
+check("a scan that walked no files says nothing about impact", () => {
+  const text = renderScan({
+    candidates: [{ package: "content-type", from: 2, to: 3, latest: "3.0.0", runtime: true }],
+    skipped: [],
+  });
+  assert.ok(!/imported in|no file here/.test(text), "an unwalked scan must not imply a count of zero");
+});
+
 check("the report says the tests have not been run", () => {
   const text = renderScan(pendingMajors({ dependencies: { a: "^1.0.0" } }, { a: "2.0.0" }));
   assert.match(text, /nothing here ran your tests/i);
