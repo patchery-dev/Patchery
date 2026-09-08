@@ -29,6 +29,11 @@ import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBu
 import { pendingMajors, renderScan, importSites, withImpact } from "./scan-deps.mjs";
 import { knownGuardReasons, documentedOutcomes, emittedOutcomes, gateCensus, renderCensus } from "./gate-census.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
+import {
+  counterexampleReasons,
+  differentialVerdict,
+  applyCounterexample,
+} from "./counterexample.mjs";
 import { benchmarkOutcome, parseArgs, renderOutcome } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
 import {
@@ -5085,6 +5090,172 @@ check("but saying no patch was possible is still allowed to be honest", () => {
   // The other half of the ruling: a break we cannot patch is not our failure, and
   // the model still needs permission to stop rather than thrash for a patch.
   assert.match(src, /it is not a failure/i);
+});
+
+
+// ---------------------------------------------------------------------------
+// The counterexample: the reviewer's claim, settled by the terminal.
+//
+// Every check below exists because the alternative is a reviewer that can
+// refute any patch by writing prose, which is what it could do until today.
+// ---------------------------------------------------------------------------
+
+check("counterexampleReasons passes an ordinary deterministic test", () => {
+  const src = [
+    'import assert from "node:assert";',
+    'import { parse } from "../src/parse.js";',
+    'assert.strictEqual(parse("a=1").a, "1");',
+  ].join("\n");
+  assert.deepStrictEqual(counterexampleReasons(src), []);
+});
+
+check("counterexampleReasons refuses an empty counterexample", () => {
+  assert.deepStrictEqual(counterexampleReasons("   \n "), ["the counterexample is empty"]);
+  assert.deepStrictEqual(counterexampleReasons(null), ["the counterexample is empty"]);
+});
+
+// A test that reaches the network fails for reasons that have nothing to do
+// with the patch, and it can fail that way repeatably enough that the K-repeat
+// rule below would not catch it. It has to be screened before it is ever run.
+check("counterexampleReasons catches the network", () => {
+  for (const src of [
+    'const r = await fetch("https://example.com");',
+    'const http = require("node:http");',
+    'import got from "got";',
+    "const ws = new WebSocket(url);",
+  ]) {
+    assert.ok(counterexampleReasons(src).length > 0, "should refuse: " + src);
+  }
+});
+
+check("counterexampleReasons catches real timers, randomness and the clock", () => {
+  assert.match(counterexampleReasons("setTimeout(done, 50)").join(), /real timer/);
+  assert.match(counterexampleReasons("if (Math.random() > 0.5) fail()").join(), /randomness/);
+  assert.match(counterexampleReasons("const t = Date.now()").join(), /wall clock/);
+  assert.match(counterexampleReasons("const d = new Date()").join(), /wall clock/);
+});
+
+check("counterexampleReasons catches escapes from the test", () => {
+  assert.match(
+    counterexampleReasons('require("child_process").execSync("ls")').join(),
+    /another process/
+  );
+  assert.match(counterexampleReasons("process.exit(1)").join(), /process\.exit/);
+  assert.match(counterexampleReasons('fs.writeFileSync("x", "y")').join(), /writes to the filesystem/);
+  assert.match(counterexampleReasons("await fs.promises.unlink(p)").join(), /writes to the filesystem/);
+});
+
+// The screen is anchored on a non-identifier character. Without that anchor it
+// refuses `myFetch(` and `resetTimeout(`, which are ordinary names in ordinary
+// codebases, and the reviewer would lose a sound accusation to a false match.
+check("counterexampleReasons does not fire on identifiers that merely contain a keyword", () => {
+  // `prefetch(` and `resetTimeout(` contain the keyword in the SAME case, which
+  // is the only version of this test that bites: mutation testing removed the
+  // anchor and `myFetch(` still passed, because the capital F never matched the
+  // rule in the first place. A near-miss fixture proves nothing and reads as
+  // though it does.
+  assert.deepStrictEqual(counterexampleReasons("const x = prefetch(url);"), []);
+  assert.deepStrictEqual(counterexampleReasons("const x = myFetch(url);"), []);
+  assert.deepStrictEqual(counterexampleReasons("resetTimeout(handle);"), []);
+  assert.deepStrictEqual(counterexampleReasons("const d = new Date(0);"), []);
+});
+
+check("counterexampleReasons refuses a counterexample that is really a rewrite", () => {
+  const huge = "const x = 1;\n".repeat(2000);
+  assert.match(counterexampleReasons(huge).join(), /longer than/);
+});
+
+const ceOk = (n) => Array.from({ length: n }, () => ({ exitCode: 0, output: "" }));
+const ceBad = (n, out) => Array.from({ length: n }, () => ({ exitCode: 1, output: out }));
+
+check("differentialVerdict establishes a real regression", () => {
+  const r = differentialVerdict({
+    oldRuns: ceOk(3),
+    newRuns: ceBad(3, "TypeError: cb is not a function"),
+    expectedFailure: "cb is not a function",
+  });
+  assert.strictEqual(r.established, true);
+});
+
+// The rule that stops the reviewer refuting everything: a test that fails on
+// the original code has found its own bug, not a regression.
+check("differentialVerdict rejects a counterexample that never passed on the old tree", () => {
+  const r = differentialVerdict({
+    oldRuns: ceBad(3, "boom"),
+    newRuns: ceBad(3, "boom"),
+    expectedFailure: "boom",
+  });
+  assert.strictEqual(r.established, false);
+  assert.match(r.why, /code that worked/);
+});
+
+check("differentialVerdict rejects a patch failure that is only sometimes", () => {
+  const r = differentialVerdict({
+    oldRuns: ceOk(3),
+    newRuns: [...ceBad(2, "boom"), { exitCode: 0, output: "" }],
+    expectedFailure: "boom",
+  });
+  assert.strictEqual(r.established, false);
+  assert.match(r.why, /only 2 of 3/);
+});
+
+// Without this the reviewer collects a refutation from a crash it caused
+// itself: a typo fails on both trees, and "it failed" would have been enough.
+check("differentialVerdict requires the failure the reviewer predicted", () => {
+  const r = differentialVerdict({
+    oldRuns: ceOk(3),
+    newRuns: ceBad(3, "SyntaxError: unexpected token"),
+    expectedFailure: "cb is not a function",
+  });
+  assert.strictEqual(r.established, false);
+  assert.match(r.why, /predicted error/);
+});
+
+check("differentialVerdict says 'could not tell' rather than 'fine' when runs are missing", () => {
+  assert.strictEqual(
+    differentialVerdict({ oldRuns: ceOk(1), newRuns: ceBad(3, "x"), expectedFailure: "x" })
+      .established,
+    null
+  );
+  assert.strictEqual(differentialVerdict({}).established, null);
+});
+
+check("differentialVerdict will not read a missing exit code as a pass", () => {
+  const r = differentialVerdict({
+    oldRuns: [...ceOk(2), { exitCode: null, output: "" }],
+    newRuns: ceBad(3, "x"),
+    expectedFailure: "x",
+  });
+  assert.strictEqual(r.established, null);
+  assert.match(r.why, /exit code/);
+});
+
+check("differentialVerdict will not establish a claim with nothing to look for", () => {
+  const r = differentialVerdict({ oldRuns: ceOk(3), newRuns: ceBad(3, "x"), expectedFailure: "" });
+  assert.strictEqual(r.established, null);
+});
+
+check("applyCounterexample raises a proven accusation to refuted", () => {
+  const r = applyCounterexample({ rank: 1, verdict: { established: true, why: "w" } });
+  assert.strictEqual(r.rank, 2);
+});
+
+// The whole point of the layer: an accusation that could not support itself
+// stops being a block. It does NOT become a blessing - rank never goes to 0.
+check("applyCounterexample lowers an accusation that did not hold, but not to zero", () => {
+  const r = applyCounterexample({ rank: 2, verdict: { established: false, why: "w" } });
+  assert.strictEqual(r.rank, 1);
+});
+
+check("applyCounterexample lowers an accusation whose code we refused to run", () => {
+  const r = applyCounterexample({ rank: 2, verdict: null, screenReasons: ["calls fetch()"] });
+  assert.strictEqual(r.rank, 1);
+  assert.match(r.note, /not run/);
+});
+
+check("applyCounterexample never invents severity out of an inconclusive run", () => {
+  const r = applyCounterexample({ rank: 0, verdict: { established: null, why: "w" } });
+  assert.strictEqual(r.rank, 0);
 });
 
 console.log("\n" + pass + " checks passed.\n");
