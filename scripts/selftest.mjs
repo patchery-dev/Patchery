@@ -2565,6 +2565,49 @@ check("decideNodeVersion falls back to engines.node when there is no CI to read"
 //
 // A rewriting script is the quieter of the two failures: it makes "the tests
 // pass" mean nothing, because the run edited the thing judging it.
+// isHarnessConfig recognised .mocharc.json and settingValues could not read a
+// single key inside it, because the pattern went from the key straight to the
+// colon and JSON puts a closing quote in between. Measured 2026-09-08: narrowing
+// `spec` in .mocharc.json returned null while the identical narrowing in
+// .mocharc.js was refused.
+//
+// Worse than an unprotected file. An unprotected file is a gap someone can see;
+// this looked like protection and was not, and .mocharc.json is the form the
+// mocha docs show first.
+check("a judged setting is read in JSON syntax as well as JS", () => {
+  assert.ok(harnessConfigReason('{"spec":"test/**/*.js"}', '{"spec":"test/only.js"}'));
+  assert.ok(harnessConfigReason('module.exports={spec:"test/**/*.js"}', 'module.exports={spec:"test/only.js"}'));
+  assert.ok(harnessConfigReason('{"testMatch":["**/*.test.js"]}', '{"testMatch":["**/one.test.js"]}'));
+  assert.ok(harnessConfigReason('{"spec":"test/**"}', '{"spec":"test/**","bail":true}'));
+});
+
+// The other half of the same rule: changing how a dependency is COMPILED is a
+// legitimate migration and must still pass. A fix that refuses everything is not
+// a fix.
+check("a legitimate transform change is still allowed in JSON", () => {
+  assert.strictEqual(harnessConfigReason('{"spec":"test/**"}', '{"spec":"test/**"}'), null);
+  assert.strictEqual(
+    harnessConfigReason('{"transform":{"^.+\\.js$":"babel-jest"}}', '{"transform":{"^.+\\.m?js$":"babel-jest"}}'),
+    null
+  );
+});
+
+// scriptsTamperReason stops `"test": "jest"` becoming `"test": "echo ok"`, and
+// has nothing to say about `"test": "make test"` - where the definition of
+// passing lives in a Makefile no rule covered. Refused by name because these
+// files are never a call site of a JavaScript dependency migration.
+check("the task runner a test script delegates to is protected", () => {
+  for (const p of ["Makefile", "makefile", "GNUmakefile", "sub/Makefile", "Taskfile.yml", "justfile", "Rakefile"]) {
+    assert.match(String(protectedReason(p)), /task runner file/, p + " is editable");
+  }
+});
+
+check("a source file that merely mentions a task runner is not protected", () => {
+  for (const p of ["lib/utils.js", "src/makefile-parser.js", "docs/Makefile.md"]) {
+    assert.strictEqual(protectedReason(p), null, p + " was refused");
+  }
+});
+
 check("a snapshot-rewriting test script never enters the pool", () => {
   for (const s of [
     "jest --updateSnapshot",

@@ -41,6 +41,21 @@ export function protectedReason(relPath) {
   if (/(^|\/)__snapshots__\//.test(p)) return "inside a snapshot directory";
   if (/(^|\/)\.github\//.test(p)) return "CI configuration";
   if (/(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(p)) return "lockfile";
+  // The task runner a test script delegates to.
+  //
+  // scriptsTamperReason watches `package.json` scripts, so `"test": "jest"`
+  // cannot become `"test": "echo ok"`. It has nothing to say when the script is
+  // `"test": "make test"` - the definition of passing then lives in a Makefile
+  // that no rule here covered, and rewriting the recipe is the same evasion one
+  // file further out.
+  //
+  // Refused by name rather than by reading the test command, because these files
+  // are never a call site of a JavaScript dependency migration. Nothing is lost
+  // by declining to edit them and the delegation hole closes whether or not we
+  // managed to parse where the command went.
+  if (/(^|\/)(gnumakefile|makefile|taskfile\.ya?ml|justfile|rakefile|magefile\.go)$/.test(p)) {
+    return "task runner file - the test command delegates to it";
+  }
   // Setup files stay refused, and the line between them and configuration is not
   // cosmetic. A config file declares how things are built; a setup file runs
   // arbitrary code before every test and can stub any module in the process. The
@@ -125,7 +140,17 @@ const JUDGE_SETTINGS = [
  */
 function settingValues(text, key) {
   const src = withoutComments(String(text || ""));
-  const re = new RegExp("(?:^|[^A-Za-z])(" + key + ")\\s*[:=]\\s*", "gi");
+  // The closing quote is the whole bug. `spec:` and `spec =` were handled and
+  // `"spec":` was not, because the pattern went straight from the key to the
+  // colon - so every JSON-syntax config was recognised as a harness file by
+  // isHarnessConfig and then judged by nothing. Measured 2026-09-08: narrowing
+  // `spec` in .mocharc.json returned null while the same narrowing in
+  // .mocharc.js was refused.
+  //
+  // That is worse than an unprotected file. An unprotected file is a gap someone
+  // can see; this looked like protection and was not, and .mocharc.json is the
+  // form the mocha docs show first.
+  const re = new RegExp("(?:^|[^A-Za-z])[\"']?(" + key + ")[\"']?\\s*[:=]\\s*", "gi");
   const out = [];
   for (const m of src.matchAll(re)) {
     let i = m.index + m[0].length;
