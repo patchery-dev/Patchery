@@ -4390,6 +4390,48 @@ check("a new pool compared against an old one shows no bogus difference", () => 
   assert.match(line, /\| 1 \| - \| - \|/, "1 minus 'not measured' is not +1");
 });
 
+// `mode: scan` is a second behaviour inside a published action, and the danger
+// is not that scan is wrong - it is that adding it changes what happens to
+// everyone already running the old one. These checks read action.yml itself and
+// pin the compatibility rather than trusting that it was preserved.
+//
+// The typo case is the one that would hurt most quietly: every fixing step tests
+// `mode != 'scan'`, so "sacn" would skip the scan and run the full model pass on
+// a repository whose owner asked for a read-only report.
+console.log("\naction.yml - adding scan mode must not move anyone already on fix");
+
+// Normalised for the same reason check-claims.mjs does it: the file is CRLF on a
+// Windows checkout, and every anchored pattern below would miss without ever
+// saying why.
+const actionSrc = fs.readFileSync(new URL("../action.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+
+check("mode defaults to fix, so an existing workflow behaves exactly as before", () => {
+  const block = /^ {2}mode:\n([\s\S]*?)(?=^ {2}\S)/m.exec(actionSrc);
+  assert.ok(block, "action.yml declares no mode input");
+  assert.match(block[1], /^ {4}default: "fix"$/m);
+  assert.match(block[1], /^ {4}required: false$/m);
+});
+
+check("every step that spends money or writes is off in scan mode", () => {
+  // Split on step boundaries and read each one's name and condition together, so
+  // a step added later without a condition fails here rather than in a customer's
+  // scheduled run.
+  const steps = actionSrc
+    .split(/^ {4}- name: /m)
+    .slice(1)
+    .map((s) => ({ name: s.split("\n")[0].trim(), cond: (/^ {6}if: (.+)$/m.exec(s) || [])[1] || "" }));
+  const spends = steps.filter((s) => /Install agent dependencies|Run the agent/.test(s.name));
+  assert.strictEqual(spends.length, 2, "the two steps that install the SDK and call the model must both exist");
+  for (const s of spends) assert.strictEqual(s.cond, "inputs.mode != 'scan'", s.name + " runs in scan mode");
+  const scan = steps.find((s) => /Report the upgrades/.test(s.name));
+  assert.strictEqual(scan?.cond, "inputs.mode == 'scan'", "the scan step must not run in fix mode");
+});
+
+check("an unrecognised mode stops the run instead of falling through to fix", () => {
+  assert.match(actionSrc, /case "\$IN_MODE" in\n\s*fix\|scan\) ;;\n\s*\*\)/);
+  assert.match(actionSrc, /::error::mode must be 'fix' or 'scan'/);
+});
+
 // The sentinel's first half: what a repository has not upgraded yet, read from
 // its own package.json rather than over the API. The rule these checks exist to
 // hold is that every declared dependency leaves in exactly one list - a name

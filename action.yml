@@ -37,6 +37,15 @@ inputs:
     description: "Free-form extra instructions passed to the agent."
     required: false
     default: ""
+  mode:
+    description: >-
+      "fix" (the default) runs the whole thing: reproduce the break, migrate the
+      call sites, verify against your tests. "scan" only reports which of your
+      dependencies have shipped a new major - it runs no model, changes no file,
+      and opens no pull request. Use "scan" on a schedule to find out what is
+      waiting before anyone upgrades.
+    required: false
+    default: "fix"
   require-failing-baseline:
     description: >-
       When true, the agent is not run at all if the tests already pass. Prevents
@@ -267,6 +276,22 @@ inputs:
     default: ""
 
 outputs:
+  # Empty in fix mode, and that is not the same as zero: a workflow that reads
+  # pending-count without checking the mode would see "" and must not print it as
+  # "0 upgrades waiting". Same rule the census follows for a suite it could not
+  # count.
+  pending-count:
+    description: >-
+      mode=scan only. How many dependencies have shipped a new major. Says
+      nothing about whether any of them breaks this project - nothing in a scan
+      runs the tests.
+    value: ${{ steps.scan.outputs.pending-count }}
+  pending:
+    description: >-
+      mode=scan only. The full scan as JSON: every dependency either a candidate
+      or skipped with a reason, so a name that is missing from both is a bug and
+      not a clean result.
+    value: ${{ steps.scan.outputs.pending }}
   outcome:
     description: >-
       How the run ended: 'fixed', 'nothing-to-do', 'flaky', 'inconclusive',
@@ -361,6 +386,18 @@ runs:
       id: node
       shell: bash
       run: |
+        # A mode we do not recognise must stop here, not fall through. Every
+        # later step tests `mode != 'scan'`, so a typo - "sacn" - would quietly
+        # run the full fixing pass on a repository whose owner asked for a
+        # read-only report. Refusing an unknown value is the same fail-closed
+        # rule verify-mode already follows.
+        case "$IN_MODE" in
+          fix|scan) ;;
+          *)
+            echo "::error::mode must be 'fix' or 'scan', got '$IN_MODE'."
+            exit 1
+            ;;
+        esac
         OURS="$(command -v node)"
         echo "ours=$OURS" >> "$GITHUB_OUTPUT"
         echo "this action runs on $(node --version)"
@@ -373,13 +410,42 @@ runs:
         WORKSPACE: ${{ github.workspace }}
         IN_NODE_VERSION: ${{ inputs.node-version }}
         IN_TARGET_DIR: ${{ inputs.target-dir }}
+        IN_MODE: ${{ inputs.mode }}
 
     - name: Set up Node ${{ steps.node.outputs.version }}
       uses: actions/setup-node@v7
       with:
         node-version: ${{ steps.node.outputs.version }}
 
+    # Deliberately before the SDK install: a scan calls no model, so it must not
+    # pay for one. It also writes nothing and opens nothing - the report is the
+    # entire output, because the answer to "what is waiting" is not a pull
+    # request and a repository that opened one per pending major would be noise
+    # a week after it was installed.
+    - name: Report the upgrades this repository has not taken
+      id: scan
+      if: inputs.mode == 'scan'
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        set -o pipefail
+        TARGET="${IN_TARGET_DIR:-.}"
+        "$OURS_NODE" "$ACTION_PATH/scripts/scan-deps.mjs" --json "$TARGET/package.json" > /tmp/scan.json
+        "$OURS_NODE" "$ACTION_PATH/scripts/scan-deps.mjs" "$TARGET/package.json" | tee -a "$GITHUB_STEP_SUMMARY"
+        COUNT=$("$OURS_NODE" -e 'const s=require("/tmp/scan.json");process.stdout.write(String(s.candidates.length))')
+        echo "pending-count=$COUNT" >> "$GITHUB_OUTPUT"
+        {
+          echo "pending<<PATCHERY_EOF"
+          cat /tmp/scan.json
+          echo "PATCHERY_EOF"
+        } >> "$GITHUB_OUTPUT"
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        OURS_NODE: ${{ steps.node.outputs.ours }}
+        IN_TARGET_DIR: ${{ inputs.target-dir }}
+
     - name: Install agent dependencies
+      if: inputs.mode != 'scan'
       shell: bash
       run: |
         # Installed with the runner's npm, not the project's.
@@ -403,6 +469,7 @@ runs:
 
     - name: Run the agent and verify
       id: run
+      if: inputs.mode != 'scan'
       shell: bash
       working-directory: ${{ github.workspace }}
       env:

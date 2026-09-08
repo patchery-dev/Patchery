@@ -1,0 +1,63 @@
+# Save this in your own repository as .github/workflows/patchery-sentinel.yml
+#
+# What it does: once a week, without being asked, it reports which of your
+# dependencies have shipped a new major version - the upgrades waiting for the
+# day someone runs `npm update`.
+#
+# What it does NOT do, and this matters: it does not tell you whether any of
+# them breaks you. Nothing here runs your tests, calls a model, changes a file,
+# or opens a pull request. A new major is a warning from the package's authors,
+# not a fault in your code - the last measurement across 55 repositories found
+# 18 of 66 pending majors turned a green suite red, so most of what this reports
+# will upgrade without incident.
+#
+# It needs no secrets. `mode: scan` never reaches a model, so there is nothing
+# to authenticate and nothing to spend.
+name: Patchery sentinel
+
+on:
+  schedule:
+    # Monday morning, so the report is waiting when the week starts rather than
+    # arriving in the middle of one.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: scan
+        uses: patchery-dev/Patchery@v0.2
+        with:
+          mode: scan
+          # The directory whose package.json to read. In a monorepo, point this
+          # at the package you actually ship.
+          target-dir: "."
+
+      # The report is already in the job summary. This step exists so the count
+      # is visible in the workflow list without opening the run, and so you have
+      # somewhere obvious to hang an alert of your own.
+      - name: Say it in one line
+        shell: bash
+        run: |
+          echo "::notice::$PENDING dependency major(s) waiting. Whether any of them breaks this repository is not known - nothing here ran the tests."
+        env:
+          PENDING: ${{ steps.scan.outputs.pending-count }}
+
+# Next step, once you have seen a report you believe:
+#
+# For any package this listed, run the ordinary Patchery workflow with that
+# package name. That one DOES install the new major, run your tests, and - if
+# the upgrade breaks you - migrate the call sites and prove the fix against
+# your own suite. The sentinel tells you what is waiting; the fix run tells you
+# what it costs.
+#
+# Doing that automatically for every pending major, in one scheduled sweep, is
+# the obvious next version of this file and it is deliberately not shipped here
+# yet: it has not been run end to end on a repository we do not own, and an
+# example workflow that has never worked is worse than no example.
