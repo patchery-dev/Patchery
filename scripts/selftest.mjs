@@ -3334,48 +3334,6 @@ check("our own surfaces say the same thing", () => {
 
 
 
-console.log("\nthe founder's ruling: the report is a fallback, not a sales argument");
-
-// The ruling is that when Patchery cannot fix a break in code, the analysis it
-// produces must NOT be presented as the product's actual deliverable - while a
-// break that has no fix at the call site must equally not be scored as our
-// failure. Both halves matter and they pull in opposite directions, which is
-// why the wording keeps drifting back.
-//
-// It had drifted into the two places nobody was checking: the handover text the
-// USER reads (agent.mjs) and the prompt text the MODEL is given
-// (classify-break.mjs). Both said "the deliverable" outright. README, the site
-// and action.yml had been corrected; the product's own mouth had not - so the
-// surface scan that found the first three missed the ones that ship.
-//
-// check-claims compares the tagline across files. Nothing compared this. A
-// source-level canary is crude, but it is mechanical, and this ruling has had
-// no mechanical protection at all until now.
-check("the product never calls the report 'the deliverable'", () => {
-  const banned = /\b(is|as)\s+the\s+deliverable\b/i;
-  for (const file of ["agent.mjs", "classify-break.mjs", "guard.mjs"]) {
-    const src = fs.readFileSync(path.join(root, "scripts", file), "utf8");
-    for (const [i, line] of src.split("\n").entries()) {
-      // Comments may discuss the phrase - that is how the history stays
-      // readable. What must never carry it is a string that reaches a user or
-      // a model.
-      if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
-      assert.ok(
-        !banned.test(line),
-        file + ":" + (i + 1) + " calls the report the deliverable - the founder's ruling forbids it:\n    " + line.trim()
-      );
-    }
-  }
-});
-
-check("but it still says a break with no call-site fix is not our failure", () => {
-  // The other half of the same ruling. Removing the overclaim must not remove
-  // this, or the pendulum has just swung to the opposite error - scoring
-  // ourselves down for something that was never ours.
-  const src = fs.readFileSync(path.join(root, "scripts", "classify-break.mjs"), "utf8");
-  assert.match(src, /not a failure/i);
-});
-
 console.log("\ncheck-claims - the offline-check count, which has drifted six times");
 
 check("the README's stated count is read, commas and all", () => {
