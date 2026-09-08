@@ -26,6 +26,7 @@ import {
 } from "./node-version.mjs";
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
+import { pendingMajors, renderScan } from "./scan-deps.mjs";
 import { poolShape, renderShape } from "./pool-summary.mjs";
 import { benchmarkOutcome, parseArgs, renderOutcome } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
@@ -4387,6 +4388,88 @@ check("a new pool compared against an old one shows no bogus difference", () => 
   const text = renderShape(now, poolShape([{ repo: "a/b" }]));
   const line = text.split("\n").find((l) => l.includes("in a workspace"));
   assert.match(line, /\| 1 \| - \| - \|/, "1 minus 'not measured' is not +1");
+});
+
+// The sentinel's first half: what a repository has not upgraded yet, read from
+// its own package.json rather than over the API. The rule these checks exist to
+// hold is that every declared dependency leaves in exactly one list - a name
+// that silently vanishes is the "0 results" failure this project has already
+// paid for once.
+console.log("\nscan-deps - the upgrades this repository has not taken");
+
+check("a dependency with a newer major becomes a candidate", () => {
+  const { candidates } = pendingMajors(
+    { dependencies: { "content-type": "^2.0.0" } },
+    { "content-type": "3.0.0" }
+  );
+  assert.strictEqual(candidates.length, 1);
+  assert.strictEqual(candidates[0].package, "content-type");
+  assert.strictEqual(candidates[0].from, 2);
+  assert.strictEqual(candidates[0].to, 3);
+  assert.strictEqual(candidates[0]["breaking-version"], "3");
+  assert.strictEqual(candidates[0].runtime, true);
+});
+
+check("a dependency already on the newest major is not a candidate", () => {
+  const r = pendingMajors({ dependencies: { express: "^5.1.0" } }, { express: "5.2.1" });
+  assert.strictEqual(r.candidates.length, 0);
+  assert.match(r.skipped[0].why, /already on the newest major/);
+});
+
+check("every declared dependency leaves in exactly one list", () => {
+  const pkg = {
+    dependencies: { a: "^1.0.0", b: "workspace:*" },
+    devDependencies: { jest: "^29.0.0", c: "^2.0.0" },
+  };
+  const r = pendingMajors(pkg, { a: "2.0.0", c: null });
+  const seen = [...r.candidates.map((c) => c.package), ...r.skipped.map((s) => s.name)].sort();
+  assert.deepStrictEqual(seen, ["a", "b", "c", "jest"]);
+});
+
+// Each of these would otherwise be reported to a customer as an upgrade to make.
+check("an unreadable range is skipped by name, never guessed", () => {
+  const r = pendingMajors({ dependencies: { x: "workspace:*", y: "github:a/b" } }, { x: "9.0.0", y: "9.0.0" });
+  assert.strictEqual(r.candidates.length, 0);
+  assert.strictEqual(r.skipped.length, 2);
+  for (const s of r.skipped) assert.match(s.why, /cannot read the version range/);
+});
+
+// A package npm could not be asked about is NOT the same as one with no new
+// major, and merging them would let a broken network read as a clean report.
+check("a package npm did not answer for is skipped, not cleared", () => {
+  const r = pendingMajors({ dependencies: { a: "^1.0.0" } }, { a: null });
+  assert.strictEqual(r.candidates.length, 0);
+  assert.match(r.skipped[0].why, /npm did not answer/);
+});
+
+check("test and build tooling stays out, as it does in find-bumps", () => {
+  const r = pendingMajors(
+    { devDependencies: { jest: "^29.0.0", eslint: "^8.0.0", "@types/node": "^20.0.0" } },
+    { jest: "30.0.0", eslint: "9.0.0", "@types/node": "24.0.0" }
+  );
+  assert.strictEqual(r.candidates.length, 0);
+  assert.strictEqual(r.skipped.length, 3);
+});
+
+check("a devDependency is a candidate but is marked as one", () => {
+  const r = pendingMajors({ devDependencies: { ejs: "^3.0.0" } }, { ejs: "6.0.1" });
+  assert.strictEqual(r.candidates.length, 1);
+  assert.strictEqual(r.candidates[0].runtime, false);
+});
+
+// The rendered text is what a person reads, and "6 upgrades pending" must not
+// arrive sounding like "6 problems": the last sweep across 55 repositories found
+// most pending majors upgraded without turning anything red.
+check("the report says the tests have not been run", () => {
+  const text = renderScan(pendingMajors({ dependencies: { a: "^1.0.0" } }, { a: "2.0.0" }));
+  assert.match(text, /nothing here ran your tests/i);
+  assert.ok(!/break/i.test(text.split("\n")[0]), "the headline must not claim a break");
+});
+
+check("nothing pending says so, and says how many it checked", () => {
+  const text = renderScan(pendingMajors({ dependencies: { a: "^1.0.0" } }, { a: "1.2.0" }));
+  assert.match(text, /No dependency here has shipped a new major/);
+  assert.match(text, /1 checked and skipped/);
 });
 
 // The founder's ruling, pinned so it survives the next rewrite of this text:
