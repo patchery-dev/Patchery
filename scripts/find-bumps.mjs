@@ -87,8 +87,22 @@ export function rangeMajor(range) {
 export function testScriptUsable(script) {
   if (!script) return { ok: false, why: "no test script" };
   if (/no test specified|exit 1\s*$/.test(script)) return { ok: false, why: "placeholder test script" };
-  if (/(^|\s)(-w|--watch)(\s|$)/.test(script)) return { ok: false, why: "test script watches: " + script };
-  if (/(^|\s)(-u|--update-snapshot|--fix)(\s|$)/.test(script)) {
+  // Both lists were written from the flags that had already bitten, and the
+  // spelling that bit is not the only spelling. Measured 2026-09-08 against this
+  // function: `jest -u` was refused while `jest --updateSnapshot` was accepted,
+  // and `jest --watch` refused while `jest --watchAll` was accepted - the long
+  // forms are the ones people actually write in a package.json.
+  //
+  // A watcher never exits and burns the job's whole timeout. A script that
+  // rewrites files is worse and quieter: it makes "the tests pass" mean nothing,
+  // because the run edited the thing that was judging it. Either one entering the
+  // pool costs a benchmark row that looks real and measures nothing.
+  //
+  // Matched as a prefix on purpose - `--watch`, `--watchAll`, `--watch-files` and
+  // `--watch=true` are the same decision - so a flag spelled a fourth way is
+  // caught without a sixth edit to this line.
+  if (/(^|\s)(-w|--watch)(\S*)(\s|$)/.test(script)) return { ok: false, why: "test script watches: " + script };
+  if (/(^|\s)(-u|--update|--updateSnapshot|--snapshot-update|--write|--fix)(\S*)(\s|$)/i.test(script)) {
     return { ok: false, why: "test script rewrites files: " + script };
   }
 

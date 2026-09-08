@@ -2557,6 +2557,53 @@ check("decideNodeVersion falls back to engines.node when there is no CI to read"
 // Suites that need something the container does not have. Every string here is
 // the real `scripts.test` of a repository whose verdict came back "already
 // failing at this commit" when it was in fact perfectly healthy.
+// Both lists were written from the flags that had already bitten, and the
+// spelling that bit is not the only spelling. Measured 2026-09-08: `jest -u` was
+// refused while `jest --updateSnapshot` was accepted, and `--watch` refused while
+// `--watchAll` was accepted - the long forms being the ones people actually write
+// in a package.json.
+//
+// A rewriting script is the quieter of the two failures: it makes "the tests
+// pass" mean nothing, because the run edited the thing judging it.
+check("a snapshot-rewriting test script never enters the pool", () => {
+  for (const s of [
+    "jest --updateSnapshot",
+    "jest -u",
+    "jest --update-snapshot",
+    "vitest --update",
+    "vitest -u",
+    "prettier --write .",
+    "eslint --fix .",
+  ]) {
+    const r = testScriptUsable(s);
+    assert.strictEqual(r.ok, false, s + " was accepted");
+    assert.match(r.why, /rewrites files/);
+  }
+});
+
+check("a watching test script never enters the pool", () => {
+  for (const s of ["jest --watch", "jest --watchAll", "mocha --watch-files test", "jest --watch=true"]) {
+    const r = testScriptUsable(s);
+    assert.strictEqual(r.ok, false, s + " was accepted");
+    assert.match(r.why, /watches/);
+  }
+});
+
+check("an ordinary test script still passes", () => {
+  for (const s of ["mocha test/", "jest --ci --coverage", "vitest run", "npm run build && mocha"]) {
+    assert.strictEqual(testScriptUsable(s).ok, true, s + " was refused");
+  }
+});
+
+// The cost of matching these as prefixes, recorded rather than hidden: a flag
+// that spells out NOT doing the thing is refused too. The bias is deliberate and
+// the same one isProductWorkspace takes - excluding a candidate costs one row out
+// of 133, while admitting a script that rewrites its own judge costs a benchmark
+// row that looks real and measures nothing.
+check("the prefix match over-excludes, and that is the chosen direction", () => {
+  assert.strictEqual(testScriptUsable("jest --updateSnapshotIfNeeded=false").ok, false);
+});
+
 check("testScriptUsable rejects a suite that needs a browser", () => {
   for (const script of [
     "node run-tests.js && phantomjs tests/browser.js",
