@@ -94,7 +94,10 @@ const KINDS = [
       "recommendation instead: name which call sites are affected, why an async conversion would change " +
       "the project's public behaviour, and which of the two decisions would unblock it - raising the " +
       "project's minimum runtime, or replacing the dependency - with what you checked to be sure. " +
-      "That report is the deliverable; it is not a failure to produce it. " +
+      "Producing that report is the right outcome here and it is not a failure - the break has no " +
+      "fix at the call site, which is not something this tool got wrong. It is also not the goal: " +
+      "it is what is left when no fix exists, not the thing you were sent to do. Do not present it " +
+      "as an achievement. " +
       "Do NOT copy the dependency's source into this project, do not re-implement it, and do not pin " +
       "the old version. Those three are the same evasion in different clothes, and each hides a " +
       "decision that belongs to whoever maintains this repository.",

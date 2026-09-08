@@ -965,7 +965,7 @@ if (changed.length === 0) {
   // unblock it. The banner over all of that read "Patchery found no change it
   // could make ... Nothing was delivered because nothing could be proved."
   //
-  // That is the deliverable the README, the site and action.yml all promise,
+  // That is the fallback the README, the site and action.yml all describe,
   // described as an absence. Worse, it is ambiguous in the direction that costs
   // most: a reader cannot tell whether the tool found nothing or was not able to
   // do it - and "not able to do it" is the reading people default to.
@@ -1022,7 +1022,8 @@ if (changed.length === 0) {
     isVerdict
       ? "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) and shipped no patch, " +
         "because on this break a patch would be the wrong deliverable - it would encode a decision " +
-        "that is yours, in a place you would not look for it. The analysis above is the deliverable. " +
+        "that is yours, in a place you would not look for it. Where no fix exists at the call site, " +
+        "the analysis above is what is left - a fallback, not what Patchery is for. " +
         "Unlike a fix, none of it has been machine-checked: read it as a diagnosis and check its claims."
       : "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) and changed none. " +
         "Nothing was delivered because nothing could be proved."
