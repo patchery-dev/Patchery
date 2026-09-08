@@ -1,0 +1,73 @@
+# Runs the PUBLISHED action against a repository we do not own, in scan mode.
+#
+# scan-deps.mjs has unit tests and has been run by hand. Neither of those
+# exercises the thing a customer actually installs: the composite action at a
+# tag, its step conditions, and its outputs. This does, and it is deliberately
+# pinned to a tag rather than to this tree - a smoke test of `./` would pass on
+# a change that never reached the tag, which is exactly how v0.1 came to ship
+# instructions pointing at itself a step behind.
+#
+# Free: scan mode installs no SDK and calls no model, so this needs no secrets.
+name: Patchery (scan smoke test)
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Repository to scan, owner/name"
+        required: false
+        default: "expressjs/express"
+      ref:
+        description: "Branch, tag or commit (empty = default branch)"
+        required: false
+        default: ""
+      version:
+        description: "Which published Patchery to run"
+        required: false
+        default: "v0.2"
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      # The target lands in the workspace root, because that is where a customer's
+      # own code sits when they install this.
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.ref }}
+
+      - name: Scan with the published action
+        id: scan
+        uses: patchery-dev/Patchery@v0.2
+        with:
+          mode: scan
+          target-dir: "."
+
+      - name: Show what the action returned
+        shell: bash
+        run: |
+          echo "pending-count: $COUNT"
+          echo "$PENDING"
+        env:
+          COUNT: ${{ steps.scan.outputs.pending-count }}
+          PENDING: ${{ steps.scan.outputs.pending }}
+
+      # The two outputs a fix run produces must be empty here. If either is set,
+      # a step that should have been off in scan mode ran anyway - the failure
+      # this mode's whole design is meant to prevent, and the one a unit test
+      # over action.yml cannot see.
+      - name: Nothing that costs money may have run
+        shell: bash
+        run: |
+          if [ -n "$OUTCOME" ] || [ -n "$CHANGED" ]; then
+            echo "::error::scan mode produced fix-mode outputs (outcome='$OUTCOME' changed='$CHANGED') - a step ran that should have been skipped."
+            exit 1
+          fi
+          echo "scan mode stayed read-only: no outcome, no changed"
+        env:
+          OUTCOME: ${{ steps.scan.outputs.outcome }}
+          CHANGED: ${{ steps.scan.outputs.changed }}
