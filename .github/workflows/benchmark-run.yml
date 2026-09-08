@@ -409,7 +409,18 @@ jobs:
           IN_PACKAGE: ${{ inputs.package }}
           IN_VERSION: ${{ inputs.breaking-version }}
           INSTALLED: ${{ steps.bump.outputs.installed }}
-          IN_MODEL: ${{ inputs.model }}
+          # The model that ANSWERED, not the one that was asked for. Line 339
+          # already resolves the fallback; this line took the raw input, and the
+          # input defaults to empty - so every row of benchmark #10 recorded
+          # model: "" and the table printed "Fixer: the repository default".
+          #
+          # That is not a cosmetic gap. It made 98ff3ea pointless: the model was
+          # moved out of Secrets specifically so a run could prove which model
+          # produced its result, and the proof was never written down. It also
+          # makes two runs of the same case incomparable - express + content-type
+          # was FIXED once and NO-CHANGE the next time, and the most likely
+          # explanation is a different model, which we cannot check.
+          IN_MODEL: ${{ inputs.model != '' && inputs.model || vars.ANTHROPIC_MODEL }}
 
       - name: Keep everything this run produced
         if: always()
