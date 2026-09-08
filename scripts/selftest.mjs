@@ -2308,6 +2308,42 @@ check("decideNodeVersion steps over an unusable .nvmrc", () => {
 // The break classifier. Its whole reason to exist is that Node states the kind
 // of failure in its own error code, and the agent was spending turns
 // rediscovering what the first line of the log already said.
+// KINDS is precedence-ordered and the first kind matching ANY line wins, so
+// `engine` sitting above `not-a-function` meant one npm warning anywhere in the
+// log rewrote a fixable API break as "no code change fixes this". Measured on
+// 2026-09-08: identical TypeError, `not-a-function` without the warning and
+// `engine` with it.
+//
+// It matters because of the direction. `engine` carries inScope: false, the only
+// gate that opens NEEDS-DECISION, and that outcome does not count against us -
+// so a warning was moving cases out of the failure column.
+check("a package manager warning does not outrank the actual failure", () => {
+  const withWarning =
+    "npm warn EBADENGINE Unsupported engine {node:'>=22'}\n  TypeError: ct.parse is not a function";
+  const withoutWarning = "  TypeError: ct.parse is not a function";
+  assert.strictEqual(classifyFailure(withWarning).kind, "not-a-function");
+  assert.strictEqual(classifyFailure(withoutWarning).kind, "not-a-function");
+  // yarn words it differently and must be read the same way.
+  assert.strictEqual(
+    classifyFailure('warning pkg@1: The engine "node" appears to be invalid.\n  TypeError: x is not a function').kind,
+    "not-a-function"
+  );
+});
+
+// Demoted, not deleted. Sometimes the warning really is the only clue - a project
+// on an old Node installs a package needing a new one and the visible failure is
+// downstream and strange - so a warning still decides when nothing else spoke.
+check("a warning still classifies when the log says nothing else", () => {
+  const only = "npm warn EBADENGINE Unsupported engine {node:'>=22'}\nnpm warn deprecated foo@1";
+  assert.strictEqual(classifyFailure(only).kind, "engine");
+  assert.strictEqual(classifyFailure(only).inScope, false);
+});
+
+check("a real engine error is still an engine break", () => {
+  assert.strictEqual(classifyFailure("npm error code EBADENGINE\nnpm error Unsupported engine").kind, "engine");
+  assert.strictEqual(classifyFailure("Error: Unsupported engine: requires Node 22").kind, "engine");
+});
+
 check("classifyFailure recognises the ESM boundary, from express's real output", () => {
   const real =
     " Exception during run: Error [ERR_REQUIRE_ESM]: require() of ES Module " +

@@ -187,11 +187,48 @@ const KINDS = [
  * the agent no briefing at all in that case, which is exactly where it was
  * before this existed - never worse.
  */
+/**
+ * A line the package manager printed as a warning.
+ *
+ * npm prints `npm warn EBADENGINE Unsupported engine {...}` and carries on
+ * installing; yarn prints `warning pkg@1: The engine "node" appears to be
+ * invalid`. Neither is why a test suite went red - it is a note beside a run
+ * that continued.
+ *
+ * Covers npm, yarn and pnpm by looking for the word rather than the tool, which
+ * is the same trade the rest of this file makes: a line that legitimately
+ * contains "warning" inside an error message is read as a warning here, and the
+ * cost of that is bounded by where it is used - see classifyFailure.
+ */
+const IS_WARNING = /(^|\s)(npm\s+)?(warn|warning)\b/i;
+
 export function classifyFailure(output) {
   const text = stripAnsi(output);
-  for (const k of KINDS) {
-    const line = text.split(/\r?\n/).find((l) => k.test.test(l));
-    if (line) {
+  const lines = text.split(/\r?\n/);
+
+  // Two passes, and the order is the fix for a measured bug.
+  //
+  // KINDS is precedence-ordered and the first kind that matches ANY line wins.
+  // `engine` sits above `not-a-function`, so a single `npm warn EBADENGINE`
+  // anywhere in the log turned a real, fixable API break into "no code change
+  // fixes this". Measured: the same TypeError classified as `not-a-function`
+  // without the warning and as `engine` with it.
+  //
+  // That direction is the one this project cares about. `engine` carries
+  // inScope: false, which is the only gate that opens NEEDS-DECISION - an
+  // outcome that does NOT count against us. So a warning was quietly moving
+  // cases out of the failure column.
+  //
+  // The warning is not thrown away, because sometimes it really is the only
+  // clue: a project on an old Node installs a package that needs a new one, and
+  // the visible failure is downstream and strange. So warnings are demoted, not
+  // deleted - a real signal wins first, and a warning decides only when nothing
+  // else in the log said anything at all.
+  for (const pass of [(l) => !IS_WARNING.test(l), () => true]) {
+    const candidates = lines.filter(pass);
+    for (const k of KINDS) {
+      const line = candidates.find((l) => k.test.test(l));
+      if (!line) continue;
       return {
         kind: k.kind,
         inScope: k.inScope,
