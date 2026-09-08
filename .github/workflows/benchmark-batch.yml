@@ -84,6 +84,11 @@ jobs:
       test-command: ${{ matrix.case['test-command'] }}
       target-dir: ${{ matrix.case['target-dir'] }}
       node-version: ${{ matrix.case['node-version'] }}
+      # Without this the three legs of a repeated case upload under one artifact
+      # name and download-artifact drops two of them into the same directory, so
+      # the report sees one run and calls the case stable. Measured on run #11:
+      # three artifacts, all named benchmark-expressjs-body-parser-raw-body-v4.
+      repeat: ${{ matrix.case.repeat }}
       model: ${{ inputs.model }}
       max-turns: ${{ inputs.max-turns }}
       briefing: ${{ inputs.briefing }}

@@ -66,6 +66,11 @@ on:
       test-command: { type: string, required: false, default: "npm test" }
       target-dir: { type: string, required: false, default: "." }
       node-version: { type: string, required: false, default: "auto" }
+      # Declared here as well as under workflow_dispatch. It was added to the
+      # dispatch block only, so the batch could not pass it and all three legs of
+      # a repeated case uploaded under one artifact name - which is exactly the
+      # collision the input exists to prevent.
+      repeat: { type: string, required: false, default: "" }
       model: { type: string, required: false, default: "" }
       max-turns: { type: string, required: false, default: "45" }
       briefing: { type: string, required: false, default: "on" }

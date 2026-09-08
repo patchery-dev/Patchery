@@ -4559,6 +4559,47 @@ check("a new pool compared against an old one shows no bogus difference", () => 
   assert.match(line, /\| 1 \| - \| - \|/, "1 minus 'not measured' is not +1");
 });
 
+// The same reachability question as the gate census, asked of the wiring: an
+// input a reusable workflow declares and its only caller never passes is either
+// unnecessary or a bug, and `repeat` was the bug. It was added to
+// benchmark-run's workflow_dispatch block and not its workflow_call block, so
+// the batch could not pass it, so all three legs of a repeated case uploaded
+// under one artifact name - the exact collision the input exists to prevent.
+// Measured on run #11: three artifacts, all named
+// benchmark-expressjs-body-parser-raw-body-v4.
+//
+// Neither the workflow linter nor 630 checks could see it. A silently
+// unapplied edit looks identical to no edit.
+console.log("\nworkflow wiring - an input nobody passes is unnecessary or a bug");
+
+const runYml = fs.readFileSync(new URL("../.github/workflows/benchmark-run.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const batchYml = fs.readFileSync(new URL("../.github/workflows/benchmark-batch.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+
+check("every workflow_call input of benchmark-run is passed by the batch", () => {
+  const callBlock = /workflow_call:\n\s+inputs:\n([\s\S]*?)(?=\n\S)/.exec(runYml);
+  assert.ok(callBlock, "benchmark-run declares no workflow_call inputs");
+  const declared = [...callBlock[1].matchAll(/^ {6}([a-z][a-z0-9-]*):/gm)].map((m) => m[1]);
+  assert.ok(declared.length >= 8, "found only " + declared.length + " inputs - the parse is wrong, not the file");
+
+  const withBlock = /^ {4}with:\n([\s\S]*?)(?=^ {2}\S)/m.exec(batchYml);
+  assert.ok(withBlock, "the batch passes nothing");
+  const passed = new Set([...withBlock[1].matchAll(/^ {6}([a-z][a-z0-9-]*):/gm)].map((m) => m[1]));
+
+  const missing = declared.filter((d) => !passed.has(d));
+  assert.deepStrictEqual(missing, [], "declared but never passed: " + missing.join(", "));
+});
+
+// The other direction, and the one that fails loudly on GitHub rather than
+// quietly: passing an input the callee does not declare.
+check("the batch passes nothing benchmark-run has not declared", () => {
+  const callBlock = /workflow_call:\n\s+inputs:\n([\s\S]*?)(?=\n\S)/.exec(runYml);
+  const declared = new Set([...callBlock[1].matchAll(/^ {6}([a-z][a-z0-9-]*):/gm)].map((m) => m[1]));
+  const withBlock = /^ {4}with:\n([\s\S]*?)(?=^ {2}\S)/m.exec(batchYml);
+  const passed = [...withBlock[1].matchAll(/^ {6}([a-z][a-z0-9-]*):/gm)].map((m) => m[1]);
+  const unknown = passed.filter((p) => !declared.has(p));
+  assert.deepStrictEqual(unknown, [], "passed but not declared: " + unknown.join(", "));
+});
+
 // A test says a rule works on the input the test hands it. It cannot say the
 // rule is REACHABLE - that a real run ever arrives at that branch - and two of
 // this project's own bugs lived exactly there: NEEDS-DECISION shipped and fired
