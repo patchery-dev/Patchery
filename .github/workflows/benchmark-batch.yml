@@ -23,6 +23,10 @@ on:
         description: "Stop after this many cases (0 = no limit)"
         required: false
         default: "0"
+      repeats:
+        description: "Run each case this many times (3 shows whether a result is stable)"
+        required: false
+        default: "1"
       model:
         description: "Model for the fixer, e.g. glm-5.3-flash (empty = the repository default)"
         required: false
@@ -53,10 +57,11 @@ jobs:
       # reason, and the script says out loud what it dropped.
       - name: Choose the cases to run
         id: build
-        run: node scripts/batch-plan.mjs benchmark/cases.json --only "$ONLY" --limit "$LIMIT" --cap 50
+        run: node scripts/batch-plan.mjs benchmark/cases.json --only "$ONLY" --limit "$LIMIT" --repeats "$REPEATS" --cap 50
         env:
           ONLY: ${{ inputs.only }}
           LIMIT: ${{ inputs.limit }}
+          REPEATS: ${{ inputs.repeats }}
 
   run:
     needs: plan

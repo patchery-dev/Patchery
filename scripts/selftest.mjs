@@ -39,7 +39,15 @@ import {
   releaseTagWarnings,
 } from "./check-claims.mjs";
 import { planBatch } from "./batch-plan.mjs";
-import { sortRows, renderReport, guardCaught, guardVisible, objectedFixes } from "./batch-report.mjs";
+import {
+  sortRows,
+  renderReport,
+  guardCaught,
+  guardVisible,
+  objectedFixes,
+  repeatGroups,
+  hasRepeats,
+} from "./batch-report.mjs";
 import {
   chooseTargetDir,
   workspacesDeclaring,
@@ -3454,9 +3462,12 @@ check("filter first, then cap - not the other way round", () => {
   assert.ok(picked.every((r) => (r.repo + r.package).includes("express")));
 });
 
+// Still deepStrictEqual on the whole return rather than on two fields: the
+// shape is what a caller destructures, and this check is what caught `cases`
+// and `repeats` being added. Widened deliberately, not loosened.
 check("no rows at all is a plan, not a crash", () => {
-  assert.deepStrictEqual(planBatch([], {}), { picked: [], dropped: 0 });
-  assert.deepStrictEqual(planBatch(null, {}), { picked: [], dropped: 0 });
+  assert.deepStrictEqual(planBatch([], {}), { picked: [], dropped: 0, cases: 0, repeats: 1 });
+  assert.deepStrictEqual(planBatch(null, {}), { picked: [], dropped: 0, cases: 0, repeats: 1 });
 });
 
 console.log("\nbatch-report.renderReport");
@@ -4388,6 +4399,76 @@ check("a new pool compared against an old one shows no bogus difference", () => 
   const text = renderShape(now, poolShape([{ repo: "a/b" }]));
   const line = text.split("\n").find((l) => l.includes("in a workspace"));
   assert.match(line, /\| 1 \| - \| - \|/, "1 minus 'not measured' is not +1");
+});
+
+// Repeats exist because of one measurement, not a theory: body-parser +
+// raw-body@4, on a single model, came back BLOCKED in run #8, FIXED in #9 and
+// EXHAUSTED in #10. These checks hold the two properties that make a repeated
+// batch readable - whole sets only, and a headline counted in cases.
+console.log("\nrepeats - a case run once is one observation, not a rate");
+
+check("repeats expands each case and numbers the runs", () => {
+  const r = planBatch([{ repo: "a/b", package: "p" }, { repo: "a/c", package: "q" }], { repeats: 3, cap: 50 });
+  assert.strictEqual(r.cases, 2);
+  assert.strictEqual(r.picked.length, 6);
+  assert.deepStrictEqual(r.picked.map((x) => x.repeat), ["1", "2", "3", "1", "2", "3"]);
+});
+
+// The cap counts legs, so a higher repeat count has to buy fewer cases - and it
+// must buy WHOLE sets. A case run twice beside neighbours run three times makes
+// the consistency column mean two things in one table.
+check("the cap drops whole cases, never a partial repeat set", () => {
+  const rows = [1, 2, 3].map((i) => ({ repo: "a/" + i, package: "p" }));
+  const r = planBatch(rows, { repeats: 3, cap: 7 });
+  assert.strictEqual(r.cases, 2, "floor(7/3) = 2 cases");
+  assert.strictEqual(r.picked.length, 6);
+  assert.strictEqual(r.dropped, 1);
+});
+
+check("repeats of 1 leaves the plan exactly as it was", () => {
+  const rows = [{ repo: "a/b", package: "p" }];
+  const r = planBatch(rows, { repeats: 1, cap: 50 });
+  assert.strictEqual(r.picked.length, 1);
+  assert.ok(!("repeat" in r.picked[0]), "a single run must not carry a repeat number");
+});
+
+check("the same case with different outcomes is reported as unstable", () => {
+  const g = repeatGroups(
+    [
+      { repo: "a/b", package: "p", version: "4", outcome: "FIXED" },
+      { repo: "a/b", package: "p", version: "4", outcome: "EXHAUSTED" },
+    ],
+    "benchmark"
+  );
+  assert.strictEqual(g.length, 1);
+  assert.strictEqual(g[0].runs, 2);
+  assert.strictEqual(g[0].stable, false);
+  assert.ok(hasRepeats(g));
+});
+
+// The rule the whole feature exists to enforce: a fix that happened once out of
+// three is not a fix. Counting legs would report it as one.
+check("a case fixed in only some runs does not count as fixed", () => {
+  const text = renderReport(
+    [
+      { repo: "a/b", package: "p", version: "4", outcome: "FIXED" },
+      { repo: "a/b", package: "p", version: "4", outcome: "EXHAUSTED" },
+      { repo: "a/b", package: "p", version: "4", outcome: "BLOCKED" },
+    ],
+    { kind: "benchmark", queued: 3 }
+  );
+  assert.match(text, /^## 0 fixed of 1 cases, every time \(3 runs each\)/m);
+  assert.match(text, /fixed in some runs and not others/);
+  assert.match(text, /\*\*FIXED, EXHAUSTED, BLOCKED\*\*/);
+});
+
+check("a batch with no repeats keeps the old headline word for word", () => {
+  const text = renderReport([{ repo: "a/b", package: "p", version: "4", outcome: "FIXED" }], {
+    kind: "benchmark",
+    queued: 1,
+  });
+  assert.match(text, /^## 1 fixed of 1 cases it was able to attempt/m);
+  assert.ok(!/every time/.test(text), "the repeat headline must not appear for a single run");
 });
 
 // `mode: scan` is a second behaviour inside a published action, and the danger

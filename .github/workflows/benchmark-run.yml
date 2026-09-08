@@ -37,6 +37,14 @@ on:
         description: "Node version (auto = ask the repository)"
         required: false
         default: "auto"
+      repeat:
+        description: >-
+          Which run of this case this is, when a batch runs each case more than
+          once. Empty for a single run. It exists only to keep the artifact names
+          apart - two uploads under one name is a lost result, and a lost result
+          in a repeat set is the one that would have shown the case is unstable.
+        required: false
+        default: ""
       model:
         description: "Model for the fixer (empty = the repository default)"
         required: false
@@ -88,12 +96,15 @@ jobs:
       - name: Name this case
         id: slug
         run: |
-          SLUG=$(printf '%s' "$IN_REPO-$IN_PACKAGE-v$IN_VERSION" | tr -c 'A-Za-z0-9._-' '-')
+          SUFFIX=""
+          if [ -n "$IN_REPEAT" ]; then SUFFIX="-run$IN_REPEAT"; fi
+          SLUG=$(printf '%s' "$IN_REPO-$IN_PACKAGE-v$IN_VERSION$SUFFIX" | tr -c 'A-Za-z0-9._-' '-')
           echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
         env:
           IN_REPO: ${{ inputs.repo }}
           IN_PACKAGE: ${{ inputs.package }}
           IN_VERSION: ${{ inputs.breaking-version }}
+          IN_REPEAT: ${{ inputs.repeat }}
 
       # The runner's own Node, captured before setup-node replaces it.
       #

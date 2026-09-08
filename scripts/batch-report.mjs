@@ -91,6 +91,36 @@ export function objectedFixes(rows) {
 
 
 
+/**
+ * The same case, run more than once, collapsed into what it actually did.
+ *
+ * This exists because of one measurement. body-parser + raw-body@4, on a single
+ * model, came back BLOCKED in run #8, FIXED in #9 and EXHAUSTED in #10. Read one
+ * run at a time that is a fix; read three, it is a coin. Every ratio this project
+ * has argued about was built from single observations, and none of them carried
+ * an error bar because there was no way to draw one.
+ *
+ * Grouped by repo+package rather than by a repeat counter, so a batch that was
+ * dispatched twice by hand groups the same way a `repeats: 3` run does.
+ */
+export function repeatGroups(rows, kind = "benchmark") {
+  const byCase = new Map();
+  for (const r of rows || []) {
+    const key = String(r.repo) + "|" + String(r.package) + "@" + String(r.version);
+    if (!byCase.has(key)) byCase.set(key, { repo: r.repo, package: r.package, version: r.version, outcomes: [] });
+    byCase.get(key).outcomes.push(label(r, kind));
+  }
+  return [...byCase.values()].map((g) => {
+    const distinct = [...new Set(g.outcomes)];
+    return { ...g, runs: g.outcomes.length, distinct, stable: distinct.length === 1 };
+  });
+}
+
+/** Whether this batch ran anything more than once. */
+export function hasRepeats(groups) {
+  return (groups || []).some((g) => g.runs > 1);
+}
+
 /** Rows first, in the order a reader should meet them. */
 export function sortRows(rows, kind) {
   const order = kind === "verify" ? VERIFY_ORDER : BENCHMARK_ORDER;
@@ -123,12 +153,47 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
     // point at is also the one the reviewer objected to, and a reader should not
     // learn that from anyone else.
     const objected = objectedFixes(sorted);
-    out.push(
-      "## " + n("FIXED") + " fixed of " + judged + " cases it was able to attempt" +
-        (objected > 0 ? " — the reviewer objected to " + objected + " of them" : ""),
-      ""
-    );
+    const groups = repeatGroups(sorted, kind);
+    if (hasRepeats(groups)) {
+      // A repeated batch must not be counted in legs. Three runs of one case is
+      // one case measured three times, and a headline that says "1 fixed of 3"
+      // has turned a coin flip into a rate.
+      //
+      // A case counts as fixed only if it was fixed EVERY time. Anything else is
+      // named separately rather than rounded up, because the whole reason this
+      // count exists is that a fix which happens sometimes was being reported as
+      // a fix.
+      const attempted = groups.filter((g) => !g.distinct.every((o) => o === "BLOCKED" || o === UNREPORTED));
+      const always = attempted.filter((g) => g.stable && g.distinct[0] === "FIXED");
+      const sometimes = attempted.filter((g) => !g.stable && g.distinct.includes("FIXED"));
+      const runsEach = [...new Set(groups.map((g) => g.runs))];
+      out.push(
+        "## " + always.length + " fixed of " + attempted.length + " cases, every time" +
+          (runsEach.length === 1 ? " (" + runsEach[0] + " runs each)" : ""),
+        ""
+      );
+      if (sometimes.length) {
+        out.push(
+          "**" + sometimes.length + " more case(s) were fixed in some runs and not others** - " +
+            "counted here as not fixed, because a fix that happens sometimes is not a fix you can be sold.",
+          ""
+        );
+      }
+    } else {
+      out.push(
+        "## " + n("FIXED") + " fixed of " + judged + " cases it was able to attempt" +
+          (objected > 0 ? " — the reviewer objected to " + objected + " of them" : ""),
+        ""
+      );
+    }
     out.push(models.length ? "Fixer: " + models.join(", ") : "Fixer: the repository default", "");
+    // The headline counts cases and this table counts runs, so a repeated batch
+    // shows "1 fixed" above "fixed | 4" and both are true. Saying which is which
+    // costs one line; leaving a reader to work it out is how a number gets
+    // quoted in the wrong unit.
+    if (hasRepeats(groups)) {
+      out.push("Counted in runs, not cases - each case below was run more than once:", "");
+    }
     out.push("| | |", "|---|---|");
     out.push("| fixed | " + n("FIXED") + " |");
     out.push("| refused to ship an unproven fix | " + n("REFUSED") + " |");
@@ -180,6 +245,30 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
         out.push("| " + reason + " | " + count + " |");
       }
       out.push("");
+    }
+
+    // The point of running anything twice, printed. A stable case is one line;
+    // an unstable one names every outcome it produced, because "FIXED, EXHAUSTED,
+    // BLOCKED" is the finding and a majority vote would hide it.
+    const groupsForTable = repeatGroups(sorted, kind);
+    if (hasRepeats(groupsForTable)) {
+      const unstable = groupsForTable.filter((g) => !g.stable);
+      out.push("| repeated case | runs | outcome |", "|---|---|---|");
+      for (const g of groupsForTable.sort((a, b) => Number(a.stable) - Number(b.stable))) {
+        out.push(
+          "| " + g.repo + " `" + g.package + "@" + g.version + "` | " + g.runs + " | " +
+            (g.stable ? g.distinct[0] : "**" + g.outcomes.join(", ") + "**") + " |"
+        );
+      }
+      out.push(
+        "",
+        unstable.length
+          ? "**" + unstable.length + " of " + groupsForTable.length +
+            " cases did not give the same answer twice.** That is a property of the" +
+            " fixer, not of the break: the case, the model and the commit were identical."
+          : "Every case gave the same answer in every run.",
+        ""
+      );
     }
   }
 
