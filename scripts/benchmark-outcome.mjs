@@ -155,10 +155,23 @@ export function benchmarkOutcome({
   const stalled =
     /^failed$/i.test(String(actionOutcome || "").trim()) &&
     /stalled request|produced nothing for \d+ minutes/i.test(actionSummary);
+  // A stall is not our setup failing, so it does not belong in the bucket that
+  // means "our setup failed". Two independent blind rounds landed on the same
+  // rule for it: it may never be dropped silently, because outages fall hardest
+  // on the longest attempts and dropping them flatters exactly the runs that
+  // were going worst. One of the two allows excluding it from a headline only
+  // when it is pre-specified, counted, retried, and published alongside a rate
+  // that counts it as failure.
+  //
+  // We cannot retry a past run, and the model is part of what we ship - so
+  // "the service we chose did not answer" is a failed run for the customer.
+  // In the denominator, under its own name, so that a rate which excludes it
+  // can still be computed deliberately and labelled rather than arrived at by
+  // deletion.
   if (stalled) {
     return {
-      outcome: "BLOCKED",
-      detail: "the model stopped answering mid-run and the request was abandoned - not a verdict on the fix",
+      outcome: "UNANSWERED",
+      detail: "the model stopped answering mid-run and the request was abandoned - no verdict on the fix, and a failed run for whoever was waiting",
     };
   }
 
@@ -183,15 +196,29 @@ export function benchmarkOutcome({
   //
   // So the test is emptiness across every field the action sets, not the value
   // of any one of them.
-  // The SDK stopped before the agent reached a conclusion. On treeherder that
-  // was a source file of 38,424 tokens against a 25,000 limit - the agent never
-  // read the code, let alone failed to fix it. Ours, so it is out of the
-  // denominator; EXHAUSTED is the other shape and stays in, because the turn
-  // budget is a number we chose and the run did happen.
+  // The SDK stopped before the agent reached a conclusion. This was BLOCKED -
+  // out of the denominator as "a limit of our harness" - and that was wrong.
+  //
+  // Every one of run #11's eight BLOCKED legs was this branch. Opened one at a
+  // time: six were node-fetch running our own code on Node 16.20.2, because the
+  // action asked PATH which Node was ours and got the customer's (fixed in
+  // 77d33f1). Two were treeherder hitting the 25,000-token read limit, which
+  // this repository's own notes already call a prompt problem rather than a
+  // limit. Not one was a container that failed to start.
+  //
+  // Both halves are the product. A customer whose workflow sets up Node before
+  // calling this action watches it die in eight seconds; that is a defect we
+  // shipped, not an outage we suffered. Excluding it counted our own packaging
+  // bug as something that happened TO us.
+  //
+  // So it is in the denominator, and it keeps its own name. Folding it into
+  // NO-CHANGE would say "the agent examined this and had nothing to offer"
+  // about a run where the agent never started - the exact conflation this file
+  // exists to prevent.
   if (/harness-error/i.test(actionOutcome)) {
     return {
-      outcome: "BLOCKED",
-      detail: "the agent runtime stopped before a conclusion - a limit of our harness, not a verdict on the fix",
+      outcome: "CRASHED",
+      detail: "the agent runtime stopped before it could reach a conclusion - our defect, and a failed run for whoever installed it",
     };
   }
 

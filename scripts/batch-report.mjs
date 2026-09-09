@@ -15,7 +15,22 @@
  */
 
 const VERIFY_ORDER = ["VALID", "UNKNOWN", "NOT-A-CASE"];
-const BENCHMARK_ORDER = ["FIXED", "REFUSED", "NEEDS-DECISION", "EXHAUSTED", "NO-CHANGE", "WRONG", "BLOCKED"];
+const BENCHMARK_ORDER = [
+  "FIXED",
+  "REFUSED",
+  "NEEDS-DECISION",
+  "EXHAUSTED",
+  "NO-CHANGE",
+  "WRONG",
+  // In the denominator, and each under its own name. CRASHED is the product
+  // failing to run - run #11's eight "blocked" legs were all this, six of them
+  // our own Node packaging bug. UNANSWERED is the model never replying. Both
+  // are failed runs for whoever installed the action; neither is our container
+  // failing to start, which is what BLOCKED now means and nothing else.
+  "CRASHED",
+  "UNANSWERED",
+  "BLOCKED",
+];
 
 /**
  * A row whose verdict field is missing or empty.
@@ -145,6 +160,14 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
     // and counting it as one understates the tool for our own reasons.
     // UNREPORTED is out for the opposite reason - we do not know what it was,
     // and a case nobody judged must not be counted as one the agent failed.
+    //
+    // What BLOCKED no longer covers: the product crashing, and the model going
+    // quiet. Both used to land here and both are now counted, because the
+    // exclusion was doing work it was never meant to do - in run #11 all eight
+    // "blocked" legs were the product, six of them a packaging bug of ours that
+    // stopped the action before it began. Two blind outside rounds agreed on
+    // the rule that catches this: a denominator is fixed before the results
+    // arrive and is never shrunk by a category discovered afterwards.
     const judged = sorted.length - n("BLOCKED") - n(UNREPORTED);
     const models = [...new Set(sorted.map((r) => r.model).filter(Boolean))];
     // The objection belongs in the headline, not three lines into a detail cell.
@@ -208,6 +231,11 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
     // Bold, because shipping something broken is the only outcome that costs a
     // user anything, and a benchmark that does not make it prominent is an advert.
     out.push("| **shipped something wrong** | **" + n("WRONG") + "** |");
+    // Counted, and named apart. Folding either into "produced nothing" would say
+    // the agent examined the case and had no answer, about runs where it never
+    // started or never got one.
+    out.push("| our own code could not run | " + n("CRASHED") + " |");
+    out.push("| the model never answered | " + n("UNANSWERED") + " |");
     out.push("| blocked by our setup (not counted) | " + n("BLOCKED") + " |");
     // The two lines the guard exists for, and until now the table did not say
     // either of them. They are not a third total - every fix counted here is

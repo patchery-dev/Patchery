@@ -1717,13 +1717,31 @@ check("the message keeps the raw error and says why it is out of the ratio", () 
 });
 // The two files are joined by nothing but this word, exactly as with
 // blocked-by-guard above.
-check("what the agent emits for a dead runtime is what the benchmark blocks on", () => {
+check("what the agent emits for a dead runtime is what the benchmark counts as CRASHED", () => {
   const r = benchmarkOutcome({
     baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
     actionOutcome: "harness-error",
     actionSummary: harnessCrash("Claude Code process exited with code 1"),
   });
-  assert.strictEqual(r.outcome, "BLOCKED");
+  // Was BLOCKED, and being out of the denominator is what made it worth
+  // checking again: all eight of run #11's blocked legs were this branch, six
+  // of them our own Node packaging bug stopping the action before it began. A
+  // defect we shipped is not an outage we suffered.
+  assert.strictEqual(r.outcome, "CRASHED");
+  assert.notStrictEqual(r.outcome, "BLOCKED");
+});
+
+check("a crash is not folded into 'produced nothing'", () => {
+  // NO-CHANGE says the agent examined the case and had no answer. Saying that
+  // about a run where the agent never started is the conflation this whole file
+  // exists to prevent, and it would hide our own bugs inside the product's
+  // weakest-looking column.
+  const r = benchmarkOutcome({
+    baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
+    actionOutcome: "harness-error",
+  });
+  assert.notStrictEqual(r.outcome, "NO-CHANGE");
+  assert.match(r.detail, /our defect/);
 });
 
 
@@ -2358,13 +2376,31 @@ check("a plain failure is still not EXHAUSTED", () => {
   assert.notStrictEqual(r.outcome, "EXHAUSTED");
 });
 
-check("a real stall, which the harness reports as failed, is still BLOCKED", () => {
+check("a real stall is UNANSWERED - counted, and not confused with our setup", () => {
   const r = benchmarkOutcome({
     baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false",
     actionOutcome: "failed",
     actionSummary: "the agent produced nothing for 20 minutes and was stopped. This is a stalled request, not a slow one",
   });
-  assert.strictEqual(r.outcome, "BLOCKED");
+  // Was BLOCKED. The model going quiet is not our container failing to start,
+  // and both blind rounds gave the same reason for never dropping it silently:
+  // outages fall hardest on the longest attempts, so deleting them flatters
+  // exactly the runs that were going worst.
+  assert.strictEqual(r.outcome, "UNANSWERED");
+  assert.notStrictEqual(r.outcome, "BLOCKED");
+});
+
+check("BLOCKED still means our setup, and the branches that mean it are untouched", () => {
+  // Narrowing must not empty the column. These are the real exclusions: the
+  // case never started green, and the version we asked for is not the one that
+  // landed. Both say the measurement never happened, not that the tool failed.
+  const red = benchmarkOutcome({ baselineExit: "1" });
+  assert.strictEqual(red.outcome, "BLOCKED");
+  const wrongVersion = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", finalExit: "0", changed: "false",
+    version: "3", installed: "2.0.1",
+  });
+  assert.strictEqual(wrongVersion.outcome, "BLOCKED");
 });
 
 check("the model describing a stall in its own summary cannot leave the denominator", () => {
@@ -3375,7 +3411,7 @@ check("a multi-line call is treated as consumed", () => {
 // A provider that stopped answering is not a product result. Four cases in the
 // second benchmark read "no fix produced: failed" - an agent with no ideas - when
 // the logs said the model had produced nothing for twenty minutes.
-check("outcome BLOCKED when the model stalled rather than answered", () => {
+check("a stall is separated from 'no fix produced', and now counted", () => {
   const r = benchmarkOutcome({
     baselineExit: "0",
     brokenExit: "1",
@@ -3384,7 +3420,13 @@ check("outcome BLOCKED when the model stalled rather than answered", () => {
     actionSummary:
       "the fixing agent produced nothing for 20 minutes and was stopped. This is a stalled request, not a slow one",
   });
-  assert.strictEqual(r.outcome, "BLOCKED");
+  // The separation is the original point and still holds: "no fix produced" is
+  // an agent with no ideas, and this was a model that never replied. What
+  // changed is the side of the denominator it lands on - the model is part of
+  // what we ship, so a run nobody got an answer from is a failed run for
+  // whoever was waiting.
+  assert.strictEqual(r.outcome, "UNANSWERED");
+  assert.notStrictEqual(r.outcome, "NO-CHANGE");
   assert.match(r.detail, /stopped answering/);
 });
 
@@ -3480,14 +3522,19 @@ check("the outcome the agent emits for a guard block is one REFUSED matches", ()
 
 // treeherder: a source file of 38,424 tokens against the SDK's 25,000 limit. The
 // agent never read the code, and the row said Patchery had nothing to offer.
-check("the agent runtime stopping is BLOCKED, not NO-CHANGE", () => {
+check("the agent runtime stopping is CRASHED, not NO-CHANGE", () => {
   const r = benchmarkOutcome({
     baselineExit: "0", finalExit: "1", brokenExit: "1", changed: "false",
     actionOutcome: "harness-error",
     actionSummary: "MaxFileReadTokenExceededError: File content (38424 tokens) exceeds maximum allowed tokens (25000)",
   });
-  assert.strictEqual(r.outcome, "BLOCKED");
-  assert.match(r.detail, /our harness/);
+  // Both treeherder legs of run #11 were this, and calling it "a limit of our
+  // harness" put it outside the denominator. It is not a limit we imposed on the
+  // measurement - it is the agent reading a whole file when it should grep, which
+  // this repository's own open questions already call a prompt problem. The
+  // separation from NO-CHANGE was always right; the exclusion was not.
+  assert.strictEqual(r.outcome, "CRASHED");
+  assert.notStrictEqual(r.outcome, "NO-CHANGE");
 });
 
 // The two look alike and belong in different columns: one is a limit of the
