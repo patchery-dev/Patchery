@@ -375,10 +375,14 @@ delivered it. A scan, a run that found nothing, a run the guard reverted, a run
 that ran out of budget — none of those are one. If nothing reached your branch,
 it did not count.
 
-**How is the trial enforced?** It is not. There is no licence check, no phone
-home, and no counter anywhere in this code — you can read it and confirm that.
-It is an honour system, and it is deliberate: a tool that edits your source and
-also calls a licence server is a tool with a second reason to talk to the
-network, which is exactly the thing you should not have to trust. If you are a
-commercial team running this on a private repository past three fixes, pay for
-it because it is worth it, not because something stopped you.
+**How is the trial enforced?** Not in this code, and that is deliberate. There
+is no licence check, no phone home, and no counter anywhere in it — you can
+read it and confirm that. A tool that edits your source and also calls a licence
+server is a tool with a second reason to talk to the network, which is exactly
+the thing you should not have to trust. Enforcement belongs in billing, outside
+the runner that touches your files, and that is where it will go: at general
+availability, a paid tier for private commercial repositories, checked where you
+pay rather than where you build. Until then it is an honour system. If you are a
+commercial team running this on a private repository past three fixes, write to
+ugur@patchery.dev about a subscription — the licence asks for one, and this code
+will not.
