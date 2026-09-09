@@ -143,6 +143,10 @@ on:
         description: Package that broke
         required: true
 
+# contents: write lets the PR action push a branch - Patchery itself only reads
+# and writes files in the checkout. pull-requests: write opens the PR. Neither
+# is used by the fix step; drop both and run `mode: scan` if you want a
+# read-only trial first.
 permissions:
   contents: write
   pull-requests: write
@@ -152,7 +156,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: patchery-dev/Patchery@v0.3
+      # Pin to the commit, not the tag: a tag can be moved, a SHA cannot. This
+      # one is v0.3. Dependabot updates both together if you let it.
+      - uses: patchery-dev/Patchery@6718a35ddc6a0e361ef40295bc2f62ff75bcb84e # v0.3
         id: patchery
         with:
           package: ${{ inputs.package }}
@@ -344,3 +350,24 @@ available under it. That grant is not revoked; the LICENSE file carries both.
 **Patchery™** is a trademark of Uğur Şişkolu (ugursku), first used in commerce on
 2026-09-05. The licence covers the code and grants no rights in the name: a
 fork is free to exist, under its own name.
+
+### The three questions people actually ask
+
+**Can I fork it?** Yes. The code is BUSL-1.1 — and everything published before
+2026-09-07 is MIT and stays MIT. What you may not do is call your fork
+*Patchery*, or present it as endorsed by this project. Rebrand it and it is
+yours. Copyright and trademark are separate things, and the licence only moves
+the first.
+
+**What counts as "a run that changes code"?** A run that produced a patch and
+delivered it. A scan, a run that found nothing, a run the guard reverted, a run
+that ran out of budget — none of those are one. If nothing reached your branch,
+it did not count.
+
+**How is the trial enforced?** It is not. There is no licence check, no phone
+home, and no counter anywhere in this code — you can read it and confirm that.
+It is an honour system, and it is deliberate: a tool that edits your source and
+also calls a licence server is a tool with a second reason to talk to the
+network, which is exactly the thing you should not have to trust. If you are a
+commercial team running this on a private repository past three fixes, pay for
+it because it is worth it, not because something stopped you.
