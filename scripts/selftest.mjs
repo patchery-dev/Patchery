@@ -102,6 +102,10 @@ import {
   deadlineOutcome,
   patchNote,
   untrackedHunk,
+  budgetUsage,
+  budgetUsageLine,
+  gapStats,
+  gapStatsLine,
   harnessCrash,
   confidenceThresholdReport,
   shouldReview,
@@ -2329,6 +2333,65 @@ check("censusTableCell answers for a shrunken suite even though a PR never shows
 // reason its own comment gives - a gate whose failure mode is destroying work
 // gets switched off by the first person it burns - and the cap and stall paths
 // reverted the same way while saving nothing.
+// The turn budget was always legible - "turns: 37" against a cap of 45 - and the
+// clock was not. That asymmetry decided an experiment: with only a binary
+// outcome no affordable design can tell whether a ceiling binds, and the
+// distance to it can. through2's one success used 37 of 45 turns while its two
+// failures stopped exactly at the cap; the clock had no equivalent sentence.
+check("budgetUsage reports the distance to the ceiling, not just the time", () => {
+  const u = budgetUsage(20 * 60 * 1000, 45);
+  assert.strictEqual(u.minutes, 20);
+  assert.strictEqual(u.budget, 45);
+  assert.strictEqual(u.percent, 44);
+  assert.match(budgetUsageLine(u), /20m of 45m \(44%\)/);
+});
+
+check("budgetUsage returns nothing when there is no ceiling to be a fraction of", () => {
+  // 0 means the ceiling was removed. A percentage of no ceiling is not zero, it
+  // is nothing - and printing 0% would read as "used none of its budget", which
+  // is the opposite of "had no budget".
+  assert.strictEqual(budgetUsage(60000, 0), null);
+  assert.strictEqual(budgetUsage(60000, null), null);
+  assert.strictEqual(budgetUsageLine(null), "");
+});
+
+check("budgetUsage does not invent a number from a broken clock", () => {
+  assert.strictEqual(budgetUsage(-1, 45), null);
+  assert.strictEqual(budgetUsage(NaN, 45), null);
+  assert.strictEqual(budgetUsage("later", 45), null);
+});
+
+check("budgetUsage says over 100 rather than clamping", () => {
+  // A run that overran its budget is exactly the row worth seeing. Clamping to
+  // 100% would hide the overrun inside the ordinary case.
+  assert.strictEqual(budgetUsage(50 * 60 * 1000, 45).percent, 111);
+});
+
+check("gapStats separates a run that worked from one that waited", () => {
+  // Two runs that spent forty minutes were the same row in every field we had.
+  // This is the only signal available from outside the SDK that tells them apart.
+  const s = gapStats([1000, 2000, 120000, 500]);
+  assert.strictEqual(s.count, 4);
+  assert.strictEqual(s.longestSec, 120);
+  assert.strictEqual(s.slow, 1);
+  assert.strictEqual(s.totalSec, 124);
+  assert.match(gapStatsLine(s), /longest 120s, 1 over a minute/);
+});
+
+check("gapStats says nothing when no message ever arrived", () => {
+  assert.strictEqual(gapStats([]), null);
+  assert.strictEqual(gapStats(null), null);
+  assert.strictEqual(gapStatsLine(null), "");
+});
+
+check("gapStats drops unreadable gaps instead of counting them as zero", () => {
+  // Zero is a measurement: a gap of no time. Reading a missing one as zero would
+  // make a stalling provider look responsive.
+  const s = gapStats([1000, NaN, -5, "x", 3000]);
+  assert.strictEqual(s.count, 2);
+  assert.strictEqual(s.totalSec, 4);
+});
+
 check("patchNote says where the work went AND that it is unverified", () => {
   const n = patchNote(true, "/tmp/sma-capped.patch", "The partial work");
   assert.match(n, /\/tmp\/sma-capped\.patch/);

@@ -459,6 +459,18 @@ if (isMain) {
     // over both is four-fifths decided by the easier half, and it moves when we
     // author more cases without the tool changing at all.
     breakClass: a["break-class"] || "",
+    // The three measures the blind rounds asked for and this row did not have.
+    // All continuous, all present whatever the outcome was - which is the point:
+    // no affordable design answers "does the ceiling bind" from a binary result,
+    // and the distance to the ceiling answers it directly.
+    clockMinutes: a["clock-minutes"] || "",
+    clockPercent: a["clock-percent"] || "",
+    waitingSeconds: a["waiting-seconds"] || "",
+    longestWaitSeconds: a["longest-wait-seconds"] || "",
+    // Deliberately left varying, therefore recorded. A run that differed on a
+    // different machine or a different image is a different explanation from one
+    // that differed on the same.
+    runner: a.runner || "",
     // Tokens, not money. The SDK prices with Anthropic's own table whatever
     // endpoint served the request - it was wrong by a factor of 195 once - so
     // the honest half is the quantity the provider actually bills for.

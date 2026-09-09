@@ -45,6 +45,10 @@ import {
   deadlineOutcome,
   patchNote,
   untrackedHunk,
+  budgetUsage,
+  budgetUsageLine,
+  gapStats,
+  gapStatsLine,
   harnessCrash,
   shouldReview,
   buildReviewEvidence,
@@ -325,11 +329,18 @@ function spend(args) {
   return renderSpend(args);
 }
 
+// Filled by announceRun, which every exit path calls before writeOutputs. Kept
+// module-level rather than threaded through six call sites: the alternative is
+// six places to forget it, and the last time a measurement depended on one call
+// site remembering, 13 legs of 42 lost their turn count.
+let runTelemetry = {};
+
 function writeOutputs(obj) {
   const file = process.env.GITHUB_OUTPUT;
   if (!file) return;
   obj = {
     ...obj,
+    ...runTelemetry,
     tokens_input: String(SPEND.input),
     tokens_output: String(SPEND.output),
     tokens_cache_read: String(SPEND.cacheRead),
@@ -402,14 +413,30 @@ function announceRun() {
   } catch {
     subtype = "";
   }
+  // The clock and the waiting, on the same line as the turns. All three are
+  // continuous, all three exist whatever the outcome was, and that is the point:
+  // a binary result cannot say whether a ceiling binds, and these can.
+  const usage = budgetUsage(Date.now() - RUN_STARTED_AT, RUN_BUDGET_MIN);
+  let gaps = null;
+  try {
+    gaps = gapStats(agentGaps);
+  } catch {
+    gaps = null;
+  }
   log(
     agentFinishedLine({
       subtype,
       turns,
       spend: anySpend ? bits.join(" · ") + " tokens" : "",
       partial: !haveResult,
-    })
+    }) + budgetUsageLine(usage) + gapStatsLine(gaps)
   );
+  runTelemetry = {
+    clock_minutes: usage ? String(usage.minutes) : "",
+    clock_percent: usage ? String(usage.percent) : "",
+    waiting_seconds: gaps ? String(gaps.totalSec) : "",
+    longest_wait_seconds: gaps ? String(gaps.longestSec) : "",
+  };
 }
 
 function fail(message, outcome = "failed") {
@@ -847,6 +874,11 @@ const prompt = [
 
 const agentText = [];
 let result = null;
+// Declared beside `result` and read by announceRun, which can run before either
+// exists - a red baseline exits through fail() long before this line. The reads
+// there are guarded for exactly that.
+const agentGaps = [];
+let lastMessageAt = Date.now();
 let stalledReason = null;
 const stallDetector = createStallDetector({
   repeats: STALL_REPEATS,
@@ -870,6 +902,15 @@ try {
     // Proof the model is still answering. Without this the deadline is a budget
     // on the whole run rather than a stall detector, and a productive agent is
     // killed for being productive.
+    //
+    // The same tick is where waiting becomes measurable. The gap since the last
+    // message is the closest thing to provider latency we can see from outside
+    // the SDK, and it separates two runs that were previously identical in every
+    // recorded field: one that spent its budget working and one that spent it
+    // waiting. With the machine deliberately left varying, that is the
+    // attribution which would otherwise be missing.
+    agentGaps.push(Date.now() - lastMessageAt);
+    lastMessageAt = Date.now();
     agentDeadline.touch();
     if (message.type === "assistant") {
       const toolUses = [];
@@ -982,8 +1023,24 @@ log(
       modelUsage: result.modelUsage,
       costUsd: result.total_cost_usd,
       customEndpoint: usingCustomEndpoint,
-    })
+    }) +
+    // The same two continuous measures the exit paths report. A run that
+    // succeeded at 82% of its clock and one that succeeded at 20% are the same
+    // row today, and they are not the same result - through2's one success used
+    // 37 of 45 turns while its two failures stopped exactly at the cap.
+    budgetUsageLine(budgetUsage(Date.now() - RUN_STARTED_AT, RUN_BUDGET_MIN)) +
+    gapStatsLine(gapStats(agentGaps))
 );
+{
+  const u = budgetUsage(Date.now() - RUN_STARTED_AT, RUN_BUDGET_MIN);
+  const g = gapStats(agentGaps);
+  runTelemetry = {
+    clock_minutes: u ? String(u.minutes) : "",
+    clock_percent: u ? String(u.percent) : "",
+    waiting_seconds: g ? String(g.totalSec) : "",
+    longest_wait_seconds: g ? String(g.longestSec) : "",
+  };
+}
 log("-> model(s) used: " + (modelsUsed.join(", ") || "(unknown)"));
 
 // Warn when a custom endpoint was requested but an Anthropic model was reported:

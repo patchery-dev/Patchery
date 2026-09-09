@@ -1296,6 +1296,74 @@ export function patchNote(saved, where, what) {
 }
 
 /**
+ * How much of the wall-clock budget a run actually used.
+ *
+ * The turn budget has always been legible - "turns: 37" against a cap of 45 -
+ * and the clock has not been. That asymmetry decided an experiment: with only a
+ * binary outcome, no affordable design can tell whether a ceiling binds, and
+ * the fix is to measure how close runs land to it rather than counting
+ * successes. Turns already supported that reading. Minutes did not.
+ *
+ * Read from run #11's turn counts, the same question answered for free: 8 of 42
+ * legs hit the turn cap and the 32 that finished used a median of 21 of 45. The
+ * clock deserves the same sentence and could not have it.
+ *
+ * Returns null when there is no budget to be a fraction of - `0` means the
+ * ceiling was removed, and a percentage of no ceiling is not zero, it is
+ * nothing.
+ */
+export function budgetUsage(elapsedMs, budgetMinutes) {
+  const ms = Number(elapsedMs);
+  const min = Number(budgetMinutes);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  if (!Number.isFinite(min) || min <= 0) return null;
+  const pct = Math.round((ms / (min * 60 * 1000)) * 100);
+  return { minutes: Math.round(ms / 60000), budget: min, percent: pct };
+}
+
+/** The wall-clock half of the telemetry line, or nothing when unbounded. */
+export function budgetUsageLine(usage) {
+  if (!usage) return "";
+  return " | clock: " + usage.minutes + "m of " + usage.budget + "m (" + usage.percent + "%)";
+}
+
+/**
+ * The longest silence between messages, as a stand-in for the provider.
+ *
+ * We cannot see inside the SDK's HTTP calls, so per-request latency and retries
+ * are not ours to record. What is observable from outside is the gap between
+ * one message arriving and the next, which is where a slow or wobbling provider
+ * shows up - and it is the difference between "the agent spent forty minutes
+ * working" and "the agent spent forty minutes waiting", two runs that look
+ * identical in every field we had before.
+ *
+ * Both blind rounds asked for network timing per run and both gave the same
+ * reason: with the machine left varying deliberately, an outcome that differs
+ * has to be attributable to something, and "the service was slow that day" is
+ * the attribution that is otherwise invisible.
+ */
+export function gapStats(gapsMs, slowMs = 60000) {
+  const gaps = (gapsMs || []).map(Number).filter((n) => Number.isFinite(n) && n >= 0);
+  if (!gaps.length) return null;
+  const longest = Math.max(...gaps);
+  return {
+    count: gaps.length,
+    longestSec: Math.round(longest / 1000),
+    slow: gaps.filter((g) => g >= slowMs).length,
+    totalSec: Math.round(gaps.reduce((a, b) => a + b, 0) / 1000),
+  };
+}
+
+/** The waiting half of the telemetry line, or nothing when no message ever came. */
+export function gapStatsLine(stats) {
+  if (!stats) return "";
+  return (
+    " | waiting: " + stats.totalSec + "s across " + stats.count + " gap(s), longest " +
+    stats.longestSec + "s" + (stats.slow ? ", " + stats.slow + " over a minute" : "")
+  );
+}
+
+/**
  * Which of the two brakes closed, as an outcome a benchmark row can be counted by.
  *
  * `deadline()` has always known the difference - budgetReason() even says it out

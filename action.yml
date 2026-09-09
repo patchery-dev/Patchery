@@ -280,6 +280,27 @@ outputs:
   # pending-count without checking the mode would see "" and must not print it as
   # "0 upgrades waiting". Same rule the census follows for a suite it could not
   # count.
+  clock-minutes:
+    description: >-
+      Wall-clock minutes this run used, and the percentage of its budget that is.
+      Published because a binary outcome cannot say whether a ceiling binds and a
+      distance to it can: run #11's one reproducible success used 37 of 45 turns
+      while its two failures stopped exactly at the cap, and the clock had no
+      equivalent sentence.
+    value: ${{ steps.run.outputs.clock_minutes }}
+  clock-percent:
+    description: "Wall-clock used as a percentage of run-budget-minutes. Empty when the budget is 0 - a fraction of no ceiling is nothing, not zero."
+    value: ${{ steps.run.outputs.clock_percent }}
+  waiting-seconds:
+    description: >-
+      Seconds spent between messages arriving - the closest thing to provider
+      latency observable from outside the SDK. It separates a run that spent its
+      budget working from one that spent it waiting, which were previously the
+      same row in every recorded field.
+    value: ${{ steps.run.outputs.waiting_seconds }}
+  longest-wait-seconds:
+    description: "The single longest gap between messages, in seconds."
+    value: ${{ steps.run.outputs.longest_wait_seconds }}
   tokens-input:
     description: "Input tokens this run spent across every model call, fixer and reviewer."
     value: ${{ steps.run.outputs.tokens_input }}
