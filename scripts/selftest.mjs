@@ -6028,4 +6028,15 @@ check("candidateRecord reproduces run #12's denominator: one candidate in six le
   assert.strictEqual(legs.filter((r) => r.disposition === "unverified").length, 1);
 });
 
+
+check("candidateRecord will not read an absent count as zero", () => {
+  // Number(null) is 0, so a ceiling exit that could not count its files was
+  // reporting "we counted, and there was nothing". Caught while wiring the
+  // clock exit, which is the one place the count genuinely cannot be taken.
+  const r = candidateRecord({ changedCount: null, exit: "ceiling" });
+  assert.strictEqual(r.counted, null);
+  assert.strictEqual(r.files, null);
+  assert.match(r.why, /no file count taken/);
+});
+
 console.log("\n" + pass + " checks passed.\n");

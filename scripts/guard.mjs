@@ -2756,6 +2756,13 @@ export function candidateRecord({ changedCount = 0, exit = "" } = {}) {
   const n = Number(changedCount);
   const unknown = (why) => ({ disposition: "unknown", counted: null, files: null, why });
 
+  // Number(null) is 0, and a 0 here would say "we counted, and there was
+  // nothing" about a count nobody was able to take. That is the census mistake
+  // in a different column, and it fails in the one direction this field must
+  // not: it shrinks the denominator. The clock exit is where the count cannot
+  // be taken, so this is not hypothetical.
+  if (changedCount === null) return unknown("no file count taken");
+
   if (!CANDIDATE_EXITS.has(where)) return unknown("unrecognised exit: " + (where || "(empty)"));
   if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
     return unknown("unreadable file count: " + String(changedCount));
