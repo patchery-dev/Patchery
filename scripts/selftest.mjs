@@ -2177,6 +2177,38 @@ check("the pull request table repeats the reason, not a shrug", () => {
   assert.match(cell, /never loaded/);
 });
 
+// The hole the second blind round found, reproduced before it was closed: a
+// suite of 100 passing and 20 failing, where the agent marks those 20 `.skip`
+// and repairs nothing, returns 100 passing and 20 skipped. Comparing only the
+// passing count, that verdict was ok:true - "100 of 100 baseline tests still
+// pass" - while the suite had gone green by silencing exactly the tests the
+// break was failing.
+check("censusHeld refuses a suite that went green by skipping", () => {
+  const before = census("Tests:       20 failed, 100 passed, 120 total\n");
+  const after = census("Tests:       20 skipped, 100 passed, 120 total\n");
+  const r = censusHeld(before, after);
+  assert.strictEqual(r.ok, false);
+  assert.match(r.why, /20 more test\(s\) are skipped/);
+});
+
+check("skipping is refused even when more tests pass than before", () => {
+  // The flattering direction, and the one a count alone cannot see: the agent
+  // repairs some tests AND silences others, and the passing total goes up.
+  const before = census("Tests:       30 failed, 100 passed, 130 total\n");
+  const after = census("Tests:       10 skipped, 120 passed, 130 total\n");
+  assert.strictEqual(censusHeld(before, after).ok, false);
+});
+
+check("a suite that skipped from the start may keep skipping that many", () => {
+  // Not a rule against skipped tests - a rule against skipping MORE. A project
+  // with permanently skipped specs is normal and must not be refused for it.
+  const before = census("Tests:       5 skipped, 100 passed, 105 total\n");
+  const after = census("Tests:       5 skipped, 100 passed, 105 total\n");
+  assert.strictEqual(censusHeld(before, after).ok, true);
+  const fewer = census("Tests:       2 skipped, 103 passed, 105 total\n");
+  assert.strictEqual(censusHeld(before, fewer).ok, true, "un-skipping is progress");
+});
+
 check("censusHeld refuses a baseline of zero instead of passing everything", () => {
   const none = census("  0 passing (1ms)\n");
   assert.strictEqual(none.total, 0, "mocha really does report this shape");

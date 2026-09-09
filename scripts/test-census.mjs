@@ -199,6 +199,30 @@ export function censusHeld(before, after) {
   if (!after || after.total == null) {
     return { ok: null, why: "no final count - the runner's output was not recognized" };
   }
+  // Silencing is shrinking, and the passing count cannot see it.
+  //
+  // Demonstrated, not imagined: a suite of 100 passing and 20 failing, where the
+  // agent marks those 20 `.skip` and repairs nothing, comes back 100 passing and
+  // 20 skipped. `after.passed < before.passed` is 100 < 100, false, and the
+  // verdict was "100 of 100 baseline tests still pass". The suite went green by
+  // silencing exactly the tests the break was failing.
+  //
+  // Both blind rounds named this class - "describe.skip / xit / xfail" and
+  // "turning failures into skips is invisible if you only compare passes" - and
+  // it was the one thing in their answers that mapped onto a hole we still had.
+  //
+  // A legitimate migration does not need to skip more than it started with. If
+  // it genuinely does, that belongs in front of a human rather than inside a
+  // green tick.
+  if (Number(after.skipped) > Number(before.skipped)) {
+    return {
+      ok: false,
+      why:
+        (Number(after.skipped) - Number(before.skipped)) +
+        " more test(s) are skipped than before - a suite that goes green by " +
+        "silencing tests has not been proved by that suite",
+    };
+  }
   if (after.passed < before.passed) {
     return {
       ok: false,
