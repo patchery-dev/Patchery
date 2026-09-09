@@ -2068,6 +2068,118 @@ check("censusHeld catches a suite that got smaller", () => {
   assert.match(r.why, /got smaller/);
 });
 
+// The anti-shrink check was vacuous whenever the baseline counted zero: every
+// possible `after` is "not fewer" than none, so the verdict came back ok:true
+// with the sentence "3 of 0 baseline tests still pass". A suite that shrank
+// from 237 to 1 passed it too.
+//
+// Not hypothetical: mocha prints "0 passing" when the break stops every spec
+// from loading, and totals from that line, where jest and vitest refuse an
+// empty run. Packaging breaks are 11 of our 14 verified cases.
+// Read back from benchmark #11's own artifacts: all 21 uncountable "after" runs
+// were explained, and none was a parsing defect. 18 were suites that never
+// loaded (the break was not fixed, so the import still throws), 3 were yup /
+// type-fest, whose test command is eslint. All four FIXED legs counted fine.
+// The check was working; it just could not say so, and the first reader
+// concluded it had failed in half the run.
+check("census names the suite that never loaded, rather than shrugging", () => {
+  const c = census("Error [ERR_REQUIRE_ESM]: require() of ES Module /app/node_modules/is-stream/index.js");
+  assert.strictEqual(c.total, null);
+  assert.match(c.reason, /never loaded/);
+});
+
+// Six legs of benchmark #11 ended here, all node-fetch, and they were being
+// filed as "unrecognised runner" - which reads as a weakness in this parser
+// when it is the exact breaking change those cases exist to test, landing.
+//
+// Two independent clauses catch it, so they get two fixtures. A single sample
+// carrying both signals cannot tell which one is doing the work, and a mutation
+// run proved that: deleting either clause left the suite green.
+check("the ESM export message alone is enough to know the suite never loaded", () => {
+  const c = census(
+    "> mocha\n\nfile:///case/src/index.js:15\nimport dataUriToBuffer from 'data-uri-to-buffer';\n" +
+      "SyntaxError: The requested module 'data-uri-to-buffer' does not provide an export named 'default'\n"
+  );
+  assert.strictEqual(c.total, null);
+  assert.match(c.reason, /never loaded/);
+});
+
+check("loader frames alone are enough, even with no message we know", () => {
+  const c = census(
+    "> mocha\n\nSyntaxError: Unexpected token '?'\n" +
+      "    at ModuleJob._instantiate (node:internal/modules/esm/module_job:123:21)\n"
+  );
+  assert.strictEqual(c.total, null);
+  assert.match(c.reason, /never loaded/);
+});
+
+check("a SyntaxError without loader frames is not called a load failure", () => {
+  // A passing suite can print the words. Only a SyntaxError raised BY the module
+  // loader means a file never ran, and that distinction is the whole point.
+  const c = census("some output mentioning SyntaxError in a message\nand nothing else\n");
+  assert.doesNotMatch(c.reason, /never loaded/);
+});
+
+check("census knows a linter is not a test runner", () => {
+  const c = census("  1079:3  error  Expected type to be:\n\n✖ 3 problems (3 errors, 0 warnings)\n");
+  assert.strictEqual(c.total, null);
+  assert.match(c.reason, /linter or type check/);
+});
+
+check("an import failure is reported as that, not as a linter", () => {
+  // A suite that fails to import can also print a SyntaxError, and a linter run
+  // can mention modules. The more specific cause has to win, or 18 legs get
+  // filed under the explanation that fits 3.
+  const c = census("SyntaxError: Unexpected token\nCannot find module 'is-stream'\n✖ 1 problem (1 error, 0 warnings)");
+  assert.match(c.reason, /never loaded/);
+});
+
+check("census says nothing ran when there is no output at all", () => {
+  assert.match(census("").reason, /no output at all/);
+  assert.match(census("   \n ").reason, /no output at all/);
+});
+
+check("a counted run carries no reason to explain away", () => {
+  assert.strictEqual(census(MOCHA_GREEN).reason, null);
+  assert.strictEqual(census(JEST_GREEN).reason, null);
+});
+
+check("the pull request table repeats the reason, not a shrug", () => {
+  const before = census(MOCHA_GREEN);
+  const after = census("Error [ERR_REQUIRE_ESM]: require() of ES Module");
+  const cell = censusTableCell(before, after, censusHeld(before, after));
+  assert.match(cell, /^incomplete —/);
+  assert.match(cell, /never loaded/);
+});
+
+check("censusHeld refuses a baseline of zero instead of passing everything", () => {
+  const none = census("  0 passing (1ms)\n");
+  assert.strictEqual(none.total, 0, "mocha really does report this shape");
+  const r = censusHeld(none, census(MOCHA_GREEN));
+  assert.strictEqual(r.ok, null);
+  assert.match(r.why, /ran no tests at all/);
+});
+
+check("a zero baseline does not launder a suite that actually shrank", () => {
+  const r = censusHeld(census("  0 passing (1ms)\n"), census("  1 passing (2s)\n"));
+  assert.notStrictEqual(r.ok, true);
+});
+
+check("censusTableCell says the baseline was empty, not that the check held", () => {
+  const none = census("  0 passing (1ms)\n");
+  const after = census(MOCHA_GREEN);
+  const c = censusTableCell(none, after, censusHeld(none, after));
+  assert.match(c, /^did not run —/);
+  assert.match(c, /ran no tests at all/);
+});
+
+check("a real baseline of one test is still a baseline", () => {
+  // The refusal is for zero, not for "small". A one-test suite that keeps its
+  // one test has genuinely held, and refusing it would be a different bug.
+  const one = census("  1 passing (1ms)\n");
+  assert.strictEqual(censusHeld(one, census("  1 passing (2s)\n")).ok, true);
+});
+
 check("censusHeld says 'cannot tell' rather than 'fine' when it cannot parse", () => {
   assert.strictEqual(censusHeld(census("mystery"), census(JEST_GREEN)).ok, null);
   assert.strictEqual(censusHeld(census(JEST_GREEN), census("mystery")).ok, null);

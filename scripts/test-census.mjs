@@ -118,9 +118,56 @@ export function census(output) {
     } catch {
       counts = null;
     }
-    if (counts && Number.isFinite(counts.total)) return { runner: runner.name, ...counts };
+    if (counts && Number.isFinite(counts.total)) return { runner: runner.name, reason: null, ...counts };
   }
-  return { runner: null, passed: null, failed: null, skipped: null, total: null };
+  return { runner: null, passed: null, failed: null, skipped: null, total: null, reason: uncountableReason(text) };
+}
+
+/**
+ * Why a run could not be counted, decided here rather than grepped for later.
+ *
+ * All 21 uncountable "after" runs of benchmark #11 were read back from the
+ * artifacts, and not one of them was a parsing defect:
+ *
+ *   18  the suite never loaded - ERR_REQUIRE_ESM and friends. The break was
+ *       not fixed, so the import still throws, so no runner ever prints a
+ *       summary. Correct behaviour, and concentrated exactly where it should
+ *       be: 13 NO-CHANGE and 6 BLOCKED legs. All four FIXED legs counted.
+ *    3  the "test command" is eslint with a type-assertion plugin (yup /
+ *       type-fest, all three of its legs). There are no tests to count.
+ *
+ * The mechanism was working in every one. What was missing was its ability to
+ * SAY which case it was in, so a reader had to grep 42 logs to find out - and
+ * the first person to do it concluded the anti-shrink check had failed in half
+ * the run. It had not. Absence of a count and failure to count look identical
+ * until the reason is recorded, so it is recorded.
+ */
+export function uncountableReason(text) {
+  const t = String(text || "");
+  if (!t.trim()) return "the run produced no output at all";
+  if (
+    /ERR_REQUIRE_ESM|ERR_PACKAGE_PATH_NOT_EXPORTED|Cannot find module|ERR_MODULE_NOT_FOUND/.test(t) ||
+    // The ESM half of the same failure, and it is not a rare shape: six legs of
+    // benchmark #11 ended here, all node-fetch, on
+    // "SyntaxError: The requested module 'data-uri-to-buffer' does not provide
+    // an export named 'default'" - which is the exact breaking change those
+    // cases exist to test. Filed under "unrecognised runner" they read as a
+    // parser weakness rather than as the break landing.
+    /does not provide an export named|Cannot use import statement outside a module|ERR_IMPORT_ASSERTION/.test(t) ||
+    // A SyntaxError raised by the module loader is a file that never ran, not a
+    // test that failed. The loader frames are what separate it from a
+    // SyntaxError printed inside a passing suite's own output.
+    (/SyntaxError/.test(t) && /ModuleJob|ESMLoader|esm\/(loader|module_job)|loadFilesAsync|requireOrImport/.test(t))
+  ) {
+    return "the suite never loaded - the import itself failed, so no test ran";
+  }
+  // Deliberately after the import check: a project whose test script is a linter
+  // reports problems in this shape, and a suite that failed to import can also
+  // print a SyntaxError. The more specific cause wins.
+  if (/✖ \d+ problem|problems? \(\d+ error/.test(t)) {
+    return "this project's test command is a linter or type check, so there are no tests to count";
+  }
+  return "no summary line from a runner this tool recognises";
 }
 
 /**
@@ -133,6 +180,21 @@ export function census(output) {
 export function censusHeld(before, after) {
   if (!before || before.total == null) {
     return { ok: null, why: "no baseline count - the runner's output was not recognized" };
+  }
+  // A baseline of nothing is not a baseline, and reading it as one made this
+  // whole check vacuous: with `before.total` at 0, every possible `after` is
+  // "not fewer", so the verdict came back ok:true saying "3 of 0 baseline tests
+  // still pass". A suite that shrank from 237 to 1 would have passed too.
+  //
+  // Reachable in practice: mocha prints "0 passing" when the break stops every
+  // spec from loading, and mocha totals from the passing line rather than
+  // refusing an empty run the way jest and vitest do. So the runner where this
+  // fires is the runner most of our corpus uses.
+  if (before.total === 0) {
+    return {
+      ok: null,
+      why: "the baseline ran no tests at all, so there is no size to compare against",
+    };
   }
   if (!after || after.total == null) {
     return { ok: null, why: "no final count - the runner's output was not recognized" };
@@ -175,15 +237,20 @@ export function censusTableCell(before, after, verdict) {
   // before deciding must not find a blank here.
   if (v.ok === false) return "blocked — " + v.why;
   if (b.total == null) {
+    return "did not run — " + (b.reason || "this runner's output could not be counted") +
+      ", so the suite size was never established";
+  }
+  if (b.total === 0) {
     return (
-      "did not run — this runner's output could not be counted, so the suite " +
-      "size was never established"
+      "did not run — the baseline ran no tests at all (" + b.runner + "), so there " +
+      "was no suite size to compare against"
     );
   }
   if (a.total == null) {
     return (
-      "incomplete — " + b.passed + " passing before the fix (" + b.runner + "), but the " +
-      "run after the fix could not be counted, so the comparison was never made"
+      "incomplete — " + b.passed + " passing before the fix (" + b.runner + "), but " +
+      (a.reason || "the run after the fix could not be counted") +
+      ", so the comparison was never made"
     );
   }
   return "did not run — the suite size could not be compared";

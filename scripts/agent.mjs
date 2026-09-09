@@ -1419,6 +1419,21 @@ log("\n-> after the fix: " + (after.ok ? "PASS" : "FAIL (exit " + after.code + "
 // is allowed to touch: build and test configuration can only be opened up where
 // this comparison is possible, so the permission and the protection arrive
 // together.
+// Read what this "before" actually is, because it is not what the name suggests
+// and the limit is structural rather than a bug to be fixed here.
+//
+// `baseline` is step 1: the run that establishes the repository IS broken. So
+// the suite being counted has already been broken by the upgrade, and when the
+// break stops the specs from loading at all - a packaging break, which is 11 of
+// our 14 verified cases - the runner prints no summary and there is nothing to
+// count. That is why the product could not count three of the four legs that
+// shipped anything in run #11, all of them body-parser, while the benchmark
+// counted the same legs without trouble: the benchmark counts BEFORE it installs
+// the break, and the action never sees that state.
+//
+// Nothing here can conjure a healthy baseline; the action is invoked on a
+// repository that is already red. What it can do is say so, which the pull
+// request table now does in every state rather than leaving a blank.
 const censusBefore = census(baseline.output);
 const censusAfter = census(after.output);
 const censusVerdict = censusHeld(censusBefore, censusAfter);
