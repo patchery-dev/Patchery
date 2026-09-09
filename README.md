@@ -48,10 +48,17 @@ Four things stand between the agent and your branch:
 lockfiles, CI configuration and `node_modules` are off limits, deletions are
 refused, and every edit must sit inside the directory you named.
 
-**A test census.** The suite is counted while your code is still whole and
-counted again afterwards. If fewer tests pass than before, the change is rejected
-however green the run looks. An agent cannot quietly shrink the thing that judges
-it.
+**A test census.** The suite is counted before the agent is given the code and
+counted again after. Fewer tests passing than before is a rejection, however
+green the run looks — and so is more tests *skipped* than before, because a
+suite can be made to agree by silencing it as easily as by deleting from it. An
+agent cannot quietly shrink the thing that judges it.
+
+That count is taken when Patchery is invoked, which is after the upgrade has
+already broken your build — not on a healthy tree, because there is no longer
+one to measure. Where the break stops your test files loading at all, there is
+no count to take, and the pull request says so rather than leaving the row
+blank: a check that could not run must not look like one that passed.
 
 **An independent reviewer.** A second model, on a different provider, is given
 the diff and asked to refute it. It does not see the first model's reasoning, so
@@ -153,7 +160,7 @@ people change:
 
 ## Where it is today
 
-*Last measured 2026-09-07.*
+*Last measured 2026-09-09.*
 
 Patchery works on **JavaScript projects with a test command**, and it is judged by
 your own suite. It is measured on real breaks in repositories we do not own, and
@@ -166,13 +173,21 @@ The benchmark is public and reproducible: the case list is in
 own** are confirmed real — each one verified to turn that project's own suite red
 before Patchery is allowed near it.
 
-**There is no ratio on this page yet, and the reason is not a bad one.** The
-first batch has run once, but not every case reached a verdict — some runs died
-to a model that stopped answering, some to our own harness — and the rules for
-which of those belong in the denominator are exactly what we were fixing while
-that run was in flight. A number produced under rules that changed mid-run is not
-a measurement, and one we would have to caveat is not a number. It gets published
-here when a full set has run under one set of rules, win or lose.
+**There is no ratio on this page yet, and the reason is worth stating plainly.**
+The first batch has run once, under rules that were still being fixed while it
+was in flight, and reading it back afterwards found the classifier had mislabelled
+rows — runs the clock cut mid-migration were recorded as though the tool had
+nothing to offer. A number produced under rules that changed mid-run is not a
+measurement. It gets published here when a full set has run under one set of
+rules, win or lose.
+
+**Eight of that batch's runs never reached a verdict, and every one of them was
+our fault rather than the model's.** Six were a packaging bug of ours: the action
+resolved its own runtime from `PATH`, so a workflow that set up Node before
+calling it handed our code the project's Node, and the action died before it
+started. Two were the agent reading a whole file instead of searching it. Both
+are fixed. Neither is an outage we suffered, so neither is excluded from the
+denominator — a run that fails because of a defect we shipped is a failed run.
 
 **What is measured, and is not in dispute, is the shape of the problem.** Of the
 14 confirmed breaks, **11 are packaging** — a dependency that now ships as an ES
