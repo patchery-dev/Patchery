@@ -191,8 +191,65 @@ breaking changes in the ecosystem, and across **five** repositories that depend
 on it, not one suite noticed. Closing that gap needs a second trigger that does
 not wait for red, which is the next thing being built.
 
-The engine has 719 offline checks covering the guard, the census and the outcome
+The engine has 720 offline checks covering the guard, the census and the outcome
 rules. None of them need an API key: `node scripts/selftest.mjs`.
+
+## Running the workflows
+
+The measurement workflows are triggered by hand from the Actions tab. Their form
+fields say what to type and nothing else; the reasons are here, because a
+paragraph of rationale inside a text box is a paragraph nobody can act on.
+
+| workflow | what it answers |
+| --- | --- |
+| **Patchery (verify case)** | Is this break real? Green before the upgrade, red after |
+| **Patchery (verify batch)** | The same, for every row in `benchmark/candidates.json` |
+| **Patchery (benchmark run)** | Given one confirmed break, what does Patchery do |
+| **Patchery (benchmark, all cases)** | The same for every confirmed case, and one table |
+| **Patchery (scan smoke)** | Does the *published* action work in a repository we do not own |
+| **Refresh candidate pool** | Find new upgrade candidates |
+| **Calibrate** | Where the independent reviewer's confidence threshold should sit |
+
+Run **verify case** before **benchmark run**: a case that was never red teaches
+nothing, and three wrong conclusions in a row came from skipping that.
+
+### The fields that need a reason
+
+**`node-version`** — `auto` asks the repository, which is usually what you want,
+because the tests should run the way its maintainers run them. Pin an exact
+version when you are repeating an earlier run and want the same conditions:
+version drift between runs shows up as if it were the tool behaving
+inconsistently.
+
+**`repeat`** — a label that keeps artifact names apart. Two uploads under one
+name is a lost result, and in a repeat set the lost one is exactly the result
+that would have shown the case is unstable. It happened: three legs of one case
+uploaded under a single name and the report called the case stable.
+
+**`max-turns` and `run-budget-minutes`** — two separate brakes. Turns bound how
+much work the agent does; minutes bound how long it waits, which no turn limit
+can catch, because waiting is not a turn. **Raise them together.** An arm that
+raises one is still held by the other, and 13 of 42 legs in one benchmark ended
+at one ceiling or the other.
+
+**`job-timeout-minutes`** — the runner's own cap, and it must stay well above
+`run-budget-minutes` so that *our* clock is the one that closes. A job killed
+from outside writes no result, no summary and no diagnosis: the case vanishes
+instead of failing. At 60 minutes against a 45-minute budget that race was lost
+silently. Keep at least 45 minutes of headroom — Patchery does not start at
+minute zero, since install, census and baseline run first.
+
+**`break-class`** — `packaging` or `api`, copied from `_class` in the
+`cases.json` row. It exists so the report can split by it. A packaging break
+announces itself the moment anything runs; an API change is invisible unless the
+tests happen to reach that call. One number over both is mostly decided by the
+easier class, and it moves as cases are added while the tool stays the same.
+
+**`briefing`** — whether the agent is shown the mechanical classification of the
+break. `off` measures whether showing it actually helps.
+
+**`model`** — empty uses the endpoint's default. Set it explicitly when a run has
+to be comparable to an earlier one.
 
 ## Where it is going
 

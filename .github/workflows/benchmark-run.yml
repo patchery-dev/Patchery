@@ -13,76 +13,60 @@ name: Patchery (benchmark run)
 on:
   workflow_dispatch:
     inputs:
+      # Every description here is the form label somebody reads while filling the
+      # box in. It says what to type and what the choices are - nothing else.
+      # The reasons live in README.md under "Running the workflows", because a
+      # paragraph of rationale in a text field is a paragraph nobody can act on.
       repo:
-        description: "Repository, owner/name (must be a confirmed case)"
+        description: "owner/name from benchmark/cases.json. Example: winstonjs/winston"
         required: true
       commit:
-        description: "Commit to pin to"
+        description: "Full 40-character commit SHA from the same row"
         required: true
       package:
-        description: "Package to upgrade and then fix the call sites of"
+        description: "Dependency to upgrade. Example: through2"
         required: true
       breaking-version:
-        description: "Version to install"
+        description: "Major version to install. Example: 5"
         required: true
       test-command:
-        description: "How to run the tests"
+        description: "Example: npm test"
         required: false
         default: "npm test"
       target-dir:
-        description: "Directory inside the candidate to fix"
+        description: "Directory inside the repository. Example: . or packages/core"
         required: false
         default: "."
       node-version:
-        description: "Node version (auto = ask the repository)"
+        description: "auto, or an exact version. Example: 22.23.2"
         required: false
         default: "auto"
       repeat:
-        description: >-
-          Which run of this case this is, when a batch runs each case more than
-          once. Empty for a single run. It exists only to keep the artifact names
-          apart - two uploads under one name is a lost result, and a lost result
-          in a repeat set is the one that would have shown the case is unstable.
+        description: "A label to keep artifact names apart. Empty for a single run. Example: 1, 2, dry"
         required: false
         default: ""
       model:
-        description: "Model for the fixer (empty = the repository default)"
+        description: "Empty for the repository default, or a model name"
         required: false
         default: ""
       max-turns:
-        description: "Turn budget for the agent"
+        description: "Whole number of agent turns. Default 45"
         required: false
         default: "45"
       break-class:
-        description: >-
-          Which mechanism broke this case - packaging or api. Carried only so the
-          report can split by it: 11 of our 14 verified cases are packaging, and a
-          single number over both is 79% decided by the class where success means
-          least. The mix is an accident of what we found, so a rate over it moves
-          when we author more cases and the tool has not changed.
+        description: "packaging, api, or empty. Copy _class from the cases.json row"
         required: false
         default: ""
       run-budget-minutes:
-        description: >-
-          Wall-clock budget for the agent. The action has always accepted this and
-          this workflow never passed it, so every leg of every benchmark so far ran
-          at the default 45 - including the 5 legs of run #11 that the clock cut
-          mid-migration and that the table then recorded as "nothing to offer".
-          A paired-arm experiment cannot vary what it cannot pass.
+        description: "Whole minutes, or 0 for no limit. Default 45"
         required: false
         default: "45"
       job-timeout-minutes:
-        description: >-
-          The runner's own cap. Must stay well above run-budget-minutes so OUR
-          clock is the one that closes: a job killed from outside writes no
-          result, no summary and no diagnosis, and the case vanishes rather than
-          failing. Raise this whenever the budget is raised - stated as its own
-          input rather than computed, because arithmetic in YAML is the thing
-          that keeps breaking here.
+        description: "Whole minutes. Keep it at least 45 above run-budget-minutes. Default 90"
         required: false
         default: "90"
       briefing:
-        description: "Show the agent the mechanical classification (on/off)"
+        description: "on or off"
         required: false
         default: "on"
   workflow_call:

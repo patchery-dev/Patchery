@@ -5218,6 +5218,30 @@ console.log("\nworkflow wiring - an input nobody passes is unnecessary or a bug"
 const runYml = fs.readFileSync(new URL("../.github/workflows/benchmark-run.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const batchYml = fs.readFileSync(new URL("../.github/workflows/benchmark-batch.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
+// A form field's description is read by somebody with the box in front of them,
+// mid-task. It has to say what to type. Rationale belongs in README.md, and put
+// in the box instead it is a paragraph nobody can act on - the founder hit this
+// on a real trigger: four of the fields had grown to 200-370 characters of
+// reasoning and none of them said which values were allowed.
+check("no workflow_dispatch input description is an essay", () => {
+  const LIMIT = 120;
+  const dir = new URL("../.github/workflows/", import.meta.url);
+  const long = [];
+  for (const file of fs.readdirSync(dir).filter((f) => /\.ya?ml$/.test(f))) {
+    const text = fs.readFileSync(new URL(file, dir), "utf8").replace(/\r\n/g, "\n");
+    const block = /workflow_dispatch:\n\s+inputs:\n([\s\S]*?)(?=\n {2}[a-z]|\n\S)/.exec(text);
+    if (!block) continue;
+    for (const entry of block[1].split(/\n(?= {6}[a-z][a-z0-9-]*:)/)) {
+      const name = (entry.match(/^\s*([a-z][a-z0-9-]*):/) || [])[1];
+      const desc = (entry.match(/description:\s*([\s\S]*?)(?=\n\s+(?:required|default|type):)/) || [])[1];
+      if (!name || !desc) continue;
+      const len = desc.replace(/\s+/g, " ").trim().length;
+      if (len > LIMIT) long.push(file + ":" + name + " (" + len + ")");
+    }
+  }
+  assert.deepStrictEqual(long, [], "put the reason in README.md, not the form field: " + long.join(", "));
+});
+
 check("every workflow_call input of benchmark-run is passed by the batch", () => {
   const callBlock = /workflow_call:\n\s+inputs:\n([\s\S]*?)(?=\n\S)/.exec(runYml);
   assert.ok(callBlock, "benchmark-run declares no workflow_call inputs");

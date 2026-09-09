@@ -22,7 +22,7 @@ on:
         required: false
         default: ""
       version:
-        description: "Which published Patchery to run"
+        description: "Published tag to run. Example: v0.3"
         required: false
         default: "v0.3"
 
