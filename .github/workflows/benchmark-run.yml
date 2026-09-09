@@ -437,6 +437,8 @@ jobs:
             --final-exit "$FINAL_EXIT" \
             --action-outcome "$ACTION_OUTCOME" \
             --guard-reason "$GUARD_REASON" \
+            --candidate-disposition "$CANDIDATE_DISPOSITION" \
+            --candidate-files "$CANDIDATE_FILES" \
             --step-outcome "$STEP_OUTCOME" \
             --action-summary "$ACTION_SUMMARY" \
             --decision-reason "$DECISION_REASON" \
@@ -469,6 +471,8 @@ jobs:
           FINAL_EXIT: ${{ steps.recount.outputs.exit }}
           ACTION_OUTCOME: ${{ steps.patchery.outputs.outcome }}
           GUARD_REASON: ${{ steps.patchery.outputs.guard-reason }}
+          CANDIDATE_DISPOSITION: ${{ steps.patchery.outputs.candidate-disposition }}
+          CANDIDATE_FILES: ${{ steps.patchery.outputs.candidate-files }}
           DECISION_REASON: ${{ steps.patchery.outputs.decision-reason }}
           STEP_OUTCOME: ${{ steps.patchery.outcome }}
           ACTION_SUMMARY: ${{ steps.patchery.outputs.summary }}

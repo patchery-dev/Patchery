@@ -494,6 +494,13 @@ if (isMain) {
     tokensInput: Number(a["tokens-input"]) || 0,
     tokensOutput: Number(a["tokens-output"]) || 0,
     guardReason: a["guard-reason"] || "",
+    // What became of the patch, from candidateRecord in guard.mjs. `files`
+    // below lists what SHIPPED, so a patch the guard reverted and a run that
+    // wrote nothing arrive here as the same empty string - which is how the
+    // denominator of this product's own claim went unrecorded for two runs,
+    // and why answering it later meant reading six logs by hand.
+    candidateDisposition: a["candidate-disposition"] || "",
+    candidateFiles: a["candidate-files"] || "",
     outcome,
     detail,
     // Kept beside the outcome because the two answer different questions. The

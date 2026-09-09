@@ -6039,4 +6039,28 @@ check("candidateRecord will not read an absent count as zero", () => {
   assert.match(r.why, /no file count taken/);
 });
 
+
+// A key written to GITHUB_OUTPUT that action.yml does not declare is not an
+// error. It is silence: the caller reads an empty string, the row records
+// "unknown", and nothing anywhere says a name was wrong. That is the exact
+// failure this field was added to end, so the contract gets a hard check and
+// the names come from the function itself rather than a copy of them.
+check("action.yml exposes every candidate output the run writes", () => {
+  const actionSrc = fs.readFileSync(new URL("../action.yml", import.meta.url), "utf8");
+  const keys = Object.keys(candidateOutputs(candidateRecord({ changedCount: 1, exit: "shipped" })));
+  assert.ok(keys.length > 0, "a contract cannot be checked against nothing");
+  for (const key of keys) {
+    assert.match(
+      actionSrc,
+      new RegExp("value:\\s*\\$\\{\\{\\s*steps\\.run\\.outputs\\." + key + "\\s*\\}\\}"),
+      key + " is written by the run but action.yml never exposes it"
+    );
+    assert.match(
+      actionSrc,
+      new RegExp("^  " + key.replace(/_/g, "-") + ":", "m"),
+      key + " has no hyphenated output name in action.yml"
+    );
+  }
+});
+
 console.log("\n" + pass + " checks passed.\n");

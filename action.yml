@@ -341,6 +341,21 @@ outputs:
       when nothing was blocked. A slug rather than prose, because the
       interesting question is how often each one fires.
     value: ${{ steps.run.outputs.guard_reason }}
+  candidate-disposition:
+    description: >-
+      What became of the patch this run produced: shipped, blocked-by-guard,
+      unverified, unfinished, none - or unknown when no exit was able to say.
+      `files` lists what SHIPPED, so without this a patch the guard reverted
+      and a run that never wrote a line are the same empty string, and the
+      question "how often did it have something it could have shipped wrongly"
+      has no answer in the record.
+    value: ${{ steps.run.outputs.candidate_disposition }}
+  candidate-files:
+    description: >-
+      How many files that patch touched, or empty when the count could not be
+      taken. Empty rather than 0, because a 0 would read as a count somebody
+      took.
+    value: ${{ steps.run.outputs.candidate_files }}
   decision-reason:
     description: >-
       Why this run ended in a decision rather than a patch: no-code-fix, when the
