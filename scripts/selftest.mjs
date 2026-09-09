@@ -28,6 +28,7 @@ import {
 } from "./node-version.mjs";
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
 import { goldenVerdict, renderGolden } from "./golden-verdict.mjs";
+import { classifyRequest, turnMessage, streamFrames, routeOf } from "./control-stub.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
 import { pendingMajors, renderScan, importSites, withImpact } from "./scan-deps.mjs";
 import { knownGuardReasons, documentedOutcomes, emittedOutcomes, gateCensus, renderCensus } from "./gate-census.mjs";
@@ -6104,6 +6105,72 @@ check("goldenVerdict says UNKNOWN rather than guessing at a step that never ran"
 
 check("renderGolden prints the verdict as a heading verify-case can paste", () => {
   assert.match(renderGolden(goldenVerdict({ afterExit: "1", applyExit: "0", goldenExit: "0" })), /^\n### GOLDEN\n/);
+});
+
+
+// The control stub drives the agent without a model. Two rules in it were
+// wrong on the first try and both failed silently - the run went green and did
+// nothing - so they are pinned here rather than trusted.
+check("the stub answers only the conversation carrying the marker", () => {
+  const m = "MARKER_X";
+  assert.strictEqual(classifyRequest('{"messages":[{"text":"do MARKER_X now"}]}', m), "scripted");
+  assert.strictEqual(classifyRequest('{"messages":[{"text":"name this chat"}]}', m), "aside");
+  // Auxiliary calls share the endpoint - one of them on a smaller model, for a
+  // title - so counting requests hands a scripted turn to a summariser.
+  assert.strictEqual(classifyRequest("", m), "aside");
+  assert.strictEqual(classifyRequest("anything", ""), "aside");
+});
+
+check("a turn after a tool result still belongs to the conversation", () => {
+  // The regression that cost an evening: tool_result was checked before the
+  // marker, so the turn AFTER a tool call was answered with end_turn and the
+  // second scripted step was never served. The tool ran, the file did not
+  // change, and the run still reported success.
+  const body = '{"messages":[{"text":"MARKER_X"},{"content":[{"type":"tool_result"}]}]}';
+  assert.strictEqual(classifyRequest(body, "MARKER_X"), "scripted");
+});
+
+check("the stub serves turns in order and then stops", () => {
+  const script = { turns: [{ tool: "Read", input: { a: 1 } }, { tool: "Edit", input: { b: 2 } }], finalText: "done" };
+  assert.strictEqual(turnMessage(script, 0, "scripted").content[0].name, "Read");
+  assert.strictEqual(turnMessage(script, 1, "scripted").content[0].name, "Edit");
+  const past = turnMessage(script, 2, "scripted");
+  assert.strictEqual(past.stop_reason, "end_turn");
+  assert.strictEqual(past.content[0].text, "done");
+});
+
+check("an aside never gets a tool call", () => {
+  const script = { turns: [{ tool: "Edit", input: {} }] };
+  const aside = turnMessage(script, 0, "aside");
+  assert.strictEqual(aside.stop_reason, "end_turn");
+  assert.strictEqual(aside.content[0].type, "text");
+});
+
+check("the stream carries the tool input the turn asked for", () => {
+  // Plain JSON was tried first and looked fine: the run reached success. It had
+  // not carried out the tool call - the real request asks for a stream, and the
+  // CLI quietly repeated the whole exchange unstreamed.
+  const input = { file_path: "/x/app.js", old_string: "a", new_string: "b" };
+  const frames = streamFrames(turnMessage({ turns: [{ tool: "Edit", input }] }, 0, "scripted"));
+  for (const need of ["message_start", "content_block_start", "input_json_delta", "content_block_stop", "message_stop"]) {
+    assert.ok(frames.includes(need), "stream is missing " + need);
+  }
+  // Parsed as frames rather than picked out with a regex: the payload is JSON
+  // inside JSON, and a pattern over the escaping is the kind of cleverness that
+  // fails quietly the first time a field order changes.
+  const payload = frames
+    .split("\n")
+    .filter((l) => l.startsWith("data: "))
+    .map((l) => JSON.parse(l.slice(6)))
+    .find((d) => d.delta && d.delta.type === "input_json_delta");
+  assert.ok(payload, "no input_json_delta frame");
+  assert.deepStrictEqual(JSON.parse(payload.delta.partial_json), input);
+});
+
+check("the stub knows its three endpoints apart", () => {
+  assert.strictEqual(routeOf("/v1/messages?beta=true"), "messages");
+  assert.strictEqual(routeOf("/v1/messages/count_tokens?beta=true"), "count_tokens");
+  assert.strictEqual(routeOf("/api/event_logging/batch"), "other");
 });
 
 console.log("\n" + pass + " checks passed.\n");
