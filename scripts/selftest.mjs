@@ -55,6 +55,7 @@ import {
   guardVisible,
   objectedFixes,
   repeatGroups,
+  byBreakClass,
   hasRepeats,
 } from "./batch-report.mjs";
 import {
@@ -2212,6 +2213,54 @@ check("censusHeld says 'cannot tell' rather than 'fine' when it cannot parse", (
 // #11: the one reproducible FIXED case could not be counted in all three of its
 // legs, and no reader of those pull requests could have known.
 const cell = (b, a) => censusTableCell(census(b), census(a), censusHeld(census(b), census(a)));
+
+// Two blind rounds, different providers, gave the same reason for refusing a
+// single number here: our 14 cases are 11 packaging breaks and 3 API changes,
+// and a figure over both is four-fifths decided by the class where success
+// means least. It also moves when we author more cases while the tool stays
+// identical - which makes it a fact about the suite, not the artefact.
+check("the report splits the count by what broke", () => {
+  const groups = [
+    { repo: "a", package: "p", breakClass: "packaging", runs: 3, distinct: ["FIXED"], stable: true },
+    { repo: "b", package: "q", breakClass: "packaging", runs: 3, distinct: ["NO-CHANGE"], stable: true },
+    { repo: "c", package: "r", breakClass: "api", runs: 3, distinct: ["NO-CHANGE"], stable: true },
+  ];
+  const lines = byBreakClass(groups, [groups[0]]).join("\n");
+  assert.match(lines, /\| packaging \| 1 \| 2 \|/);
+  assert.match(lines, /\| api \| 0 \| 1 \|/);
+});
+
+check("the split prints counts and refuses percentages", () => {
+  // At three cases a clean sweep is still consistent with a true rate below
+  // half. A percentage here would be a number where there is no measurement.
+  const groups = [
+    { repo: "a", package: "p", breakClass: "packaging", runs: 3, distinct: ["FIXED"], stable: true },
+    { repo: "c", package: "r", breakClass: "api", runs: 3, distinct: ["FIXED"], stable: true },
+  ];
+  const lines = byBreakClass(groups, groups).join("\n");
+  assert.doesNotMatch(lines, /%/);
+  assert.match(lines, /Counts, not rates/);
+});
+
+check("one class, or none labelled, prints no split at all", () => {
+  // A one-row breakdown implies a comparison nobody made, and older results
+  // carry no class field. Silence is the honest output.
+  const one = [{ repo: "a", package: "p", breakClass: "packaging", runs: 1, distinct: ["FIXED"], stable: true }];
+  assert.deepStrictEqual(byBreakClass(one, one), []);
+  const none = [{ repo: "a", package: "p", runs: 1, distinct: ["FIXED"], stable: true }];
+  assert.deepStrictEqual(byBreakClass(none, none), []);
+});
+
+check("a case keeps its class even when only one leg carries it", () => {
+  // The three legs of a case are the same case. A leg written before the field
+  // existed must not blank the class for the other two.
+  const g = repeatGroups([
+    { repo: "a", package: "p", version: "3", outcome: "FIXED" },
+    { repo: "a", package: "p", version: "3", outcome: "FIXED", breakClass: "api" },
+  ]);
+  assert.strictEqual(g.length, 1);
+  assert.strictEqual(g[0].breakClass, "api");
+});
 
 check("censusTableCell reports the counts when the census held", () => {
   const c = cell(JEST_GREEN, JEST_GREEN);

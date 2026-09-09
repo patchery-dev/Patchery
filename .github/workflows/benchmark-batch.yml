@@ -104,6 +104,9 @@ jobs:
       # the report sees one run and calls the case stable. Measured on run #11:
       # three artifacts, all named benchmark-expressjs-body-parser-raw-body-v4.
       repeat: ${{ matrix.case.repeat }}
+      # From cases.json, through planBatch, which copies the row whole. Only the
+      # report uses it - to stop one number standing for two mechanisms.
+      break-class: ${{ matrix.case._class }}
       model: ${{ inputs.model }}
       max-turns: ${{ inputs.max-turns }}
       run-budget-minutes: ${{ inputs.run-budget-minutes }}

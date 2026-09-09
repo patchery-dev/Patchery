@@ -122,8 +122,14 @@ export function repeatGroups(rows, kind = "benchmark") {
   const byCase = new Map();
   for (const r of rows || []) {
     const key = String(r.repo) + "|" + String(r.package) + "@" + String(r.version);
-    if (!byCase.has(key)) byCase.set(key, { repo: r.repo, package: r.package, version: r.version, outcomes: [] });
+    if (!byCase.has(key)) {
+      byCase.set(key, { repo: r.repo, package: r.package, version: r.version, outcomes: [], breakClass: "" });
+    }
     byCase.get(key).outcomes.push(label(r, kind));
+    // Kept on the group so the report can split by mechanism. Taken from the
+    // first leg that carries one: the three legs of a case are the same case,
+    // and a leg written before the field existed would otherwise blank it.
+    if (!byCase.get(key).breakClass && r.breakClass) byCase.get(key).breakClass = String(r.breakClass);
   }
   return [...byCase.values()].map((g) => {
     const distinct = [...new Set(g.outcomes)];
@@ -144,6 +150,44 @@ export function sortRows(rows, kind) {
     return i < 0 ? order.length : i;
   };
   return [...rows].sort((a, b) => rank(a) - rank(b) || String(a.repo).localeCompare(String(b.repo)));
+}
+
+/**
+ * The same count, split by what actually broke - because one number over both
+ * mechanisms is not a measurement of the tool.
+ *
+ * Our 14 verified cases are 11 packaging breaks and 3 API changes. A packaging
+ * break announces itself the moment anything runs; an API change is invisible
+ * unless the project's existing tests happen to reach that call. Pooling them
+ * gives a figure four-fifths decided by the easier class - and one that moves
+ * when we author more cases while the tool stays exactly the same. A number
+ * that changes under a relabelling of the test suite is not about the artefact.
+ *
+ * No percentage, and no interval. Three cases cannot carry a rate: at n=3 even
+ * a clean sweep is consistent with a true rate below half, and nothing said
+ * over three units is an estimate. Counts and the word "cases", nothing more.
+ */
+export function byBreakClass(attempted, always) {
+  const classOf = (g) => String(g.breakClass || "").trim() || "unlabelled";
+  const classes = [...new Set(attempted.map(classOf))].sort();
+  // One class, or none labelled: there is nothing to split, and printing a
+  // one-row breakdown would imply a comparison we did not make.
+  if (classes.length < 2) return [];
+  const out = ["### By what broke", "", "| break | fixed every time | cases |", "| --- | --- | --- |"];
+  for (const c of classes) {
+    const inClass = attempted.filter((g) => classOf(g) === c);
+    const fixed = always.filter((g) => classOf(g) === c).length;
+    out.push("| " + c + " | " + fixed + " | " + inClass.length + " |");
+  }
+  out.push(
+    "",
+    "Counts, not rates. The split between these classes is an accident of which " +
+      "cases we found, so a single figure over both would move as we add cases " +
+      "without the tool changing. A class with only a few cases carries no rate " +
+      "at all - it is an example, and should be read as one.",
+    ""
+  );
+  return out;
 }
 
 export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
@@ -202,6 +246,7 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
           ""
         );
       }
+      out.push(...byBreakClass(attempted, always));
     } else {
       out.push(
         "## " + n("FIXED") + " fixed of " + judged + " cases it was able to attempt" +

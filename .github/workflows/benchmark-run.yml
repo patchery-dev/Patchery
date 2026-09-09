@@ -53,6 +53,15 @@ on:
         description: "Turn budget for the agent"
         required: false
         default: "45"
+      break-class:
+        description: >-
+          Which mechanism broke this case - packaging or api. Carried only so the
+          report can split by it: 11 of our 14 verified cases are packaging, and a
+          single number over both is 79% decided by the class where success means
+          least. The mix is an accident of what we found, so a rate over it moves
+          when we author more cases and the tool has not changed.
+        required: false
+        default: ""
       run-budget-minutes:
         description: >-
           Wall-clock budget for the agent. The action has always accepted this and
@@ -92,6 +101,7 @@ on:
       repeat: { type: string, required: false, default: "" }
       model: { type: string, required: false, default: "" }
       max-turns: { type: string, required: false, default: "45" }
+      break-class: { type: string, required: false, default: "" }
       # Declared in both blocks deliberately. `repeat` was added to the dispatch
       # block alone and the batch silently could not pass it, which cost a whole
       # repeat set to one artifact name. The same mistake with a budget would be
@@ -438,6 +448,7 @@ jobs:
             --version "$IN_VERSION" \
             --installed "$INSTALLED" \
             --model "$IN_MODEL" \
+            --break-class "$IN_BREAK_CLASS" \
             --tokens-input "$TOKENS_IN" \
             --tokens-output "$TOKENS_OUT" \
             --out /tmp/benchmark.json | tee -a "$GITHUB_STEP_SUMMARY"
@@ -457,6 +468,7 @@ jobs:
           IN_REPO: ${{ inputs.repo }}
           IN_PACKAGE: ${{ inputs.package }}
           IN_VERSION: ${{ inputs.breaking-version }}
+          IN_BREAK_CLASS: ${{ inputs.break-class }}
           INSTALLED: ${{ steps.bump.outputs.installed }}
           # The model that ANSWERED, not the one that was asked for. Line 339
           # already resolves the fallback; this line took the raw input, and the

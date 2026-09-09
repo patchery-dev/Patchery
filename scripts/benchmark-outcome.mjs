@@ -452,6 +452,13 @@ if (isMain) {
     // model produced it cannot be reproduced or compared, and invites the
     // reader to assume the best one.
     model: a.model || "",
+    // The mechanism that broke this case, carried so the report can refuse to
+    // average two of them. 11 of our 14 cases are packaging breaks, which
+    // announce themselves the moment anything runs; 3 are API changes that only
+    // surface if the existing tests happen to reach that call. A single number
+    // over both is four-fifths decided by the easier half, and it moves when we
+    // author more cases without the tool changing at all.
+    breakClass: a["break-class"] || "",
     // Tokens, not money. The SDK prices with Anthropic's own table whatever
     // endpoint served the request - it was wrong by a factor of 195 once - so
     // the honest half is the quantity the provider actually bills for.
