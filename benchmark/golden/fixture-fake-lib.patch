@@ -1,0 +1,13 @@
+diff --git a/test-fixture/app.js b/test-fixture/app.js
+index 5b588e9..803e440 100644
+--- a/test-fixture/app.js
++++ b/test-fixture/app.js
+@@ -1,7 +1,7 @@
+ const { formatPrice } = require("fake-lib");
+ 
+ function renderCartTotal(amount) {
+-  return `Total: ${formatPrice(amount)}`;
++  return `Total: ${formatPrice(amount, "USD")}`;
+ }
+ 
+ module.exports = { renderCartTotal };
