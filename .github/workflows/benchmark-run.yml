@@ -435,9 +435,9 @@ jobs:
             --break-class "$IN_BREAK_CLASS" \
             --clock-minutes "$CLOCK_MIN" \
             --clock-percent "$CLOCK_PCT" \
-            --waiting-seconds "$WAIT_SEC" \
-            --longest-wait-seconds "$WAIT_MAX" \
-            --runner "$RUNNER_ID" \
+            --model-wait-seconds "$MODEL_WAIT" \
+            --local-work-seconds "$LOCAL_WORK" \
+            --runner "$RUNNER_ID ${ImageOS:-} ${ImageVersion:-}" \
             --tokens-input "$TOKENS_IN" \
             --tokens-output "$TOKENS_OUT" \
             --out /tmp/benchmark.json | tee -a "$GITHUB_STEP_SUMMARY"
@@ -460,15 +460,22 @@ jobs:
           IN_BREAK_CLASS: ${{ inputs.break-class }}
           CLOCK_MIN: ${{ steps.patchery.outputs.clock-minutes }}
           CLOCK_PCT: ${{ steps.patchery.outputs.clock-percent }}
-          WAIT_SEC: ${{ steps.patchery.outputs.waiting-seconds }}
-          WAIT_MAX: ${{ steps.patchery.outputs.longest-wait-seconds }}
+          MODEL_WAIT: ${{ steps.patchery.outputs.model-wait-seconds }}
+          LOCAL_WORK: ${{ steps.patchery.outputs.local-work-seconds }}
           # The machine and the image, which both blind rounds asked for and
           # neither the row nor the log carried. Left varying on purpose - pinning
           # a host makes the result unrepresentative of a fleet - so it has to be
           # recorded instead, or an outcome that differs cannot be attributed to
-          # anything. ImageVersion is what a moving tag like ubuntu-latest
-          # actually resolved to on the day.
-          RUNNER_ID: ${{ runner.name }}/${{ runner.arch }} ${{ env.ImageOS }} ${{ env.ImageVersion }}
+          # anything.
+          #
+          # Only the two `runner.*` values come through here. ImageOS and
+          # ImageVersion are injected into the shell by the runner and are NOT in
+          # the `env` expression context, so `${{ env.ImageVersion }}` rendered
+          # empty - the dry run recorded "GitHub Actions 1000001096/X64  " with
+          # the image half missing, which was the whole point of the field: what
+          # a moving tag like ubuntu-latest actually resolved to that day. They
+          # are read from the shell instead, where they exist.
+          RUNNER_ID: ${{ runner.name }}/${{ runner.arch }}
           INSTALLED: ${{ steps.bump.outputs.installed }}
           # The model that ANSWERED, not the one that was asked for. Line 339
           # already resolves the fallback; this line took the raw input, and the

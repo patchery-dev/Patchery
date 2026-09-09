@@ -434,8 +434,8 @@ function announceRun() {
   runTelemetry = {
     clock_minutes: usage ? String(usage.minutes) : "",
     clock_percent: usage ? String(usage.percent) : "",
-    waiting_seconds: gaps ? String(gaps.totalSec) : "",
-    longest_wait_seconds: gaps ? String(gaps.longestSec) : "",
+    model_wait_seconds: gaps ? String(gaps.modelSec) : "",
+    local_work_seconds: gaps ? String(gaps.localSec) : "",
   };
 }
 
@@ -909,7 +909,11 @@ try {
     // recorded field: one that spent its budget working and one that spent it
     // waiting. With the machine deliberately left varying, that is the
     // attribution which would otherwise be missing.
-    agentGaps.push(Date.now() - lastMessageAt);
+    // Tagged by what ended the gap. A gap closed by an assistant message is the
+    // model thinking; a gap closed by anything else is a tool running locally,
+    // and running this project's suite takes minutes. Untagged, the first
+    // version of this reported 1889s of "waiting" in a 1920s run.
+    agentGaps.push({ ms: Date.now() - lastMessageAt, kind: message.type });
     lastMessageAt = Date.now();
     agentDeadline.touch();
     if (message.type === "assistant") {
@@ -1037,8 +1041,8 @@ log(
   runTelemetry = {
     clock_minutes: u ? String(u.minutes) : "",
     clock_percent: u ? String(u.percent) : "",
-    waiting_seconds: g ? String(g.totalSec) : "",
-    longest_wait_seconds: g ? String(g.longestSec) : "",
+    model_wait_seconds: g ? String(g.modelSec) : "",
+    local_work_seconds: g ? String(g.localSec) : "",
   };
 }
 log("-> model(s) used: " + (modelsUsed.join(", ") || "(unknown)"));

@@ -1328,38 +1328,45 @@ export function budgetUsageLine(usage) {
 }
 
 /**
- * The longest silence between messages, as a stand-in for the provider.
+ * How the run's time split between waiting for the model and doing local work.
  *
- * We cannot see inside the SDK's HTTP calls, so per-request latency and retries
- * are not ours to record. What is observable from outside is the gap between
- * one message arriving and the next, which is where a slow or wobbling provider
- * shows up - and it is the difference between "the agent spent forty minutes
- * working" and "the agent spent forty minutes waiting", two runs that look
- * identical in every field we had before.
+ * The first version of this counted every gap between messages and called the
+ * total "waiting". The dry run showed why that was wrong: 1889 seconds of
+ * "waiting" against a 1920-second run - 98% - because the gap before a tool
+ * result is the tool RUNNING, and running this project's test suite takes
+ * minutes. The number was real and the label was a lie.
  *
- * Both blind rounds asked for network timing per run and both gave the same
- * reason: with the machine left varying deliberately, an outcome that differs
- * has to be attributable to something, and "the service was slow that day" is
- * the attribution that is otherwise invisible.
+ * So gaps are tagged by what ended them. A gap closed by an assistant message
+ * is the model thinking and the network carrying it; a gap closed by anything
+ * else is local work. We still cannot see inside the SDK's HTTP calls, so this
+ * is not per-request latency - it is the honest half of the split, and it does
+ * separate the two runs it was added for: one that spent its budget working and
+ * one that spent it waiting.
  */
-export function gapStats(gapsMs, slowMs = 60000) {
-  const gaps = (gapsMs || []).map(Number).filter((n) => Number.isFinite(n) && n >= 0);
-  if (!gaps.length) return null;
-  const longest = Math.max(...gaps);
+export function gapStats(gaps, slowMs = 60000) {
+  const clean = (gaps || [])
+    .map((g) => (typeof g === "number" ? { ms: g, kind: "" } : g))
+    .filter((g) => g && Number.isFinite(Number(g.ms)) && Number(g.ms) >= 0);
+  if (!clean.length) return null;
+  const model = clean.filter((g) => g.kind === "assistant");
+  const sum = (a) => Math.round(a.reduce((t, g) => t + Number(g.ms), 0) / 1000);
   return {
-    count: gaps.length,
-    longestSec: Math.round(longest / 1000),
-    slow: gaps.filter((g) => g >= slowMs).length,
-    totalSec: Math.round(gaps.reduce((a, b) => a + b, 0) / 1000),
+    count: clean.length,
+    totalSec: sum(clean),
+    modelSec: sum(model),
+    localSec: sum(clean) - sum(model),
+    longestSec: Math.round(Math.max(...clean.map((g) => Number(g.ms))) / 1000),
+    slow: model.filter((g) => Number(g.ms) >= slowMs).length,
   };
 }
 
-/** The waiting half of the telemetry line, or nothing when no message ever came. */
+/** The timing half of the telemetry line, or nothing when no message ever came. */
 export function gapStatsLine(stats) {
   if (!stats) return "";
   return (
-    " | waiting: " + stats.totalSec + "s across " + stats.count + " gap(s), longest " +
-    stats.longestSec + "s" + (stats.slow ? ", " + stats.slow + " over a minute" : "")
+    " | model: " + stats.modelSec + "s, local: " + stats.localSec + "s across " +
+    stats.count + " gap(s), longest " + stats.longestSec + "s" +
+    (stats.slow ? ", " + stats.slow + " model wait(s) over a minute" : "")
   );
 }
 

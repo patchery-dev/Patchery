@@ -291,16 +291,16 @@ outputs:
   clock-percent:
     description: "Wall-clock used as a percentage of run-budget-minutes. Empty when the budget is 0 - a fraction of no ceiling is nothing, not zero."
     value: ${{ steps.run.outputs.clock_percent }}
-  waiting-seconds:
+  model-wait-seconds:
     description: >-
       Seconds spent between messages arriving - the closest thing to provider
       latency observable from outside the SDK. It separates a run that spent its
       budget working from one that spent it waiting, which were previously the
       same row in every recorded field.
-    value: ${{ steps.run.outputs.waiting_seconds }}
-  longest-wait-seconds:
+    value: ${{ steps.run.outputs.model_wait_seconds }}
+  local-work-seconds:
     description: "The single longest gap between messages, in seconds."
-    value: ${{ steps.run.outputs.longest_wait_seconds }}
+    value: ${{ steps.run.outputs.local_work_seconds }}
   tokens-input:
     description: "Input tokens this run spent across every model call, fixer and reviewer."
     value: ${{ steps.run.outputs.tokens_input }}

@@ -257,7 +257,16 @@ export function censusTableCell(before, after, verdict) {
 }
 
 // CLI: node test-census.mjs <logfile>  ->  JSON on stdout
-if (process.argv[2]) {
+//
+// The `isMain` guard is not decoration. Without it this block fired on IMPORT
+// whenever the importing script had any argument of its own: benchmark-outcome
+// takes a dozen flags, so every leg of every benchmark printed a bogus census
+// - `{"runner":null,...,"reason":"the run produced no output at all"}` - into
+// the Outcome step, from a file called "--before". Harmless and completely
+// misleading, and it survived eleven benchmark runs. The dry run is what
+// surfaced it. The other scripts here already guard this way.
+const isMain = process.argv[1] && process.argv[1].endsWith("test-census.mjs");
+if (isMain && process.argv[2]) {
   const fs = await import("node:fs");
   let text = "";
   try {

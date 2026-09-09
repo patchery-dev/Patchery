@@ -2367,15 +2367,30 @@ check("budgetUsage says over 100 rather than clamping", () => {
   assert.strictEqual(budgetUsage(50 * 60 * 1000, 45).percent, 111);
 });
 
-check("gapStats separates a run that worked from one that waited", () => {
-  // Two runs that spent forty minutes were the same row in every field we had.
-  // This is the only signal available from outside the SDK that tells them apart.
-  const s = gapStats([1000, 2000, 120000, 500]);
-  assert.strictEqual(s.count, 4);
-  assert.strictEqual(s.longestSec, 120);
-  assert.strictEqual(s.slow, 1);
-  assert.strictEqual(s.totalSec, 124);
-  assert.match(gapStatsLine(s), /longest 120s, 1 over a minute/);
+check("gapStats splits model time from local work", () => {
+  // The first version called every gap "waiting" and the dry run showed why that
+  // was wrong: 1889s of it in a 1920s run, because the gap before a tool result
+  // is the tool RUNNING and this suite takes minutes. Real number, false label.
+  const s = gapStats([
+    { ms: 90000, kind: "assistant" },
+    { ms: 240000, kind: "user" },
+    { ms: 1000, kind: "assistant" },
+  ]);
+  assert.strictEqual(s.count, 3);
+  assert.strictEqual(s.modelSec, 91);
+  assert.strictEqual(s.localSec, 240);
+  assert.strictEqual(s.longestSec, 240);
+  assert.strictEqual(s.slow, 1, "only model waits count as slow - a long test run is not a slow provider");
+  assert.match(gapStatsLine(s), /model: 91s, local: 240s/);
+});
+
+check("gapStats does not call a long local step a slow provider", () => {
+  // The whole point of the split. A four-minute test run must not be reported as
+  // the model taking four minutes to answer.
+  const s = gapStats([{ ms: 600000, kind: "user" }]);
+  assert.strictEqual(s.modelSec, 0);
+  assert.strictEqual(s.slow, 0);
+  assert.strictEqual(s.localSec, 600);
 });
 
 check("gapStats says nothing when no message ever arrived", () => {
@@ -2387,7 +2402,7 @@ check("gapStats says nothing when no message ever arrived", () => {
 check("gapStats drops unreadable gaps instead of counting them as zero", () => {
   // Zero is a measurement: a gap of no time. Reading a missing one as zero would
   // make a stalling provider look responsive.
-  const s = gapStats([1000, NaN, -5, "x", 3000]);
+  const s = gapStats([{ ms: 1000, kind: "assistant" }, { ms: NaN }, { ms: -5 }, { ms: "x" }, { ms: 3000, kind: "user" }]);
   assert.strictEqual(s.count, 2);
   assert.strictEqual(s.totalSec, 4);
 });

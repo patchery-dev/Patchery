@@ -465,8 +465,8 @@ if (isMain) {
     // and the distance to the ceiling answers it directly.
     clockMinutes: a["clock-minutes"] || "",
     clockPercent: a["clock-percent"] || "",
-    waitingSeconds: a["waiting-seconds"] || "",
-    longestWaitSeconds: a["longest-wait-seconds"] || "",
+    modelWaitSeconds: a["model-wait-seconds"] || "",
+    localWorkSeconds: a["local-work-seconds"] || "",
     // Deliberately left varying, therefore recorded. A run that differed on a
     // different machine or a different image is a different explanation from one
     // that differed on the same.
