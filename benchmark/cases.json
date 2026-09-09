@@ -175,10 +175,11 @@
     "breaking-version": "5",
     "test-command": "npm test",
     "target-dir": ".",
-    "node-version": "auto",
+    "node-version": "22.23.2",
     "_stars": 24519,
     "_bump": "through2 v4 -> v5",
     "_class": "packaging",
-    "_note": "verify-batch run #5, 2026-09-07: green before, red after"
+    "_note": "verify-batch run #5, 2026-09-07: green before, red after",
+    "_pin": "node-version was auto and is pinned for the six-run cell: the batch takes it from this row, not from the form, so auto is the only way the six legs could have landed on different runtimes. 22.23.2 is what the single-leg dry run used, and that run reproduced the break, so the pin is a version the break is known to survive. auto stays correct for every other row - the suite should run the way its maintainers run it - and this one goes back to auto once the repeat is finished."
   }
 ]
