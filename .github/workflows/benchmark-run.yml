@@ -53,6 +53,25 @@ on:
         description: "Turn budget for the agent"
         required: false
         default: "45"
+      run-budget-minutes:
+        description: >-
+          Wall-clock budget for the agent. The action has always accepted this and
+          this workflow never passed it, so every leg of every benchmark so far ran
+          at the default 45 - including the 5 legs of run #11 that the clock cut
+          mid-migration and that the table then recorded as "nothing to offer".
+          A paired-arm experiment cannot vary what it cannot pass.
+        required: false
+        default: "45"
+      job-timeout-minutes:
+        description: >-
+          The runner's own cap. Must stay well above run-budget-minutes so OUR
+          clock is the one that closes: a job killed from outside writes no
+          result, no summary and no diagnosis, and the case vanishes rather than
+          failing. Raise this whenever the budget is raised - stated as its own
+          input rather than computed, because arithmetic in YAML is the thing
+          that keeps breaking here.
+        required: false
+        default: "90"
       briefing:
         description: "Show the agent the mechanical classification (on/off)"
         required: false
@@ -73,6 +92,12 @@ on:
       repeat: { type: string, required: false, default: "" }
       model: { type: string, required: false, default: "" }
       max-turns: { type: string, required: false, default: "45" }
+      # Declared in both blocks deliberately. `repeat` was added to the dispatch
+      # block alone and the batch silently could not pass it, which cost a whole
+      # repeat set to one artifact name. The same mistake with a budget would be
+      # quieter: the batch would run arm B at arm A's clock and nothing would say so.
+      run-budget-minutes: { type: string, required: false, default: "45" }
+      job-timeout-minutes: { type: string, required: false, default: "90" }
       briefing: { type: string, required: false, default: "on" }
     secrets:
       ANTHROPIC_AUTH_TOKEN: { required: true }
@@ -96,7 +121,12 @@ jobs:
     # Install, census and baseline run first, so a 45-minute budget beginning at
     # minute ten ends at minute fifty-five - which against a 60-minute cap was a
     # race we would sometimes lose, and losing it silently.
-    timeout-minutes: 90
+    #
+    # Now an input, because an arm that raises the run budget to 90 against a
+    # fixed 90-minute cap would lose exactly the race this comment describes -
+    # and lose it silently, in the arm whose whole purpose is to show what
+    # happens when the budget stops binding.
+    timeout-minutes: ${{ fromJSON(inputs.job-timeout-minutes || '90') }}
     steps:
       - name: Name this case
         id: slug
@@ -345,6 +375,7 @@ jobs:
           # in the first batch were NO-CHANGE, and the transcripts show diagnosis,
           # not confusion. Turns are the cheapest thing here.
           max-turns: ${{ inputs.max-turns }}
+          run-budget-minutes: ${{ inputs.run-budget-minutes }}
           briefing: ${{ inputs.briefing }}
           verify-tools: "off"
           verify-base-url: ${{ vars.ALT_BASE_URL }}

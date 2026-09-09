@@ -35,6 +35,21 @@ on:
         description: "Turn budget for the agent"
         required: false
         default: "45"
+      run-budget-minutes:
+        description: >-
+          Wall-clock budget for the agent. Paired with max-turns: an arm that
+          raises one and not the other is still bound by the one it left alone,
+          and 13 of run #11's 42 legs ended at one ceiling or the other.
+        required: false
+        default: "45"
+      job-timeout-minutes:
+        description: >-
+          The runner's own cap. Must stay well above run-budget-minutes so our
+          clock is the one that closes - a job killed from outside writes no
+          result, no summary and no diagnosis, and the case vanishes rather than
+          failing. Raise it whenever the budget is raised.
+        required: false
+        default: "90"
       briefing:
         description: "Show the agent the mechanical classification (on/off) - off measures whether it helps"
         required: false
@@ -91,6 +106,8 @@ jobs:
       repeat: ${{ matrix.case.repeat }}
       model: ${{ inputs.model }}
       max-turns: ${{ inputs.max-turns }}
+      run-budget-minutes: ${{ inputs.run-budget-minutes }}
+      job-timeout-minutes: ${{ inputs.job-timeout-minutes }}
       briefing: ${{ inputs.briefing }}
 
   report:
