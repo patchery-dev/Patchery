@@ -1244,6 +1244,28 @@ export function budgetReason(label, minutes) {
   );
 }
 
+/**
+ * Which of the two brakes closed, as an outcome a benchmark row can be counted by.
+ *
+ * `deadline()` has always known the difference - budgetReason() even says it out
+ * loud, "The model was answering - this is not a stall" - but both exits called
+ * fail() with the default outcome, so both arrived downstream as `failed` and
+ * were filed as NO-CHANGE: "Patchery had nothing to offer". Five legs of run #11
+ * were that, and at least one of them had the fix written when the clock cut it.
+ *
+ * The run budget is ours, exactly like the turn budget, and benchmark-outcome
+ * already states the rule for that case: "the turn budget is a number we chose
+ * and the run did happen". A run we stopped is EXHAUSTED, and it stays in the
+ * denominator - a customer whose run does not finish has not been helped.
+ *
+ * A stall is not ours in the same way: the model stopped answering. That keeps
+ * the outcome it had, and the argument about whether it belongs in the
+ * denominator stays open where it already is.
+ */
+export function deadlineOutcome(firedBy) {
+  return firedBy === "budget" ? "run-budget-exhausted" : "failed";
+}
+
 /** What to say when a model call is abandoned, in a way that names the next step. */
 export function timeoutReason(label, minutes) {
   return (

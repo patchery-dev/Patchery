@@ -251,9 +251,21 @@ export function benchmarkOutcome({
     // technically present and practically absent.
     const RAN_OUT = /max.?turns|exhaust|out of turns|used all \d+ turns|inconclusive/i;
     if (RAN_OUT.test(actionOutcome)) {
+      // Two budgets end a run, and saying "turn budget" for both was wrong half
+      // the time. Five legs of run #11 hit the WALL CLOCK - and, reported as a
+      // plain failure, were filed NO-CHANGE, "Patchery had nothing to offer".
+      // On one of them the agent had already written the migration and said it
+      // was about to verify. The row is the opposite of what happened.
+      //
+      // Which budget it was decides what to change: turns is a number in the
+      // workflow, minutes is a number in the workflow and the job limit above it.
+      const wallClock = /run-budget-exhausted/i.test(actionOutcome);
       return {
         outcome: "EXHAUSTED",
-        detail: "the turn budget ran out before a fix was verified: " + actionOutcome,
+        detail:
+          (wallClock
+            ? "the run's wall-clock budget ended while the agent was still working"
+            : "the turn budget ran out before a fix was verified") + ": " + actionOutcome,
       };
     }
     // The action's summary says which break it was looking at and how far it got.

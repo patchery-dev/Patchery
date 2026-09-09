@@ -98,6 +98,7 @@ import {
   budgetDelayMs,
   timeoutReason,
   budgetReason,
+  deadlineOutcome,
   harnessCrash,
   confidenceThresholdReport,
   shouldReview,
@@ -2135,6 +2136,56 @@ check("censusTableCell answers for a shrunken suite even though a PR never shows
 // ordinary unproductive run it carries the MODEL's own closing message. An
 // unanchored search of that field let the model move its own failed case out of
 // the denominator by describing a stall in prose.
+// deadline() always knew which brake closed - budgetReason() says "The model was
+// answering - this is not a stall" in as many words - but both exits called
+// fail() with the default outcome, so both arrived as `failed` and were filed
+// NO-CHANGE: "Patchery had nothing to offer". Five legs of run #11 were that,
+// and on 102045049614 the agent had already written the named-import migration
+// and said it was about to verify when the clock cut it.
+check("deadlineOutcome separates the clock we set from the model going quiet", () => {
+  assert.strictEqual(deadlineOutcome("budget"), "run-budget-exhausted");
+  assert.strictEqual(deadlineOutcome("stall"), "failed");
+});
+
+check("deadlineOutcome does not invent a budget stop out of an unknown brake", () => {
+  // Anything that is not explicitly the budget keeps the old outcome. Guessing
+  // the other way would move runs INTO the flattering column, which is the one
+  // direction this file is not allowed to guess in.
+  for (const odd of [null, undefined, "", "other", "BUDGET "]) {
+    assert.strictEqual(deadlineOutcome(odd), "failed");
+  }
+});
+
+check("a wall-clock stop lands as EXHAUSTED, not NO-CHANGE", () => {
+  const r = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false",
+    actionOutcome: "run-budget-exhausted",
+    stepOutcome: "failure",
+  });
+  assert.strictEqual(r.outcome, "EXHAUSTED");
+  assert.match(r.detail, /wall-clock budget/);
+});
+
+check("EXHAUSTED says which budget ended, because they need different fixes", () => {
+  const turns = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false",
+    actionOutcome: "error_max_turns", stepOutcome: "failure",
+  });
+  assert.strictEqual(turns.outcome, "EXHAUSTED");
+  assert.match(turns.detail, /turn budget/);
+  assert.doesNotMatch(turns.detail, /wall-clock/);
+});
+
+check("a plain failure is still not EXHAUSTED", () => {
+  // The whole change rests on the outcome slug being distinct. If `failed` began
+  // matching, every crash would be credited as a run we cut short.
+  const r = benchmarkOutcome({
+    baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false",
+    actionOutcome: "failed", stepOutcome: "failure",
+  });
+  assert.notStrictEqual(r.outcome, "EXHAUSTED");
+});
+
 check("a real stall, which the harness reports as failed, is still BLOCKED", () => {
   const r = benchmarkOutcome({
     baselineExit: "0", brokenExit: "1", finalExit: "1", changed: "false",

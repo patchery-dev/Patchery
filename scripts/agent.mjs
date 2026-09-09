@@ -42,6 +42,7 @@ import {
   budgetDelayMs,
   timeoutReason,
   budgetReason,
+  deadlineOutcome,
   harnessCrash,
   shouldReview,
   buildReviewEvidence,
@@ -212,6 +213,10 @@ function deadline(label) {
       clearTimeout(budgetTimer);
     },
     expired: () => Boolean(firedBy),
+    // Which brake, as a value rather than only inside the prose. Both exits used
+    // to call fail() with the default outcome, so a run WE stopped at its budget
+    // and a model that stopped answering arrived downstream identically.
+    firedBy: () => firedBy,
     // Which brake closed, in the caller's words. Reporting a budget stop as "the
     // model stopped answering" would send the reader to their provider over a
     // model that answered perfectly well.
@@ -853,7 +858,10 @@ try {
   // An abort surfaces here as an ordinary throw. Say which it was: "the agent
   // crashed" sends someone reading a stack trace, "it stopped answering" sends
   // them to the provider.
-  if (agentDeadline.expired()) fail(agentDeadline.reason());
+  // The wall clock and the model going quiet are different results and were
+  // reported as the same one. Ours is EXHAUSTED, for the reason the turn budget
+  // already is: we chose the number and the run did happen.
+  if (agentDeadline.expired()) fail(agentDeadline.reason(), deadlineOutcome(agentDeadline.firedBy()));
   // A dead child process is our runtime, not the agent declining to answer. Filed
   // as a plain failure it became NO-CHANGE - "Patchery had nothing to offer" - for
   // three runs where the agent never got to have an offer.
