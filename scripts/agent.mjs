@@ -43,6 +43,8 @@ import {
   timeoutReason,
   budgetReason,
   deadlineOutcome,
+  patchNote,
+  untrackedHunk,
   harnessCrash,
   shouldReview,
   buildReviewEvidence,
@@ -628,6 +630,51 @@ function agentChangedFiles() {
   return agentChangedEntries().map((e) => e.path);
 }
 
+/**
+ * Photograph the working tree before anything reverts it.
+ *
+ * The reviewer's blocking path already did this, and its comment says why: a
+ * gate whose failure mode is destroying work gets switched off by the first
+ * person it burns. The turn cap and the stall detector revert exactly the same
+ * way and saved nothing, so a run that hit the ceiling mid-migration deleted
+ * the migration. From benchmark #11's own log, verbatim:
+ *
+ *   Discarding 2 unverified change(s): jest.config.js, through2-shim.cjs
+ *
+ * Those two files were the work of forty-five minutes and are gone.
+ *
+ * Saving is not shipping, and this deliberately does not make it one. The patch
+ * is unverified - the tests were never re-run against it - so it must never
+ * reach a pull request or be counted as a fix. It is written where a human can
+ * pick it up, and the run still reports that nothing was delivered.
+ */
+function savePatch(entries, name) {
+  const out = { saved: false, path: path.join(env("RUNNER_TEMP", path.join(repoRoot, "..")), name) };
+  if (!entries.length) return out;
+  try {
+    let text = "";
+    const tracked = entries.filter((e) => !e.status.includes("?")).map((e) => e.path);
+    if (tracked.length) text += git(["diff", "--"].concat(tracked));
+    // An untracked file has no diff and would be silently absent from the patch -
+    // which is how a saved patch can be verified as "written" while missing the
+    // file the agent actually created. Rendered as all-additions instead.
+    for (const e of entries.filter((x) => x.status.includes("?"))) {
+      try {
+        const body = fs.readFileSync(path.join(repoRoot, e.path), "utf8");
+        text += untrackedHunk(e.path, body);
+      } catch {}
+    }
+    if (!text.trim()) return out;
+    fs.writeFileSync(out.path, text, "utf8");
+    // Verified, not assumed: the revert below deletes the only other copy, and
+    // claiming a save that did not happen is worse than admitting it did not.
+    out.saved = fs.statSync(out.path).size > 0;
+  } catch (err) {
+    log("could not save the unverified change: " + (err?.message ?? err));
+  }
+  return out;
+}
+
 /** Undo the agent's work: restore tracked files, delete ones it created. */
 function revertPaths(paths) {
   for (const f of paths) {
@@ -875,9 +922,15 @@ try {
 // Stopped early because it was going in circles. Anything it half-changed is
 // unverified, so throw it away and hand the problem to a human.
 if (stalledReason) {
-  const partial = agentChangedFiles();
+  const partialEntries = agentChangedEntries();
+  const partial = partialEntries.map((e) => e.path);
+  let stallPatch = { saved: false, path: "" };
   if (partial.length > 0) {
-    log("Discarding " + partial.length + " unverified change(s): " + partial.join(", "));
+    stallPatch = savePatch(partialEntries, "sma-stalled.patch");
+    log(
+      "Discarding " + partial.length + " unverified change(s): " + partial.join(", ") + " - " +
+        patchNote(stallPatch.saved, stallPatch.path, "the partial work")
+    );
     revertPaths(partial);
   }
   // The counters matter to whoever reads this: "it looped" and "it explored and I
@@ -906,7 +959,7 @@ if (stalledReason) {
       "reverted the unverified changes. Nothing was delivered. (" +
       s.toolTurns + " tool turns, " + s.discovered + " distinct things discovered, " +
       s.edits + " edit(s).)",
-    { tests_passed: "false", diagnosis_file: diagnosisFile }
+    { tests_passed: "false", diagnosis_file: diagnosisFile, salvaged_patch: stallPatch.saved ? stallPatch.path : "" }
   );
 }
 
@@ -946,9 +999,15 @@ if (usingCustomEndpoint && modelsUsed.some((m) => /^claude-/.test(m))) {
 // Running out of turns is not a crash - it is the agent failing to reach a
 // conclusion, which is exactly the "needs human review" outcome.
 if (result.subtype === "error_max_turns") {
-  const partial = agentChangedFiles();
+  const partialEntries = agentChangedEntries();
+  const partial = partialEntries.map((e) => e.path);
+  let capPatch = { saved: false, path: "" };
   if (partial.length > 0) {
-    log("Discarding " + partial.length + " unverified change(s): " + partial.join(", "));
+    capPatch = savePatch(partialEntries, "sma-capped.patch");
+    log(
+      "Discarding " + partial.length + " unverified change(s): " + partial.join(", ") + " - " +
+        patchNote(capPatch.saved, capPatch.path, "the partial work")
+    );
     revertPaths(partial);
   }
   const s = stallDetector.inspect();
@@ -981,6 +1040,14 @@ if (result.subtype === "error_max_turns") {
       "Inconclusive, needs human review: the agent used all " +
         MAX_TURNS +
         " turns without producing a verified fix. Any partial changes were reverted.",
+      // The run that hit the ceiling mid-migration used to say only that its work
+      // was discarded. Where it went belongs in the sentence, not just the log -
+      // and so does the fact that it is unverified, so nobody applies it thinking
+      // it passed something.
+      capPatch.saved
+        ? "The partial work was saved to " + capPatch.path + " before the revert - it is " +
+          "unverified, the tests were never run against it, and it is not a fix."
+        : "",
       classification.kind
         ? "It was working on a `" + classification.kind + "` break - " + classification.what + "."
         : "",
@@ -997,7 +1064,7 @@ if (result.subtype === "error_max_turns") {
     ]
       .filter(Boolean)
       .join(" "),
-    { tests_passed: "false", diagnosis_file: diagnosisFile }
+    { tests_passed: "false", diagnosis_file: diagnosisFile, salvaged_patch: capPatch.saved ? capPatch.path : "" }
   );
 }
 
@@ -1582,9 +1649,7 @@ async function runReviewPass(entries) {
     if (!entry.status.includes("?")) continue;
     try {
       const body = fs.readFileSync(path.join(repoRoot, entry.path), "utf8");
-      diffText +=
-        "\n--- /dev/null\n+++ b/" + entry.path + "\n" +
-        body.split("\n").map((l) => "+" + l).join("\n") + "\n";
+      diffText += untrackedHunk(entry.path, body);
     } catch {}
   }
 
@@ -1884,19 +1949,19 @@ const reviewSection = renderReviewSection(reviewOutcomeResult, review, reviewMet
 // Blocking is opt-in, and even then only on an outright refutation. `stop()` writes
 // changed=false, so every already-published workflow gates on this with no YAML edit.
 if (reviewOutcomeResult.blocking) {
-  const patchPath = path.join(env("RUNNER_TEMP", path.join(repoRoot, "..")), "sma-rejected.patch");
   // This is the promise that makes blocking safe to turn on: a gate whose failure
   // mode is destroying work gets switched off by the first person it burns. So the
   // save is verified, and if it did not happen we say so instead of claiming it did
   // - the revert below is about to delete the only copy either way.
-  let patchSaved = false;
-  try {
-    fs.writeFileSync(patchPath, git(["diff", "--"].concat(changed)), "utf8");
-    patchSaved = fs.statSync(patchPath).size > 0;
-  } catch (err) {
-    log("could not save the rejected change: " + (err?.message ?? err));
-  }
-  const patchNote = patchSaved
+  //
+  // Shared with the cap and stall paths now, which reverted the same way and saved
+  // nothing at all. Going through savePatch also closes a hole this path had on
+  // its own: `git diff` omits untracked files, so a patch could be verified as
+  // written while missing the file the agent created.
+  const rejected = savePatch(changedEntries, "sma-rejected.patch");
+  const patchPath = rejected.path;
+  const patchSaved = rejected.saved;
+  const rejectedNote = patchSaved
     ? "The rejected change was saved to " + patchPath + " - recover it with `git apply`."
     : "WARNING: the rejected change could NOT be saved to " + patchPath +
       ", so it is lost with the revert below. Re-run with `verify-mode: warn` to get " +
@@ -1906,7 +1971,7 @@ if (reviewOutcomeResult.blocking) {
   stop(
     "blocked-by-review",
     "The independent review refuted this fix, and verify-mode is `block`, so nothing was " +
-      "delivered. " + patchNote + " Set `verify-mode: warn` to get the pull request anyway " +
+      "delivered. " + rejectedNote + " Set `verify-mode: warn` to get the pull request anyway " +
       "and judge for yourself.\n\n" + reviewOutcomeResult.headline,
     {
       tests_passed: "true",

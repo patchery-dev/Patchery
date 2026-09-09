@@ -99,6 +99,8 @@ import {
   timeoutReason,
   budgetReason,
   deadlineOutcome,
+  patchNote,
+  untrackedHunk,
   harnessCrash,
   confidenceThresholdReport,
   shouldReview,
@@ -2254,6 +2256,64 @@ check("censusTableCell answers for a shrunken suite even though a PR never shows
 // NO-CHANGE: "Patchery had nothing to offer". Five legs of run #11 were that,
 // and on 102045049614 the agent had already written the named-import migration
 // and said it was about to verify when the clock cut it.
+// From benchmark #11's log, verbatim: "Discarding 2 unverified change(s):
+// jest.config.js, through2-shim.cjs". Forty-five minutes of work, deleted. The
+// reviewer's blocking path had saved its patch since the beginning, for the
+// reason its own comment gives - a gate whose failure mode is destroying work
+// gets switched off by the first person it burns - and the cap and stall paths
+// reverted the same way while saving nothing.
+check("patchNote says where the work went AND that it is unverified", () => {
+  const n = patchNote(true, "/tmp/sma-capped.patch", "The partial work");
+  assert.match(n, /\/tmp\/sma-capped\.patch/);
+  // Both halves, always. A saved patch that reads like a fix is worse than no
+  // patch: the tests were never run against it, which is why the run failed.
+  assert.match(n, /unverified/);
+  assert.match(n, /git apply/);
+});
+
+check("patchNote admits a save that did not happen instead of claiming one", () => {
+  const n = patchNote(false, "/tmp/sma-capped.patch", "The partial work");
+  assert.match(n, /could not be saved/);
+  assert.doesNotMatch(n, /git apply/);
+});
+
+check("untrackedHunk emits headers git apply actually needs", () => {
+  // Without `diff --git` and an `@@` range, git apply exits 0 and restores
+  // NOTHING. Verified on a real repository: the command reported success and the
+  // created file stayed missing - which would have made our own sentence,
+  // "recover it with `git apply`", false in the case that matters most.
+  // through2-shim.cjs, the file benchmark #11 lost, was created from scratch.
+  const h = untrackedHunk("through2-shim.cjs", "const a = 1;\nmodule.exports = a;\n");
+  assert.match(h, /^diff --git a\/through2-shim\.cjs b\/through2-shim\.cjs$/m);
+  assert.match(h, /^new file mode 100644$/m);
+  assert.match(h, /^--- \/dev\/null$/m);
+  assert.match(h, /^@@ -0,0 \+1,2 @@$/m);
+  assert.match(h, /^\+const a = 1;$/m);
+});
+
+check("untrackedHunk counts the lines it claims in the range header", () => {
+  // A wrong count is the difference between a patch that applies and one git
+  // rejects, and nothing else in the file would notice.
+  for (const [body, n] of [["a\n", 1], ["a\nb\n", 2], ["a\n\nb\n", 3], ["a", 1]]) {
+    assert.match(untrackedHunk("f", body), new RegExp("@@ -0,0 \\+1," + n + " @@"));
+  }
+});
+
+check("untrackedHunk records a missing final newline", () => {
+  // Applied without the marker the file comes back byte-different from what the
+  // agent wrote, which is not the recovery we promised.
+  assert.match(untrackedHunk("f", "a\nb"), /\\ No newline at end of file/);
+  assert.doesNotMatch(untrackedHunk("f", "a\nb\n"), /No newline/);
+});
+
+check("untrackedHunk marks every line, including blank ones", () => {
+  const body = untrackedHunk("x.js", "a\n\nb\n").split("\n");
+  const hunk = body.slice(body.findIndex((l) => l.startsWith("@@")) + 1).filter((l) => l !== "");
+  for (const line of hunk) {
+    assert.ok(line.startsWith("+"), "unmarked line in patch body: " + JSON.stringify(line));
+  }
+});
+
 check("deadlineOutcome separates the clock we set from the model going quiet", () => {
   assert.strictEqual(deadlineOutcome("budget"), "run-budget-exhausted");
   assert.strictEqual(deadlineOutcome("stall"), "failed");

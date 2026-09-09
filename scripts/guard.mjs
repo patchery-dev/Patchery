@@ -1245,6 +1245,57 @@ export function budgetReason(label, minutes) {
 }
 
 /**
+ * Render an untracked file as an all-additions hunk.
+ *
+ * `git diff` does not see a file the agent created, so a patch saved with diff
+ * alone can be verified as written while missing the very file that mattered -
+ * a through2 run discarded `through2-shim.cjs`, which git had never heard of.
+ * The reviewer's diff already did this; the save path did not, and now both go
+ * through here.
+ */
+export function untrackedHunk(pathName, body) {
+  // The headers are not decoration. Written as just `--- /dev/null` and `+++ b/x`
+  // with no `diff --git` line and no `@@` range, `git apply` reports SUCCESS and
+  // silently restores nothing - verified on a real repository, where the created
+  // file stayed missing while the command exited 0. That would have made the
+  // sentence we print - "recover it with `git apply`" - false in exactly the case
+  // that matters most: `through2-shim.cjs`, the file the agent wrote from
+  // scratch, is the one benchmark #11 lost.
+  const text = String(body);
+  const lines = text.split("\n");
+  // A trailing newline produces a final empty element that is not a line.
+  const endsWithNewline = lines.length > 1 && lines[lines.length - 1] === "";
+  if (endsWithNewline) lines.pop();
+  const added = lines.map((l) => "+" + l);
+  // git records the absence of a final newline, and a patch that omits the marker
+  // applies but leaves the file byte-different from the original.
+  if (!endsWithNewline && text.length) added.push("\\ No newline at end of file");
+  return (
+    "diff --git a/" + pathName + " b/" + pathName + "\n" +
+    "new file mode 100644\n" +
+    "--- /dev/null\n" +
+    "+++ b/" + pathName + "\n" +
+    "@@ -0,0 +1," + lines.length + " @@\n" +
+    added.join("\n") + "\n"
+  );
+}
+
+/**
+ * What to tell a human about work that was kept, or that we failed to keep.
+ *
+ * Two things have to be said together and the old log line said neither: WHERE
+ * it went, and that it is UNVERIFIED. A saved patch that reads like a fix is
+ * worse than no patch, because the tests were never run against it - that is
+ * the whole reason the run is reporting failure.
+ */
+export function patchNote(saved, where, what) {
+  return saved
+    ? what + " was saved to " + where + " before being reverted - recover it with `git apply`. " +
+      "It is unverified: the tests were never run against it."
+    : what + " could not be saved, so it is gone. Nothing was delivered.";
+}
+
+/**
  * Which of the two brakes closed, as an outcome a benchmark row can be counted by.
  *
  * `deadline()` has always known the difference - budgetReason() even says it out
