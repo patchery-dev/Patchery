@@ -5347,6 +5347,31 @@ check("no workflow offers a form field it cannot be called with", () => {
   assert.deepStrictEqual(formOnly, [], "offered on the form but not callable: " + formOnly.join(", "));
 });
 
+// The runtime is the one environment fact that can differ between two legs of
+// the same case with everything else held equal: when the census cannot run on
+// the repository's first choice of Node the workflow falls back to its second.
+// So it has to reach the row - verify-case has carried it since formdata-node@6
+// read VALID on Node 12 and NOT-A-CASE on Node 16 from one commit - and it has
+// to come from the step that RESOLVED the fallback. steps.node.outputs.first
+// would record the version that was asked for rather than the one that
+// measured, and would be right exactly when it did not matter.
+check("the benchmark row records the runtime the suite was measured on", () => {
+  const call = /benchmark-outcome\.mjs[\s\S]*?--out /.exec(runYml);
+  assert.ok(call, "the benchmark-outcome invocation moved - fix the probe, not the file");
+  assert.match(call[0], /--node "\$NODE_USED"/, "the invocation does not pass --node");
+  assert.match(
+    runYml,
+    /NODE_USED: \$\{\{ steps\.baseline\.outputs\.node \}\}/,
+    "NODE_USED must come from the baseline step - it is the only one that resolved the fallback",
+  );
+
+  const outcomeSrc = fs.readFileSync(
+    new URL("../scripts/benchmark-outcome.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(outcomeSrc, /^\s*node: a\.node \|\| "",/m, "the row does not carry a node field");
+});
+
 // A test says a rule works on the input the test hands it. It cannot say the
 // rule is REACHABLE - that a real run ever arrives at that branch - and two of
 // this project's own bugs lived exactly there: NEEDS-DECISION shipped and fired

@@ -471,6 +471,18 @@ if (isMain) {
     // different machine or a different image is a different explanation from one
     // that differed on the same.
     runner: a.runner || "",
+    // The runtime the suite was actually measured on, which is not always the
+    // one asked for: when the census cannot run on the repository's first
+    // choice the workflow falls back to its second, so two legs of one case can
+    // sit on different runtimes without anything here saying so.
+    //
+    // verify-case has carried this field from the start and write-result.mjs
+    // says why: formdata-node@6 gave VALID on Node 12 and NOT-A-CASE on Node 16
+    // from the same repository at the same commit. Without the field that reads
+    // as flakiness. The benchmark row was missing it, which also meant an
+    // artifact-only re-derivation - the way run #11's table was rebuilt - could
+    // never check whether the runtime had moved underneath it.
+    node: a.node || "",
     // Tokens, not money. The SDK prices with Anthropic's own table whatever
     // endpoint served the request - it was wrong by a factor of 195 once - so
     // the honest half is the quantity the provider actually bills for.

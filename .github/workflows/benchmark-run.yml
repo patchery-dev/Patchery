@@ -454,11 +454,16 @@ jobs:
             --model-wait-seconds "$MODEL_WAIT" \
             --local-work-seconds "$LOCAL_WORK" \
             --runner "$RUNNER_ID ${ImageOS:-} ${ImageVersion:-}" \
+            --node "$NODE_USED" \
             --tokens-input "$TOKENS_IN" \
             --tokens-output "$TOKENS_OUT" \
             --out /tmp/benchmark.json | tee -a "$GITHUB_STEP_SUMMARY"
         env:
           OURS_NODE: ${{ steps.ours.outputs.node }}
+          # The runtime the SUITE ran on, not the one this script runs on. The
+          # baseline step already resolves the fallback and is the only place
+          # that knows which of the two versions actually measured the case.
+          NODE_USED: ${{ steps.baseline.outputs.node }}
           BASELINE_EXIT: ${{ steps.baseline.outputs.exit }}
           BROKEN_EXIT: ${{ steps.broken.outputs.exit }}
           FINAL_EXIT: ${{ steps.recount.outputs.exit }}
