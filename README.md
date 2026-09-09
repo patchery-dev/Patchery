@@ -26,8 +26,13 @@ level of proof it reached, and refuses to ship a change it could not prove.
 
 Keep Dependabot. Patchery is the layer above it.
 
-It runs as a GitHub Action, inside your own CI. Your code is never uploaded
-anywhere.
+It runs as a GitHub Action, inside your own CI. **Patchery hosts nothing and
+stores nothing** — there is no service to sign up for and no copy of your
+repository anywhere. What does leave the runner is what a model has to read to
+do the work: the failing test output, the files the agent opens, and the diff it
+writes. That goes to the endpoint *you* configure with `anthropic-base-url`,
+and nowhere else. Point it at your own deployment and nothing reaches a third
+party at all.
 
 ```yaml
 - uses: patchery-dev/Patchery@v0.3
@@ -46,7 +51,13 @@ Four things stand between the agent and your branch:
 
 **A mechanical guard.** Code, not a model, decides what may change. Test files,
 lockfiles, CI configuration and `node_modules` are off limits, deletions are
-refused, and every edit must sit inside the directory you named.
+refused, and every edit must sit inside `target-dir`.
+
+Be aware what that means by default: `target-dir` is `.`, so the containment is
+the whole repository minus the deny-list. The rules above are what actually bite
+on a first run. Narrow it — `target-dir: src` or `allowed-paths` — and the
+agent's reach shrinks with it, which is worth doing before you trust it with
+anything.
 
 **A test census.** The suite is counted before the agent is given the code and
 counted again after. Fewer tests passing than before is a rejection, however
@@ -76,6 +87,14 @@ because nothing ever ran the thing that changed. Patchery does not quietly
 count that as proof: the pull request is headed *Not verified* and says why, and
 the `draft` output opens it as a draft — the example workflow wires that up. The
 level is decided by the same code that runs the gates, never by a model.
+
+| What the pull request says | What it means |
+| --- | --- |
+| **Proof: the test suite** | Your suite was red on this break and is green after. The census held and the guard passed. This is the only level that claims the fix works. |
+| **Proof: a mechanical check** | The suite never went red, but one of your project's own checks — a type-check or lint — failed before and passes after. Weaker, and named as weaker. |
+| **Not verified** | The suite passed before *and* after, so nothing ever exercised what changed. Opened as a **draft**, because a green run here proves no regression, not a fix. |
+| **No patch** | No code change was produced. Where the break has no fix at the call site, the report is what you get. |
+| **Not delivered** | Something was written and the tests did not pass. It is reverted, and no pull request opens. |
 
 ## When no fix exists at the call site
 
@@ -203,7 +222,9 @@ goes red. A changed signature is only visible if a test happens to exercise that
 exact call — and a library's tests exercise its own code, not its dependency's
 changed paths. Measured directly: `express` v4 → v5 is one of the best-known
 breaking changes in the ecosystem, and across **five** repositories that depend
-on it, not one suite noticed. Closing that gap needs a second trigger that does
+on it — `expressjs/cors`, `expressjs/multer`, `expressjs/session`, `Unitech/pm2`
+and `node-formidable/formidable` — not one suite noticed. They are rows in
+[`benchmark/candidates.json`](benchmark/candidates.json); check them yourself. Closing that gap needs a second trigger that does
 not wait for red, which is the next thing being built.
 
 The engine has 724 offline checks covering the guard, the census and the outcome
