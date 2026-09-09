@@ -5314,6 +5314,39 @@ check("the batch passes nothing benchmark-run has not declared", () => {
   assert.deepStrictEqual(unknown, [], "passed but not declared: " + unknown.join(", "));
 });
 
+// The third link, and the one both misses actually lived on. The two checks
+// above watch the batch's end of the wire, so an input declared to the FORM and
+// never to workflow_call passes them both: there is nothing to pass and nothing
+// passed. `repeat` shipped exactly that way and cost a repeat set to a single
+// artifact name, and the comment beside run-budget-minutes says the same slip
+// with a budget would be quieter - arm B silently running at arm A's clock. A
+// machine label is quieter still, because both arms would sit on whatever the
+// moving tag resolved to and no field in the result would say they differed.
+check("no workflow offers a form field it cannot be called with", () => {
+  const dir = new URL("../.github/workflows/", import.meta.url);
+  const names = (block) => [...block[1].matchAll(/^ {6}([a-z][a-z0-9-]*):/gm)].map((m) => m[1]);
+  const seen = [];
+  const formOnly = [];
+  for (const file of fs.readdirSync(dir).filter((f) => /\.ya?ml$/.test(f))) {
+    const text = fs.readFileSync(new URL(file, dir), "utf8").replace(/\r\n/g, "\n");
+    const dispatchBlock = /workflow_dispatch:\n\s+inputs:\n([\s\S]*?)(?=\n {2}[a-z]|\n\S)/.exec(text);
+    const callBlock = /workflow_call:\n\s+inputs:\n([\s\S]*?)(?=\n {0,4}\S)/.exec(text);
+    if (!dispatchBlock || !callBlock) continue;
+    seen.push(file);
+    const declared = new Set(names(callBlock));
+    for (const name of names(dispatchBlock)) {
+      if (!declared.has(name)) formOnly.push(file + ":" + name);
+    }
+  }
+  // A probe that quietly stopped matching reports the same empty list as a file
+  // with nothing wrong. The known hit is what separates them.
+  assert.ok(
+    seen.includes("benchmark-run.yml"),
+    "the parse never reached benchmark-run.yml - fix the probe, not the file",
+  );
+  assert.deepStrictEqual(formOnly, [], "offered on the form but not callable: " + formOnly.join(", "));
+});
+
 // A test says a rule works on the input the test hands it. It cannot say the
 // rule is REACHABLE - that a real run ever arrives at that branch - and two of
 // this project's own bugs lived exactly there: NEEDS-DECISION shipped and fired
