@@ -39,6 +39,10 @@ on:
         description: "Directory inside the repository. Example: . or packages/core"
         required: false
         default: "."
+      golden-patch:
+        description: "Path inside Patchery to a patch to prove, e.g. benchmark/golden/x.patch. Empty to skip."
+        required: false
+        default: ""
       node-version:
         description: "auto, or an exact version. Example: 22.23.2"
         required: false
@@ -51,6 +55,7 @@ on:
       breaking-version: { type: string, required: true }
       test-command: { type: string, required: false, default: "npm test" }
       target-dir: { type: string, required: false, default: "." }
+      golden-patch: { type: string, required: false, default: "" }
       node-version: { type: string, required: false, default: "auto" }
 
 permissions:
@@ -326,6 +331,37 @@ jobs:
           tail -60 /tmp/after.log
         env:
           TEST_COMMAND: ${{ inputs.test-command }}
+
+      # Proving a hand-written patch is really a fix, with nothing from the
+      # classifier in the path. A patch judged only by the thing it is meant to
+      # test is not a control, it is a mirror.
+      - name: Apply the candidate golden patch and test again
+        id: golden
+        if: inputs.golden-patch != '' && steps.after.outputs.exit != '' && steps.after.outputs.exit != '0'
+        working-directory: case/${{ inputs.target-dir }}
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          set +e
+          git -C "$GITHUB_WORKSPACE/case" apply --verbose "$GITHUB_WORKSPACE/patchery/$PATCH"
+          echo "apply=$?" >> "$GITHUB_OUTPUT"
+          $TEST_COMMAND > /tmp/golden.log 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          tail -60 /tmp/golden.log
+        env:
+          PATCH: ${{ inputs.golden-patch }}
+          TEST_COMMAND: ${{ inputs.test-command }}
+
+      - name: Golden verdict
+        if: inputs.golden-patch != ''
+        run: |
+          "$OURS_NODE" "$GITHUB_WORKSPACE/patchery/scripts/golden-verdict.mjs" \
+            "$AFTER" "$APPLY" "$GOLDEN" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          OURS_NODE: ${{ steps.ours.outputs.node }}
+          AFTER: ${{ steps.after.outputs.exit }}
+          APPLY: ${{ steps.golden.outputs.apply }}
+          GOLDEN: ${{ steps.golden.outputs.exit }}
 
       # One sentence, so a candidate can be accepted or dropped without opening a
       # log, and one JSON file, so fifty of them can be read as a table.

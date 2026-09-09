@@ -27,6 +27,7 @@ import {
   FALLBACK,
 } from "./node-version.mjs";
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
+import { goldenVerdict, renderGolden } from "./golden-verdict.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
 import { pendingMajors, renderScan, importSites, withImpact } from "./scan-deps.mjs";
 import { knownGuardReasons, documentedOutcomes, emittedOutcomes, gateCensus, renderCensus } from "./gate-census.mjs";
@@ -6061,6 +6062,48 @@ check("action.yml exposes every candidate output the run writes", () => {
       key + " has no hyphenated output name in action.yml"
     );
   }
+});
+
+
+// The control asks whether the tool recognises a known-good patch. That is
+// worthless if "known-good" was decided by the pipeline the control is meant to
+// test, so the proof runs in verify-case and this reader imports none of the
+// classifier. These checks pin the four answers apart.
+check("goldenVerdict calls a patch golden only when red became green", () => {
+  const r = goldenVerdict({ afterExit: "1", applyExit: "0", goldenExit: "0" });
+  assert.strictEqual(r.verdict, "GOLDEN");
+  assert.match(r.why, /red after the upgrade/);
+});
+
+check("goldenVerdict separates a patch that did not apply from one that did not fix", () => {
+  // Same reason REFUSED and WRONG are separate columns: "we could not try" and
+  // "we tried and it did not work" look alike in a table and mean opposite
+  // things about the artifact.
+  assert.strictEqual(goldenVerdict({ afterExit: "1", applyExit: "1", goldenExit: "" }).verdict, "NOT-APPLIED");
+  assert.strictEqual(goldenVerdict({ afterExit: "1", applyExit: "0", goldenExit: "1" }).verdict, "NOT-A-FIX");
+});
+
+check("goldenVerdict refuses a case that was never red", () => {
+  // A patch cannot be proved against a suite the upgrade did not break, and a
+  // GOLDEN stamped there would be a control that proves nothing.
+  const r = goldenVerdict({ afterExit: "0", applyExit: "0", goldenExit: "0" });
+  assert.strictEqual(r.verdict, "UNKNOWN");
+  assert.match(r.why, /nothing here to fix/);
+});
+
+check("goldenVerdict says UNKNOWN rather than guessing at a step that never ran", () => {
+  for (const args of [
+    { afterExit: "", applyExit: "0", goldenExit: "0" },
+    { afterExit: "1", applyExit: "", goldenExit: "" },
+    { afterExit: "1", applyExit: "0", goldenExit: "" },
+    {},
+  ]) {
+    assert.strictEqual(goldenVerdict(args).verdict, "UNKNOWN", JSON.stringify(args));
+  }
+});
+
+check("renderGolden prints the verdict as a heading verify-case can paste", () => {
+  assert.match(renderGolden(goldenVerdict({ afterExit: "1", applyExit: "0", goldenExit: "0" })), /^\n### GOLDEN\n/);
 });
 
 console.log("\n" + pass + " checks passed.\n");
