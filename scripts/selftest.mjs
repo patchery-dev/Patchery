@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { census, censusHeld } from "./test-census.mjs";
+import { census, censusHeld, censusTableCell } from "./test-census.mjs";
 import { findInstalled } from "./installed-version.mjs";
 import {
   decideNodeVersion,
@@ -2028,6 +2028,55 @@ check("censusHeld catches a suite that got smaller", () => {
 check("censusHeld says 'cannot tell' rather than 'fine' when it cannot parse", () => {
   assert.strictEqual(censusHeld(census("mystery"), census(JEST_GREEN)).ok, null);
   assert.strictEqual(censusHeld(census(JEST_GREEN), census("mystery")).ok, null);
+});
+
+// The census ran, decided, and told nobody outside the CI log. A pull request
+// reported the sibling gate ("were any test files modified") and said nothing
+// about this one, so a run where the suite size was never checked was
+// indistinguishable from a run where it was checked and held. Measured on run
+// #11: the one reproducible FIXED case could not be counted in all three of its
+// legs, and no reader of those pull requests could have known.
+const cell = (b, a) => censusTableCell(census(b), census(a), censusHeld(census(b), census(a)));
+
+check("censusTableCell reports the counts when the census held", () => {
+  const c = cell(JEST_GREEN, JEST_GREEN);
+  assert.match(c, /^held —/);
+  assert.match(c, /1085 of 1085/);
+  assert.match(c, /jest/);
+});
+
+check("censusTableCell distinguishes an uncountable baseline from an uncountable final run", () => {
+  // Different failures, and the second is the one run #11 kept hitting. Reporting
+  // them with one sentence would hide which half of the comparison was missing.
+  const noBefore = cell("mystery", MOCHA_GREEN);
+  const noAfter = cell(MOCHA_GREEN, "mystery");
+  assert.match(noBefore, /^did not run —/);
+  assert.match(noBefore, /never established/);
+  assert.match(noAfter, /^incomplete —/);
+  assert.match(noAfter, /18 passing before the fix \(mocha\)/);
+  assert.notStrictEqual(noBefore, noAfter);
+});
+
+check("censusTableCell is never blank, whatever it is handed", () => {
+  // A blank cell is the bug this row exists to fix: it reads as a check that
+  // passed. Nothing - not a missing verdict, not a null count - may produce one.
+  for (const c of [
+    cell("mystery", "mystery"),
+    censusTableCell(null, null, null),
+    censusTableCell(census(JEST_GREEN), census(JEST_GREEN), undefined),
+  ]) {
+    assert.ok(c.trim().length > 0, "the cell must say something: " + JSON.stringify(c));
+    assert.doesNotMatch(c, /undefined|null|NaN/);
+  }
+});
+
+check("censusTableCell answers for a shrunken suite even though a PR never shows it", () => {
+  // ok:false reverts and opens nothing, so this cell cannot reach a pull request
+  // today. It is written anyway: the function must be total, so that a later
+  // caller which reports before deciding cannot print a blank.
+  const c = cell(JEST_GREEN, "Tests:       5 passed, 5 total\n");
+  assert.match(c, /^blocked —/);
+  assert.match(c, /suite got smaller/);
 });
 
 // censusHeld returns a tri-state and benchmarkOutcome read it as a boolean, so

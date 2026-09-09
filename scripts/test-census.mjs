@@ -150,6 +150,45 @@ export function censusHeld(before, after) {
   return { ok: true, why: after.passed + " of " + before.passed + " baseline tests still pass" };
 }
 
+/**
+ * One row for the pull request's verification table, in every state it can reach.
+ *
+ * The table already reports this gate's sibling - "Were any test files modified"
+ * - and the two exist for the same reason: a green light can be bought by making
+ * the suite smaller. Reporting one and omitting the other is worse than omitting
+ * both, because the table then looks complete: a run where the size check could
+ * not be applied read exactly like a run where it passed, and the reader had no
+ * way to tell which one they were looking at.
+ *
+ * So the cell is never empty. "Could not count" is a result and gets said out
+ * loud, with which half was missing - a baseline we could not read and a final
+ * output we could not read are different failures, and the second is the one
+ * this project has actually been hitting.
+ */
+export function censusTableCell(before, after, verdict) {
+  const b = before || {};
+  const a = after || {};
+  const v = verdict || {};
+  if (v.ok === true) return "held — " + v.why + " (" + b.runner + ")";
+  // Unreachable from a pull request: this verdict reverts the change and opens
+  // nothing. Answered anyway so the cell is total - a caller that ever reports
+  // before deciding must not find a blank here.
+  if (v.ok === false) return "blocked — " + v.why;
+  if (b.total == null) {
+    return (
+      "did not run — this runner's output could not be counted, so the suite " +
+      "size was never established"
+    );
+  }
+  if (a.total == null) {
+    return (
+      "incomplete — " + b.passed + " passing before the fix (" + b.runner + "), but the " +
+      "run after the fix could not be counted, so the comparison was never made"
+    );
+  }
+  return "did not run — the suite size could not be compared";
+}
+
 // CLI: node test-census.mjs <logfile>  ->  JSON on stdout
 if (process.argv[2]) {
   const fs = await import("node:fs");

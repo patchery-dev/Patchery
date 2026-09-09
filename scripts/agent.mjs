@@ -20,7 +20,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
-import { census, censusHeld } from "./test-census.mjs";
+import { census, censusHeld, censusTableCell } from "./test-census.mjs";
 import {
   protectedReason,
   parsePorcelainEntries,
@@ -1882,6 +1882,12 @@ const prBody = [
     " |",
   "| `" + TEST_COMMAND + "` after the fix | passed |",
   "| Were any test files modified | No - enforced by CI |",
+  // The sibling of the row above, and it was missing. Both gates answer the same
+  // question - was this green bought by running less of the suite - and a table
+  // that reported one while staying silent about the other read as complete when
+  // it was not. The cell is filled in every state, including the states where the
+  // check could not be applied.
+  "| Did the suite stay the same size | " + censusTableCell(censusBefore, censusAfter, censusVerdict) + " |",
   "| Independent review (second agent, no write access) | " + reviewOutcomeResult.tableCell + " |",
   extraChecks.length
     ? "| " + extraChecks.map((c) => "`" + c.name + "`").join(", ") +
