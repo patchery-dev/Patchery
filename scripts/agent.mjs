@@ -49,6 +49,8 @@ import {
   budgetUsageLine,
   gapStats,
   gapStatsLine,
+  candidateRecord,
+  candidateOutputs,
   harnessCrash,
   shouldReview,
   buildReviewEvidence,
@@ -335,12 +337,41 @@ function spend(args) {
 // site remembering, 13 legs of 42 lost their turn count.
 let runTelemetry = {};
 
+/**
+ * What became of the patch the agent produced, carried to whichever exit ends
+ * the run so the row can count it.
+ *
+ * `files` lists what SHIPPED, so a patch the guard reverted and a run that never
+ * wrote a line arrive in the table as the same empty string. Answering how often
+ * the tool had a patch it could have shipped wrongly meant reading six logs by
+ * hand, and for the run before that it could not be answered at all.
+ *
+ * Starts empty on purpose: unset means unknown, not "nothing was written". A run
+ * that dies before anything measures the tree should say so.
+ */
+let candidateExit = "";
+let candidateCount = 0;
+const noteCandidate = (exit, count) => {
+  candidateExit = exit;
+  if (count !== undefined) candidateCount = count;
+};
+
+/** Count the tree without letting a failure here end a run that was ending anyway. */
+const safeChangedCount = () => {
+  try {
+    return agentChangedEntries().length;
+  } catch {
+    return null;
+  }
+};
+
 function writeOutputs(obj) {
   const file = process.env.GITHUB_OUTPUT;
   if (!file) return;
   obj = {
     ...obj,
     ...runTelemetry,
+    ...candidateOutputs(candidateRecord({ changedCount: candidateCount, exit: candidateExit })),
     tokens_input: String(SPEND.input),
     tokens_output: String(SPEND.output),
     tokens_cache_read: String(SPEND.cacheRead),
@@ -481,6 +512,8 @@ function fail(message, outcome = "failed") {
  * hand. A slug makes it a number.
  */
 function refuse(message, reason = "unspecified") {
+  // The count was taken when the diff appeared; only the verdict changes here.
+  noteCandidate("guard");
   announceRun();
   console.error("\n[BLOCKED] " + clean(message));
   writeOutputs({
@@ -953,7 +986,12 @@ try {
   // The wall clock and the model going quiet are different results and were
   // reported as the same one. Ours is EXHAUSTED, for the reason the turn budget
   // already is: we chose the number and the run did happen.
-  if (agentDeadline.expired()) fail(agentDeadline.reason(), deadlineOutcome(agentDeadline.firedBy()));
+  if (agentDeadline.expired()) {
+    // The clock fires out of a catch, before anything has enumerated the tree.
+    // Count it here or the most common exit there is reports nothing at all.
+    noteCandidate("ceiling", safeChangedCount());
+    fail(agentDeadline.reason(), deadlineOutcome(agentDeadline.firedBy()));
+  }
   // A dead child process is our runtime, not the agent declining to answer. Filed
   // as a plain failure it became NO-CHANGE - "Patchery had nothing to offer" - for
   // three runs where the agent never got to have an offer.
@@ -976,6 +1014,7 @@ if (stalledReason) {
       "Discarding " + partial.length + " unverified change(s): " + partial.join(", ") + " - " +
         patchNote(stallPatch.saved, stallPatch.path, "the partial work")
     );
+    noteCandidate("ceiling", partial.length);
     revertPaths(partial);
   }
   // The counters matter to whoever reads this: "it looped" and "it explored and I
@@ -1069,6 +1108,7 @@ if (result.subtype === "error_max_turns") {
       "Discarding " + partial.length + " unverified change(s): " + partial.join(", ") + " - " +
         patchNote(capPatch.saved, capPatch.path, "the partial work")
     );
+    noteCandidate("ceiling", partial.length);
     revertPaths(partial);
   }
   const s = stallDetector.inspect();
@@ -1152,6 +1192,10 @@ group("3. What changed? (verified independently with git)");
 // the PR body, the files output, add-paths - must describe what is actually there.
 let changedEntries = agentChangedEntries();
 let changed = changedEntries.map((e) => e.path);
+// A diff exists and nothing has proved it yet. Every exit below either upgrades
+// this to shipped or hands it to the guard - and a run that dies in between is
+// then described as what it was: a patch nobody proved.
+if (changed.length > 0) noteCandidate("unverified", changed.length);
 
 if (changed.length === 0) {
   // The most common outcome, and until now the least useful one. A run that
@@ -1297,6 +1341,7 @@ if (changed.length === 0) {
   // the model's say-so would hand back the escape hatch this gate exists to
   // close. It stays NO-CHANGE, understating us, until something deterministic
   // can tell a library from an application at run time.
+  noteCandidate("none", 0);
   const noCodeFix = isVerdict && classification.inScope === false;
   stop(noCodeFix ? "needs-decision" : "no-changes", message, {
     tests_passed: "false",
@@ -1995,6 +2040,7 @@ if (VERIFY_REPAIR && review) {
       log("-> still green after the repair.");
       changedEntries = afterRepair;
       changed = afterRepair.map((e) => e.path);
+      if (changed.length > 0) noteCandidate("unverified", changed.length);
       // The repair can break a type-check exactly as easily as the first turn can.
       enforceExtraChecks("after the repair");
 
@@ -2162,6 +2208,7 @@ writeStepSummary(
     "` passes.\n\n" +
     changed.map((f) => "- `" + f + "`").join("\n")
 );
+noteCandidate("shipped", changed.length);
 writeOutputs({
   outcome: "fixed",
   review_status: reviewOutcomeResult.status,
