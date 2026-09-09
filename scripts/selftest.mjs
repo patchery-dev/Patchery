@@ -106,6 +106,9 @@ import {
   budgetUsageLine,
   gapStats,
   gapStatsLine,
+  candidateRecord,
+  candidateOutputs,
+  CANDIDATE_EXITS,
   harnessCrash,
   confidenceThresholdReport,
   shouldReview,
@@ -5923,6 +5926,106 @@ check("attemptPolicy does not turn an exhausted search into a clean bill of heal
 
 check("attemptPolicy honours a smaller budget", () => {
   assert.strictEqual(attemptPolicy([{ established: false }], 1).keepTrying, false);
+});
+
+
+check("candidateRecord counts a shipped patch", () => {
+  const r = candidateRecord({ changedCount: 2, exit: "shipped" });
+  assert.strictEqual(r.disposition, "shipped");
+  assert.strictEqual(r.counted, true);
+  assert.strictEqual(r.files, 2);
+});
+
+check("candidateRecord counts a patch the guard reverted", () => {
+  // The body-parser catch: the agent defined a local contentType where the file
+  // used to import one, the tests went green, and the package was never reached.
+  // The guard reverted it - and for want of this field the row said the agent
+  // had nothing to offer.
+  const r = candidateRecord({ changedCount: 1, exit: "guard" });
+  assert.strictEqual(r.disposition, "blocked-by-guard");
+  assert.strictEqual(r.counted, true);
+});
+
+check("candidateRecord counts a patch that failed its own verification", () => {
+  // Run #12 leg 3: wrote a compat shim, edited jest.config.js, Patchery ran the
+  // suite itself, it was still red, everything was reverted. Recorded NO-CHANGE -
+  // "Patchery had nothing to offer" - which is the opposite of what happened.
+  const r = candidateRecord({ changedCount: 4, exit: "unverified" });
+  assert.strictEqual(r.disposition, "unverified");
+  assert.strictEqual(r.counted, true);
+  assert.strictEqual(r.files, 4);
+});
+
+check("candidateRecord does NOT count partial work reverted at a ceiling", () => {
+  // The agent never said it was done, so the guard was never asked. Counting
+  // these is how 5 candidates turn into 48 and the claim reads stronger than it is.
+  const r = candidateRecord({ changedCount: 3, exit: "ceiling" });
+  assert.strictEqual(r.disposition, "unfinished");
+  assert.strictEqual(r.counted, false);
+});
+
+check("candidateRecord does not count a run that wrote nothing", () => {
+  const r = candidateRecord({ changedCount: 0, exit: "none" });
+  assert.strictEqual(r.disposition, "none");
+  assert.strictEqual(r.counted, false);
+});
+
+check("candidateRecord returns null, never false, for an exit it does not know", () => {
+  // Same rule the census follows for a runner it cannot read: "we looked and it
+  // was not a candidate" and "we could not tell" must not read alike.
+  for (const exit of ["", "  ", "reverted", "success", null, undefined]) {
+    const r = candidateRecord({ changedCount: 1, exit });
+    assert.strictEqual(r.disposition, "unknown", "exit " + JSON.stringify(exit));
+    assert.strictEqual(r.counted, null, "exit " + JSON.stringify(exit));
+    assert.strictEqual(r.files, null);
+  }
+});
+
+check("candidateRecord refuses to shrink the denominator on a contradiction", () => {
+  // An exit that only happens when a patch exists, reporting no files, is a bug
+  // in the caller. Filing it as "none" would quietly drop a candidate, and that
+  // is the one direction this field must never fail in.
+  for (const exit of ["shipped", "guard", "unverified"]) {
+    const r = candidateRecord({ changedCount: 0, exit });
+    assert.strictEqual(r.disposition, "unknown", exit + " with no files");
+    assert.strictEqual(r.counted, null);
+    assert.match(r.why, /reported no changed files/);
+  }
+  const backwards = candidateRecord({ changedCount: 2, exit: "none" });
+  assert.strictEqual(backwards.disposition, "unknown");
+  assert.strictEqual(backwards.counted, null);
+});
+
+check("candidateRecord will not read a file count it cannot trust", () => {
+  for (const n of [-1, 1.5, NaN, Infinity, "two", null]) {
+    const r = candidateRecord({ changedCount: n, exit: "shipped" });
+    assert.strictEqual(r.counted, null, "count " + String(n));
+  }
+});
+
+check("candidateOutputs writes an empty count, never a zero, for unknown", () => {
+  const unknown = candidateOutputs(candidateRecord({ changedCount: 1, exit: "mystery" }));
+  assert.strictEqual(unknown.candidate_disposition, "unknown");
+  assert.strictEqual(unknown.candidate_files, "", "0 would read as 'we counted, and it was none'");
+  const shipped = candidateOutputs(candidateRecord({ changedCount: 2, exit: "shipped" }));
+  assert.strictEqual(shipped.candidate_files, "2");
+  assert.strictEqual(candidateOutputs(null).candidate_disposition, "unknown");
+});
+
+check("candidateRecord reproduces run #12's denominator: one candidate in six legs", () => {
+  // The shape D1 had to read out of six logs by hand. If this ever comes out as
+  // 6, the field is counting ceilings; if 0, it has stopped seeing refusals.
+  const legs = [
+    { changedCount: 0, exit: "none" },      // run1, turn ceiling, nothing offered
+    { changedCount: 0, exit: "none" },      // run2, clock ceiling
+    { changedCount: 4, exit: "unverified" },// run3, wrote a fix, could not prove it
+    { changedCount: 2, exit: "ceiling" },   // run4, partial work reverted
+    { changedCount: 1, exit: "ceiling" },   // run5, partial work reverted
+    { changedCount: 0, exit: "none" },      // run6, clock ceiling
+  ].map(candidateRecord);
+  assert.strictEqual(legs.filter((r) => r.counted === true).length, 1);
+  assert.strictEqual(legs.filter((r) => r.counted === null).length, 0, "no leg should be unreadable");
+  assert.strictEqual(legs.filter((r) => r.disposition === "unverified").length, 1);
 });
 
 console.log("\n" + pass + " checks passed.\n");

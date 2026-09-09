@@ -2726,3 +2726,68 @@ export function chainedFailureMessage({ packageName = "", testCommand = "", diff
   );
   return lines.join("\n");
 }
+
+/**
+ * What became of the patch the agent produced - the field D1 had to reconstruct
+ * from logs because no row carried it.
+ *
+ * `files` lists what SHIPPED, so a patch the guard reverted and a run that never
+ * wrote a line are the same empty string in the table. Finding the one leg of run
+ * #12 that wrote a fix, failed its own tests and reverted it meant reading six
+ * logs; run #11's reverted candidates could not be recovered at all, because the
+ * raw artifacts were gone and there was no field that would have held them.
+ *
+ * This is not bookkeeping. The claim this project publishes - Patchery does not
+ * ship what it cannot prove - has a denominator, and that denominator is the
+ * number of patches the tool COULD have shipped wrongly. A leg that hit a ceiling
+ * before writing a line never tested the claim, and counting it makes the record
+ * look stronger than it is. Five candidates across three cases is the honest
+ * reading of 48 legs; "48" is not.
+ *
+ * `counted` is null, never false, for an exit this does not recognise - the same
+ * rule test-census.mjs follows for a runner it cannot read, and for the same
+ * reason: "we looked, and it was not a candidate" and "we could not tell" must
+ * not appear in the table as the same thing.
+ */
+export const CANDIDATE_EXITS = new Set(["shipped", "guard", "unverified", "ceiling", "none"]);
+
+export function candidateRecord({ changedCount = 0, exit = "" } = {}) {
+  const where = String(exit || "").trim().toLowerCase();
+  const n = Number(changedCount);
+  const unknown = (why) => ({ disposition: "unknown", counted: null, files: null, why });
+
+  if (!CANDIDATE_EXITS.has(where)) return unknown("unrecognised exit: " + (where || "(empty)"));
+  if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+    return unknown("unreadable file count: " + String(changedCount));
+  }
+
+  // An exit that only happens when a patch exists, reporting no files, is a bug
+  // in whoever called this - not a leg that produced nothing. Saying "none" here
+  // would quietly shrink the denominator, which is the one direction this field
+  // must never fail in.
+  const impliesPatch = where === "shipped" || where === "guard" || where === "unverified";
+  if (impliesPatch && n === 0) return unknown(where + " reported no changed files");
+  if (where === "none" && n > 0) return unknown("exit said nothing was written, but " + n + " file(s) changed");
+
+  if (where === "shipped") return { disposition: "shipped", counted: true, files: n, why: "" };
+  if (where === "guard") return { disposition: "blocked-by-guard", counted: true, files: n, why: "" };
+  if (where === "unverified") return { disposition: "unverified", counted: true, files: n, why: "" };
+
+  // The ceiling cases. Partial work reverted at the turn or clock budget is not a
+  // refusal and must not be counted as one: the agent never said it was done, so
+  // the guard was never asked. This is the distinction run #12 turned on - three
+  // legs reverted partial work at a ceiling, and exactly one produced a candidate.
+  if (where === "ceiling") return { disposition: "unfinished", counted: false, files: n, why: "" };
+  return { disposition: "none", counted: false, files: 0, why: "" };
+}
+
+/** The row's two candidate fields, as the strings an action output can carry. */
+export function candidateOutputs(record) {
+  const r = record || {};
+  return {
+    candidate_disposition: String(r.disposition || "unknown"),
+    // Empty, not "0", when the count is unknown - a table that prints 0 for
+    // "we could not tell" is the census mistake in a different column.
+    candidate_files: r.files === null || r.files === undefined ? "" : String(r.files),
+  };
+}
