@@ -392,6 +392,7 @@
         <h3>Not yet</h3>
         <ul class="ticks">
           <li>No scheduled runs — you dispatch it by hand, so today it only reacts to a red build.</li>
+          <li>A break your suite never sees is one Patchery never sees. We installed Express 5 into four projects that depend on it — <code>cors</code>, <code>multer</code>, <code>express-session</code>, <code>formidable</code> — and <a href="https://github.com/patchery-dev/Patchery/actions/runs/34102236170">not one suite went red</a>. Their tests never reach the paths that changed.</li>
           <li>One ecosystem. Other languages are unproven, not supported.</li>
           <li>No success ratio to quote until a full set runs under one set of rules.</li>
           <li>Most of what it has met is packaging; changed signatures are the thinner half of the evidence.</li>

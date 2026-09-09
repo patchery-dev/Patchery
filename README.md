@@ -26,6 +26,20 @@ level of proof it reached, and refuses to ship a change it could not prove.
 
 Keep Dependabot. Patchery is the layer above it.
 
+**Your suite may not be watching.** Express 4 → 5 is one of the best-known
+breaking changes in JavaScript: routing and parameter handling moved, and the
+ecosystem wrote migration guides for it. We installed Express 5 into four
+projects that depend on it — `cors`, `multer`, `express-session` and
+`formidable` — and ran each project's own tests.
+[Not one of them went red.](https://github.com/patchery-dev/Patchery/actions/runs/34102236170)
+Their suites never reach the paths that changed.
+
+That is a limit of the trigger, not a claim about the fix. Patchery starts when
+your build goes red, so a break your suite never sees is a break Patchery never
+sees either. Where the suite *does* go red it is watching that path — which is
+exactly what makes turning it green again worth something. (A fifth project was
+already failing before the upgrade, so it could not be measured.)
+
 It runs as a GitHub Action, inside your own CI. **Patchery hosts nothing and
 stores nothing** — there is no service to sign up for and no copy of your
 repository anywhere. What does leave the runner is what a model has to read to
