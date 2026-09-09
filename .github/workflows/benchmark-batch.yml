@@ -49,11 +49,19 @@ on:
         description: "on or off"
         required: false
         default: "on"
+      runner:
+        description: "Runner label. ubuntu-latest moves with GitHub; pin it to compare two arms. Example: ubuntu-24.04"
+        required: false
+        default: "ubuntu-latest"
 
 permissions:
   contents: read
 
 jobs:
+  # The runner input deliberately does not reach this job or report: neither
+  # runs the agent, so the machine they sit on cannot change a result. Only the
+  # leg that measures gets pinned, and pinning bookkeeping too would suggest the
+  # label matters everywhere it appears.
   plan:
     runs-on: ubuntu-latest
     outputs:
@@ -107,6 +115,7 @@ jobs:
       run-budget-minutes: ${{ inputs.run-budget-minutes }}
       job-timeout-minutes: ${{ inputs.job-timeout-minutes }}
       briefing: ${{ inputs.briefing }}
+      runner: ${{ inputs.runner }}
 
   report:
     needs: [plan, run]

@@ -69,6 +69,10 @@ on:
         description: "on or off"
         required: false
         default: "on"
+      runner:
+        description: "Runner label. ubuntu-latest moves with GitHub; pin it to compare two arms. Example: ubuntu-24.04"
+        required: false
+        default: "ubuntu-latest"
   workflow_call:
     inputs:
       repo: { type: string, required: true }
@@ -93,6 +97,11 @@ on:
       run-budget-minutes: { type: string, required: false, default: "45" }
       job-timeout-minutes: { type: string, required: false, default: "90" }
       briefing: { type: string, required: false, default: "on" }
+      # Declared in both blocks for the same reason as the two above. Left out
+      # here, the batch could not pin the machine and both arms of an experiment
+      # would run on whatever the moving tag resolved to that hour - and, as with
+      # the budget, nothing in the result would say they differed.
+      runner: { type: string, required: false, default: "ubuntu-latest" }
     secrets:
       ANTHROPIC_AUTH_TOKEN: { required: true }
       ANTHROPIC_BASE_URL: { required: false }
@@ -103,7 +112,14 @@ permissions:
 
 jobs:
   benchmark:
-    runs-on: ubuntu-latest
+    # Defaults to the moving tag on purpose: both blind rounds said pinning a
+    # host makes the rate unrepresentative of a fleet, so the published number
+    # should keep varying and the image is recorded instead (see the runner
+    # field written into the result). An experiment is the other case - with
+    # three runs an arm, an image difference is visible in the record but not
+    # correctable from it - so a controlled comparison passes an exact label
+    # and both arms get the same machine.
+    runs-on: ${{ inputs.runner }}
     # Was 60, and 60 is what killed a case in benchmark #9 - the job cap fired
     # before anything of ours did, and a container killed from outside writes no
     # result, no summary and no diagnosis, so the case vanished rather than

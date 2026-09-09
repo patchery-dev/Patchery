@@ -293,6 +293,17 @@ break. `off` measures whether showing it actually helps.
 **`model`** — empty uses the endpoint's default. Set it explicitly when a run has
 to be comparable to an earlier one.
 
+**`runner`** — the machine label, and the default is the right answer for
+anything whose number gets published. Two independent reviews both said pinning
+a host makes a rate unrepresentative of a fleet, so `ubuntu-latest` is left to
+move and the image it actually resolved to is recorded in the result instead —
+which is what lets a result that differs be attributed to something. Pin an
+exact label such as `ubuntu-24.04` only for a controlled comparison, where the
+claim is that one thing differed between two arms. Recording is enough to
+explain a fleet; it is not enough for an experiment, because with three runs to
+an arm an image difference is visible in the record and still not correctable
+from it.
+
 ## Where it is going
 
 All four of these come from the same gap, stated once: **something outside your
