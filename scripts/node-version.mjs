@@ -254,6 +254,47 @@ export function nodeVersionCandidates(dir, deps = {}) {
   return out;
 }
 
+/**
+ * Is the Node running THIS action's own code new enough to run it?
+ *
+ * Everything above answers "which Node should your tests use". This answers a
+ * different question that was assumed rather than checked: which Node are we
+ * ourselves on. The action resolved that with `command -v node`, which returns
+ * whatever is in PATH - and a caller who runs `actions/setup-node` before this
+ * action, which is the ordinary way to write a workflow, puts THEIR project's
+ * Node there. `benchmark-run.yml` does exactly that, and in run #11 six legs
+ * started our code on Node 16.20.2 and were dead in under nine seconds.
+ *
+ * The protection against this was written, and its comment named this very
+ * package: "node-fetch asks for Node 12, where `??` is a syntax error. The
+ * agent never started; it failed to parse." It was not lost. It was bypassed,
+ * because it asked PATH a question PATH cannot answer.
+ *
+ * The floor is 18: below it the SDK's own dependencies are not supported, and
+ * the failure mode is a parse error in a file nobody here wrote - the least
+ * debuggable shape a failure can take. Saying so out loud costs one line and
+ * turns nine silent seconds into a sentence.
+ */
+export const OUR_NODE_FLOOR = 18;
+
+export function ourNodeReason(version) {
+  const m = /^v?(\d+)\./.exec(String(version || "").trim());
+  // An unreadable version is not a pass. Reading it as 0 would be, and reading
+  // it as "probably fine" is how the original bug was written.
+  if (!m) return "could not read the Node version we are running on (" + version + ")";
+  const major = Number(m[1]);
+  if (major < OUR_NODE_FLOOR) {
+    return (
+      "Patchery's own code is running on Node " + major + ", and it needs " +
+      OUR_NODE_FLOOR + " or newer. This is not the Node your tests run on - that " +
+      "is chosen separately. It means the Node this action found was your " +
+      "project's, not the runner's, which happens when a workflow sets up Node " +
+      "before calling Patchery."
+    );
+  }
+  return null;
+}
+
 const isMain = process.argv[1] && process.argv[1].endsWith("node-version.mjs");
 if (isMain) {
   const asked = (process.argv[2] || "auto").trim();
@@ -261,7 +302,17 @@ if (isMain) {
   // --list prints every version worth trying, in order, for a caller that
   // retries rather than trusting one guess.
   const pinned = asked && asked !== "auto";
-  if (process.argv.includes("--list")) {
+  // --check-self asks the running Node about itself, so it must be answered by
+  // the very interpreter under suspicion - which is why this is a mode of this
+  // script rather than a comparison done in YAML.
+  if (process.argv.includes("--check-self")) {
+    const reason = ourNodeReason(process.version);
+    if (reason) {
+      process.stderr.write("::error::" + reason + "\n");
+      process.exit(1);
+    }
+    process.stderr.write("this action's own code runs on " + process.version + "\n");
+  } else if (process.argv.includes("--list")) {
     const all = pinned ? [{ version: asked, source: "asked for" }] : nodeVersionCandidates(dir);
     process.stdout.write(all.map((c) => c.version).join(" ") + "\n");
     for (const c of all) process.stderr.write("  " + c.version + "  (" + c.source + ")\n");

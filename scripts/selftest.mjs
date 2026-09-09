@@ -21,6 +21,8 @@ import {
   fromNvmrc,
   ciNodeVersions,
   usableCiMajor,
+  ourNodeReason,
+  OUR_NODE_FLOOR,
   OLDEST_USABLE,
   FALLBACK,
 } from "./node-version.mjs";
@@ -2384,6 +2386,34 @@ const fakeDir = (files) => ({
   readFile: (p) => files[norm2(p)],
 });
 const norm2 = (p) => String(p).split("\\").join("/").replace(/^[A-Za-z]:/, "");
+
+// The action asked PATH which Node was "the runner's own" and PATH answered with
+// the caller's. Six legs of run #11 started Patchery's own code on Node 16.20.2
+// and died in 6.1-8.6 seconds; the comment guarding against it had named this
+// exact package years-deep in advance. These check the sentence that replaces
+// nine seconds of silence.
+check("ourNodeReason passes a Node this code is actually tested on", () => {
+  assert.strictEqual(ourNodeReason("v20.20.2"), null);
+  assert.strictEqual(ourNodeReason("v22.19.0"), null);
+  assert.strictEqual(ourNodeReason("v" + OUR_NODE_FLOOR + ".0.0"), null);
+});
+
+check("ourNodeReason refuses the version that actually killed six legs", () => {
+  const why = ourNodeReason("v16.20.2");
+  assert.match(why, /Node 16/);
+  assert.match(why, /needs 18 or newer/);
+  // The message has to say which Node it is talking about. "Wrong Node version"
+  // sends the reader to their .nvmrc, which is not the file at fault.
+  assert.match(why, /not the Node your tests run on/);
+});
+
+check("ourNodeReason treats an unreadable version as a failure, never as a pass", () => {
+  // Reading a missing version as 0 would refuse everything; reading it as fine
+  // is how the original line was written. Both are wrong, and only one is quiet.
+  for (const bad of ["", null, undefined, "node", "vNOT RESOLVABLE", "  "]) {
+    assert.ok(ourNodeReason(bad), "must refuse: " + JSON.stringify(bad));
+  }
+});
 
 check("decideNodeVersion prefers .nvmrc", () => {
   const r = decideNodeVersion("/w", fakeDir({ "/w/.nvmrc": "v22.11.0\n", "/w/package.json": '{"engines":{"node":">=18"}}' }));

@@ -391,6 +391,27 @@ runs:
     #
     # So the runner's own Node is kept aside for our code, and setup-node is left
     # to serve yours.
+    #
+    # That was the intent, and `command -v node` did not deliver it. PATH is not
+    # a place where "the runner's own Node" is kept - it holds whatever ran last,
+    # and a workflow that calls actions/setup-node before this action, which is
+    # the ordinary way to write one, leaves the PROJECT's Node there. This step
+    # is the action's first, so there is no earlier moment to capture: position
+    # cannot fix it, only asking a different question can.
+    #
+    # benchmark-run.yml gets this right by capturing before its own setup-node
+    # runs (see its "Remember the runner's own Node"), which is why the mistake
+    # was invisible here for so long: the same line, in a place where order
+    # happened to save it.
+    #
+    # So we install the Node our own code is tested on and use that one, instead
+    # of inheriting whatever the caller left behind. Pinned to the version ci.yml
+    # runs the suite on: our tooling should run where it is tested.
+    - name: Set up the Node this action's own code runs on
+      uses: actions/setup-node@v7
+      with:
+        node-version: "20"
+
     - name: Decide which Node to run your tests on
       id: node
       shell: bash
@@ -409,6 +430,11 @@ runs:
         esac
         OURS="$(command -v node)"
         echo "ours=$OURS" >> "$GITHUB_OUTPUT"
+        # Belt and braces: the step above pins this, but the whole lesson of the
+        # line above is that a protection nobody checks is a protection that can
+        # be bypassed without anyone noticing. Nine seconds of silence became a
+        # sentence for the price of one call.
+        "$OURS" "$ACTION_PATH/scripts/node-version.mjs" --check-self
         echo "this action runs on $(node --version)"
         VERSION=$("$OURS" "$ACTION_PATH/scripts/node-version.mjs" \
           "$IN_NODE_VERSION" \
