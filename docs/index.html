@@ -215,12 +215,18 @@
     <div>
       <div class="head">
         <span class="k">Where it runs</span>
-        <h2 class="display display--sec">Your code never leaves your machines.</h2>
+        <h2 class="display display--sec">There is no Patchery server.</h2>
       </div>
       <p class="lede">
         Patchery is not a service you send a repository to. It is a file in your project that runs on
-        your own runners, with your own key, against your own checkout. There is no Patchery server
-        for your source to travel to, because there is no Patchery server.
+        your own runners, with your own key, against your own checkout. We host nothing and store
+        nothing, so there is no copy of your source anywhere to ask us for.
+      </p>
+      <p class="lede">
+        What does leave the runner is what a model has to read to do the work: the failing test
+        output, the files the agent opens, and the diff it writes. That goes to the endpoint you set
+        in <code>anthropic-base-url</code> and nowhere else &mdash; point it at your own deployment
+        and nothing reaches a third party at all.
       </p>
     </div>
 
@@ -229,6 +235,7 @@
       <div><dt>runs on</dt><dd>your CI runners</dd></div>
       <div><dt>model key</dt><dd>yours, in your repo secrets</dd></div>
       <div><dt>code we host</dt><dd>none</dd></div>
+      <div><dt>your code goes to</dt><dd>the model endpoint you configure, only</dd></div>
       <div><dt>starts</dt><dd>when you press the button</dd></div>
       <div><dt>licence</dt><dd>source available, BUSL-1.1 &mdash; free for public repos</dd></div>
     </dl>
