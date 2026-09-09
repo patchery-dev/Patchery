@@ -49,7 +49,7 @@ jobs:
 
       - name: Fix the broken dependency
         id: sma
-        uses: patchery-dev/Patchery@v0.2
+        uses: patchery-dev/Patchery@v0.3
         with:
           package: ${{ inputs.package }}
           target-dir: ${{ inputs.target-dir }}

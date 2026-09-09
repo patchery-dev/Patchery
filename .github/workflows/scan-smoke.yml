@@ -24,7 +24,7 @@ on:
       version:
         description: "Which published Patchery to run"
         required: false
-        default: "v0.2"
+        default: "v0.3"
 
 permissions:
   contents: read
@@ -42,7 +42,7 @@ jobs:
 
       - name: Scan with the published action
         id: scan
-        uses: patchery-dev/Patchery@v0.2
+        uses: patchery-dev/Patchery@v0.3
         with:
           mode: scan
           target-dir: "."

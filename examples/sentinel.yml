@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - id: scan
-        uses: patchery-dev/Patchery@v0.2
+        uses: patchery-dev/Patchery@v0.3
         with:
           mode: scan
           # The directory whose package.json to read. In a monorepo, point this
