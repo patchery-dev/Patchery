@@ -1,0 +1,1321 @@
+{
+  "_stamp": {
+    "what": "Run #11's outcome table, RE-DERIVED OFFLINE from the run's artifacts.",
+    "notShippedOutput": true,
+    "readThisFirst": [
+      "This is a reconstruction, not the output of the shipped classifier.",
+      "run-budget-exhausted did not exist as a slug during run #11, so the derivation translates the harness's own prose into the slug the code would emit today.",
+      "No run was repeated and no money was spent to produce it."
+    ],
+    "run": "34206949467",
+    "derivedOn": "2026-09-09",
+    "correctionApplied": "A leg the wall clock stopped while the model was still answering was recorded NO-CHANGE. 0443bb9 makes that EXHAUSTED. Nothing else was changed.",
+    "whyTrustworthy": "37 of 42 legs re-derive identically to what was recorded. Two independent derivations (vault 61 and this one, from different probes) agree on all 42 rows.",
+    "ratioUnchanged": "NO-CHANGE and EXHAUSTED are both inside the denominator, so the five legs only changed places. The published ratio does not move. What improved is honesty, not the result.",
+    "oneVerdictNotTaken": "The 2026-09-08 audit's working table marked winstonjs/winston + through2@5 (job 102061547478) WRONG because the independent reviewer refuted the shipped change. That verdict is not carried here: HANDOFF section 5.2 item 8 records it as refuted, and the artifact agrees - the census reads 237 before and 237 after, and final.log reads '22 passed, 22 total'. WRONG means a change shipped and the suite is still broken or shrank; neither holds.",
+    "stillOpen": "finalExit is read from final.log rather than the census on purpose (the census is an output, so reading the pass count from it would be circular). The artifact layout is two-way - some legs keep files at the root, some under tmp/ - so any probe over this data must search recursively."
+  },
+  "totals": {
+    "recorded": {
+      "NO-CHANGE": 22,
+      "FIXED": 4,
+      "EXHAUSTED": 8,
+      "BLOCKED": 8
+    },
+    "derived": {
+      "NO-CHANGE": 17,
+      "FIXED": 4,
+      "EXHAUSTED": 13,
+      "BLOCKED": 8
+    }
+  },
+  "changedLegs": [
+    "102018894716",
+    "102032460193",
+    "102035167561",
+    "102045049614",
+    "102045799803"
+  ],
+  "rows": [
+    {
+      "jobId": "101998607916",
+      "artifactId": "10049057559",
+      "repo": "bcoe/yargs",
+      "package": "which",
+      "version": "7",
+      "installed": "7.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 839,
+        "failed": 0,
+        "skipped": 1,
+        "total": 840
+      },
+      "censusAfter": {
+        "runner": "mocha",
+        "passed": 837,
+        "failed": 2,
+        "skipped": 1,
+        "total": 840
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "101998607900",
+      "artifactId": "10049072166",
+      "repo": "bcoe/yargs",
+      "package": "which",
+      "version": "7",
+      "installed": "7.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 839,
+        "failed": 0,
+        "skipped": 1,
+        "total": 840
+      },
+      "censusAfter": {
+        "runner": "mocha",
+        "passed": 837,
+        "failed": 2,
+        "skipped": 1,
+        "total": 840
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "101998607904",
+      "artifactId": "10049262947",
+      "repo": "bcoe/yargs",
+      "package": "which",
+      "version": "7",
+      "installed": "7.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 839,
+        "failed": 0,
+        "skipped": 1,
+        "total": 840
+      },
+      "censusAfter": {
+        "runner": "mocha",
+        "passed": 837,
+        "failed": 2,
+        "skipped": 1,
+        "total": 840
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "101998607853",
+      "artifactId": "10048775082",
+      "repo": "expressjs/body-parser",
+      "package": "content-type",
+      "version": "3",
+      "installed": "3.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 273,
+        "failed": 0,
+        "skipped": 4,
+        "total": 277
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102003687443",
+      "artifactId": "10049333687",
+      "repo": "expressjs/body-parser",
+      "package": "content-type",
+      "version": "3",
+      "installed": "3.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 273,
+        "failed": 0,
+        "skipped": 4,
+        "total": 277
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102005931780",
+      "artifactId": "10049537365",
+      "repo": "expressjs/body-parser",
+      "package": "content-type",
+      "version": "3",
+      "installed": "3.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 273,
+        "failed": 0,
+        "skipped": 4,
+        "total": 277
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102008225279",
+      "artifactId": "10050078098",
+      "repo": "expressjs/body-parser",
+      "package": "raw-body",
+      "version": "4",
+      "installed": "4.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "FIXED",
+      "derived": "FIXED",
+      "changed": false,
+      "correction": null,
+      "files": "lib/read.js",
+      "review": "concerns",
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 273,
+        "failed": 0,
+        "skipped": 4,
+        "total": 277
+      },
+      "censusAfter": {
+        "runner": "mocha",
+        "passed": 273,
+        "failed": 0,
+        "skipped": 4,
+        "total": 277
+      },
+      "finalLogLine": "273 passing"
+    },
+    {
+      "jobId": "102006057418",
+      "artifactId": "10050130073",
+      "repo": "expressjs/body-parser",
+      "package": "raw-body",
+      "version": "4",
+      "installed": "4.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "FIXED",
+      "derived": "FIXED",
+      "changed": false,
+      "correction": null,
+      "files": "lib/read.js",
+      "review": "concerns",
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 273,
+        "failed": 0,
+        "skipped": 4,
+        "total": 277
+      },
+      "censusAfter": {
+        "runner": "mocha",
+        "passed": 273,
+        "failed": 0,
+        "skipped": 4,
+        "total": 277
+      },
+      "finalLogLine": "273 passing"
+    },
+    {
+      "jobId": "102007605149",
+      "artifactId": "10050246962",
+      "repo": "expressjs/body-parser",
+      "package": "raw-body",
+      "version": "4",
+      "installed": "4.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "FIXED",
+      "derived": "FIXED",
+      "changed": false,
+      "correction": null,
+      "files": "lib/read.js",
+      "review": "concerns",
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 273,
+        "failed": 0,
+        "skipped": 4,
+        "total": 277
+      },
+      "censusAfter": {
+        "runner": "mocha",
+        "passed": 273,
+        "failed": 0,
+        "skipped": 4,
+        "total": 277
+      },
+      "finalLogLine": "273 passing"
+    },
+    {
+      "jobId": "102009925419",
+      "artifactId": "10049912471",
+      "repo": "expressjs/express",
+      "package": "content-disposition",
+      "version": "3",
+      "installed": "3.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 1255,
+        "failed": 0,
+        "skipped": 2,
+        "total": 1257
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102012828132",
+      "artifactId": "10050169450",
+      "repo": "expressjs/express",
+      "package": "content-disposition",
+      "version": "3",
+      "installed": "3.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 1255,
+        "failed": 0,
+        "skipped": 2,
+        "total": 1257
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102014211434",
+      "artifactId": "10050492810",
+      "repo": "expressjs/express",
+      "package": "content-disposition",
+      "version": "3",
+      "installed": "3.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 1255,
+        "failed": 0,
+        "skipped": 2,
+        "total": 1257
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102014946178",
+      "artifactId": "10050398700",
+      "repo": "expressjs/express",
+      "package": "content-type",
+      "version": "3",
+      "installed": "3.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 1255,
+        "failed": 0,
+        "skipped": 2,
+        "total": 1257
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102015595041",
+      "artifactId": "10050444215",
+      "repo": "expressjs/express",
+      "package": "content-type",
+      "version": "3",
+      "installed": "3.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 1255,
+        "failed": 0,
+        "skipped": 2,
+        "total": 1257
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102014635852",
+      "artifactId": "10050655180",
+      "repo": "expressjs/express",
+      "package": "content-type",
+      "version": "3",
+      "installed": "3.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 1255,
+        "failed": 0,
+        "skipped": 2,
+        "total": 1257
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102017182631",
+      "artifactId": "10050882953",
+      "repo": "expressjs/multer",
+      "package": "append-field",
+      "version": "2",
+      "installed": "2.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 134,
+        "failed": 0,
+        "skipped": 0,
+        "total": 134
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102016810628",
+      "artifactId": "10050948967",
+      "repo": "expressjs/multer",
+      "package": "append-field",
+      "version": "2",
+      "installed": "2.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 134,
+        "failed": 0,
+        "skipped": 0,
+        "total": 134
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102017565291",
+      "artifactId": "10051108420",
+      "repo": "expressjs/multer",
+      "package": "append-field",
+      "version": "2",
+      "installed": "2.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 134,
+        "failed": 0,
+        "skipped": 0,
+        "total": 134
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102020736259",
+      "artifactId": "10052142391",
+      "repo": "jquense/yup",
+      "package": "type-fest",
+      "version": "5",
+      "installed": "5.9.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "EXHAUSTED",
+      "derived": "EXHAUSTED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "vitest",
+        "passed": 867,
+        "failed": 0,
+        "skipped": 2,
+        "total": 869
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102021250296",
+      "artifactId": "10052285219",
+      "repo": "jquense/yup",
+      "package": "type-fest",
+      "version": "5",
+      "installed": "5.9.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "EXHAUSTED",
+      "derived": "EXHAUSTED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "vitest",
+        "passed": 867,
+        "failed": 0,
+        "skipped": 2,
+        "total": 869
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102018894716",
+      "artifactId": "10052301529",
+      "repo": "jquense/yup",
+      "package": "type-fest",
+      "version": "5",
+      "installed": "5.9.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "EXHAUSTED",
+      "changed": true,
+      "correction": {
+        "rule": "0443bb9",
+        "why": "the wall clock stopped the run while the model was answering",
+        "signal": "benchmark.json:detail"
+      },
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "vitest",
+        "passed": 867,
+        "failed": 0,
+        "skipped": 2,
+        "total": 869
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102022469853",
+      "artifactId": "10051697322",
+      "repo": "mozilla/treeherder",
+      "package": "@fortawesome/fontawesome-svg-core",
+      "version": "7",
+      "installed": "7.3.1",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "BLOCKED",
+      "derived": "BLOCKED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 1093,
+        "failed": 0,
+        "skipped": 5,
+        "total": 1098
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 19,
+        "failed": 1,
+        "skipped": 0,
+        "total": 20
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102027196251",
+      "artifactId": "10052328352",
+      "repo": "mozilla/treeherder",
+      "package": "@fortawesome/fontawesome-svg-core",
+      "version": "7",
+      "installed": "7.3.1",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "BLOCKED",
+      "derived": "BLOCKED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 1093,
+        "failed": 0,
+        "skipped": 5,
+        "total": 1098
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 19,
+        "failed": 1,
+        "skipped": 0,
+        "total": 20
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102030736843",
+      "artifactId": "10052682656",
+      "repo": "mozilla/treeherder",
+      "package": "@fortawesome/fontawesome-svg-core",
+      "version": "7",
+      "installed": "7.3.1",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "EXHAUSTED",
+      "derived": "EXHAUSTED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 1093,
+        "failed": 0,
+        "skipped": 5,
+        "total": 1098
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 168,
+        "failed": 1,
+        "skipped": 4,
+        "total": 173
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102031906969",
+      "artifactId": "10052317483",
+      "repo": "node-fetch/node-fetch",
+      "package": "data-uri-to-buffer",
+      "version": "8",
+      "installed": "8.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "BLOCKED",
+      "derived": "BLOCKED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 390,
+        "failed": 0,
+        "skipped": 3,
+        "total": 393
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102032037354",
+      "artifactId": "10052329859",
+      "repo": "node-fetch/node-fetch",
+      "package": "data-uri-to-buffer",
+      "version": "8",
+      "installed": "8.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "BLOCKED",
+      "derived": "BLOCKED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 390,
+        "failed": 0,
+        "skipped": 3,
+        "total": 393
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102032169053",
+      "artifactId": "10052344403",
+      "repo": "node-fetch/node-fetch",
+      "package": "data-uri-to-buffer",
+      "version": "8",
+      "installed": "8.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "BLOCKED",
+      "derived": "BLOCKED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 390,
+        "failed": 0,
+        "skipped": 3,
+        "total": 393
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102032258587",
+      "artifactId": "10052352823",
+      "repo": "node-fetch/node-fetch",
+      "package": "fetch-blob",
+      "version": "4",
+      "installed": "4.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "BLOCKED",
+      "derived": "BLOCKED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 390,
+        "failed": 0,
+        "skipped": 3,
+        "total": 393
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102032275124",
+      "artifactId": "10052359180",
+      "repo": "node-fetch/node-fetch",
+      "package": "fetch-blob",
+      "version": "4",
+      "installed": "4.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "BLOCKED",
+      "derived": "BLOCKED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 390,
+        "failed": 0,
+        "skipped": 3,
+        "total": 393
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102032386737",
+      "artifactId": "10052373021",
+      "repo": "node-fetch/node-fetch",
+      "package": "fetch-blob",
+      "version": "4",
+      "installed": "4.0.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "BLOCKED",
+      "derived": "BLOCKED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "mocha",
+        "passed": 390,
+        "failed": 0,
+        "skipped": 3,
+        "total": 393
+      },
+      "censusAfter": {
+        "runner": null,
+        "passed": null,
+        "failed": null,
+        "skipped": null,
+        "total": null
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102032514422",
+      "artifactId": "10053863048",
+      "repo": "nodemailer/nodemailer",
+      "package": "proxy",
+      "version": "4",
+      "installed": "4.1.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "tap",
+        "passed": 1244,
+        "failed": 0,
+        "skipped": 0,
+        "total": 1244
+      },
+      "censusAfter": {
+        "runner": "tap",
+        "passed": 1231,
+        "failed": 1,
+        "skipped": 0,
+        "total": 1232
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102032632158",
+      "artifactId": "10053956087",
+      "repo": "nodemailer/nodemailer",
+      "package": "proxy",
+      "version": "4",
+      "installed": "4.1.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "EXHAUSTED",
+      "derived": "EXHAUSTED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "tap",
+        "passed": 1244,
+        "failed": 0,
+        "skipped": 0,
+        "total": 1244
+      },
+      "censusAfter": {
+        "runner": "tap",
+        "passed": 1231,
+        "failed": 1,
+        "skipped": 0,
+        "total": 1232
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102032460193",
+      "artifactId": "10054160831",
+      "repo": "nodemailer/nodemailer",
+      "package": "proxy",
+      "version": "4",
+      "installed": "4.1.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "EXHAUSTED",
+      "changed": true,
+      "correction": {
+        "rule": "0443bb9",
+        "why": "the wall clock stopped the run while the model was answering",
+        "signal": "benchmark.json:detail"
+      },
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "tap",
+        "passed": 1244,
+        "failed": 0,
+        "skipped": 0,
+        "total": 1244
+      },
+      "censusAfter": {
+        "runner": "tap",
+        "passed": 1231,
+        "failed": 1,
+        "skipped": 0,
+        "total": 1232
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102035167561",
+      "artifactId": "10054256700",
+      "repo": "winstonjs/winston",
+      "package": "is-stream",
+      "version": "4",
+      "installed": "4.0.1",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "EXHAUSTED",
+      "changed": true,
+      "correction": {
+        "rule": "0443bb9",
+        "why": "the wall clock stopped the run while the model was answering",
+        "signal": "benchmark.json:detail"
+      },
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 237,
+        "failed": 0,
+        "skipped": 0,
+        "total": 240
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "total": 5
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102045049614",
+      "artifactId": "10055512912",
+      "repo": "winstonjs/winston",
+      "package": "is-stream",
+      "version": "4",
+      "installed": "4.0.1",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "EXHAUSTED",
+      "changed": true,
+      "correction": {
+        "rule": "0443bb9",
+        "why": "the wall clock stopped the run while the model was answering",
+        "signal": "benchmark.json:detail"
+      },
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 237,
+        "failed": 0,
+        "skipped": 0,
+        "total": 240
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "total": 5
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102045799803",
+      "artifactId": "10055611846",
+      "repo": "winstonjs/winston",
+      "package": "is-stream",
+      "version": "4",
+      "installed": "4.0.1",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "EXHAUSTED",
+      "changed": true,
+      "correction": {
+        "rule": "0443bb9",
+        "why": "the wall clock stopped the run while the model was answering",
+        "signal": "benchmark.json:detail"
+      },
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 237,
+        "failed": 0,
+        "skipped": 0,
+        "total": 240
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "total": 5
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102047474558",
+      "artifactId": "10055384873",
+      "repo": "winstonjs/winston",
+      "package": "readable-stream",
+      "version": "4",
+      "installed": "4.7.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "NO-CHANGE",
+      "derived": "NO-CHANGE",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 237,
+        "failed": 0,
+        "skipped": 0,
+        "total": 240
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 233,
+        "failed": 4,
+        "skipped": 0,
+        "total": 240
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102048234216",
+      "artifactId": "10055881582",
+      "repo": "winstonjs/winston",
+      "package": "readable-stream",
+      "version": "4",
+      "installed": "4.7.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "EXHAUSTED",
+      "derived": "EXHAUSTED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 237,
+        "failed": 0,
+        "skipped": 0,
+        "total": 240
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 233,
+        "failed": 4,
+        "skipped": 0,
+        "total": 240
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102057554558",
+      "artifactId": "10057125454",
+      "repo": "winstonjs/winston",
+      "package": "readable-stream",
+      "version": "4",
+      "installed": "4.7.0",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "EXHAUSTED",
+      "derived": "EXHAUSTED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 237,
+        "failed": 0,
+        "skipped": 0,
+        "total": 240
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 233,
+        "failed": 4,
+        "skipped": 0,
+        "total": 240
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102058563224",
+      "artifactId": "10056606005",
+      "repo": "winstonjs/winston",
+      "package": "through2",
+      "version": "5",
+      "installed": "5.0.11",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "EXHAUSTED",
+      "derived": "EXHAUSTED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 237,
+        "failed": 0,
+        "skipped": 0,
+        "total": 240
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 126,
+        "failed": 0,
+        "skipped": 0,
+        "total": 128
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102059374780",
+      "artifactId": "10057202180",
+      "repo": "winstonjs/winston",
+      "package": "through2",
+      "version": "5",
+      "installed": "5.0.11",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "EXHAUSTED",
+      "derived": "EXHAUSTED",
+      "changed": false,
+      "correction": null,
+      "files": "",
+      "review": null,
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 237,
+        "failed": 0,
+        "skipped": 0,
+        "total": 240
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 126,
+        "failed": 0,
+        "skipped": 0,
+        "total": 128
+      },
+      "finalLogLine": null
+    },
+    {
+      "jobId": "102061547478",
+      "artifactId": "10057270757",
+      "repo": "winstonjs/winston",
+      "package": "through2",
+      "version": "5",
+      "installed": "5.0.11",
+      "model": "muse-spark-1.3-contributor",
+      "recorded": "FIXED",
+      "derived": "FIXED",
+      "changed": false,
+      "correction": null,
+      "files": "jest.config.js\nthrough2-compat.js",
+      "review": "refuted",
+      "censusBefore": {
+        "runner": "jest",
+        "passed": 237,
+        "failed": 0,
+        "skipped": 0,
+        "total": 240
+      },
+      "censusAfter": {
+        "runner": "jest",
+        "passed": 237,
+        "failed": 0,
+        "skipped": 0,
+        "total": 240
+      },
+      "finalLogLine": "Tests:       3 todo, 237 passed, 240 total"
+    }
+  ]
+}
