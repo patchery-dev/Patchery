@@ -1363,6 +1363,35 @@ export function renderSpend({ modelUsage = {}, costUsd = 0, customEndpoint = fal
 }
 
 /**
+ * The one line that says what a run cost, on every way out of a run.
+ *
+ * It used to be printed in exactly one place: after the SDK loop returned, from
+ * `result`. Every other exit - the agent going in circles and being cut off, the
+ * wall clock expiring, the runtime dying - left `result` null and skipped the
+ * line entirely. In run #11 that was 13 of 42 legs with no turn or spend record
+ * at all.
+ *
+ * Worse, the accounting was a side effect of the logging: `spend()` was called
+ * inside the log statement, so a leg that did not print the line did not total
+ * its tokens either. Two of the six repair items on the list were this one bug.
+ *
+ * The rule here is the rule the census follows: absence is reported as absence.
+ * A run whose turns we never saw says so; it does not say 0. Zero is a
+ * measurement, and printing it for "we did not look" is how a benchmark starts
+ * lying about itself.
+ */
+export function agentFinishedLine({ subtype = "", turns = null, spend = "", partial = false } = {}) {
+  const say = (v) => (v === null || v === undefined || v === "" ? null : String(v));
+  const parts = ["-> agent finished: " + (say(subtype) || "not reported (the run ended before the agent said how)")];
+  parts.push("turns: " + (say(turns) || "not recorded"));
+  // "partial" is the honest word for the case where other agents in the run - the
+  // reviewer, the classifier - reported their usage but the fixer never did. The
+  // number is real and it is not the whole bill, and both halves have to be said.
+  parts.push("spend: " + (say(spend) ? (partial ? say(spend) + " (partial - the fixer never reported)" : say(spend)) : "not recorded"));
+  return "\n" + parts.join(" | ");
+}
+
+/**
  * Normalise the verify-tools input.
  *
  * Same rule as verify-mode: an unrecognised value is an error, not a guess. This

@@ -86,6 +86,7 @@ import {
   reviewPassPlan,
   tokenTotals,
   renderSpend,
+  agentFinishedLine,
   dependencyMisuseReasons,
   packageBindings,
   failureChanged,
@@ -2011,6 +2012,45 @@ check("census refuses rather than guessing zero", () => {
   const c = census("some runner nobody has taught us about\nDone in 4.2s\n");
   assert.strictEqual(c.runner, null);
   assert.strictEqual(c.total, null);
+});
+
+// 13 of run #11's 42 legs printed no "-> agent finished" line at all, so their
+// turn and spend record is simply gone. The line lived after the SDK loop and
+// read from `result`, which a stall, a deadline and a dead child process all
+// leave null. And because spend() was called INSIDE that log statement, a leg
+// that skipped the line skipped its own accounting too - one bug wearing two of
+// the six repair items.
+check("agentFinishedLine reports a completed run the way it always did", () => {
+  const line = agentFinishedLine({ subtype: "success", turns: 12, spend: "$0.0300" });
+  assert.match(line, /agent finished: success/);
+  assert.match(line, /turns: 12/);
+  assert.match(line, /spend: \$0\.0300/);
+});
+
+check("agentFinishedLine says 'not recorded', never 0, for what it did not see", () => {
+  // Zero is a measurement. Printing it for "we never looked" is exactly how a
+  // benchmark starts lying about itself - the same error as counting a missing
+  // census as a suite of no tests.
+  const line = agentFinishedLine({});
+  assert.match(line, /not reported/);
+  assert.match(line, /turns: not recorded/);
+  assert.match(line, /spend: not recorded/);
+  assert.doesNotMatch(line, /: 0\b/);
+});
+
+check("agentFinishedLine marks a spend figure the fixer never contributed to as partial", () => {
+  // The reviewer and the classifier report through the same counter, so the
+  // number is real even when the fixer died. Real and short - and a reader who
+  // is not told it is short will read it as the bill.
+  const line = agentFinishedLine({ turns: 7, spend: "900 in · 40 out tokens", partial: true });
+  assert.match(line, /partial - the fixer never reported/);
+  assert.match(line, /turns: 7/);
+});
+
+check("agentFinishedLine does not call a finished run partial", () => {
+  const line = agentFinishedLine({ subtype: "error_max_turns", turns: 45, spend: "$1.20", partial: false });
+  assert.doesNotMatch(line, /partial/);
+  assert.match(line, /error_max_turns/);
 });
 
 check("censusHeld passes when the same tests still pass", () => {

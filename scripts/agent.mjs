@@ -35,6 +35,7 @@ import {
   normalizeVerifyTools,
   reviewPassPlan,
   renderSpend,
+  agentFinishedLine,
   tokenTotals,
   normalizeModelTimeout,
   normalizeRunBudget,
@@ -352,7 +353,60 @@ function writeStepSummary(md) {
   if (file) fs.appendFileSync(file, clean(md) + "\n");
 }
 
+/**
+ * Say what the run cost, exactly once, on whichever way out it takes.
+ *
+ * `result` is only set when the SDK loop runs to completion. A stall breaks out
+ * of it, the deadline throws out of it, and a dead child process never gets
+ * there - so the three exits that most need explaining were the three with no
+ * record. Called from fail/refuse/stop, which every one of them goes through.
+ */
+let telemetrySaid = false;
+function announceRun() {
+  if (telemetrySaid) return;
+  telemetrySaid = true;
+  // fail() is reachable long before `result` and `stallDetector` are declared -
+  // a red baseline exits through it - and reading a `let` before its declaration
+  // throws, `typeof` included. So both are read defensively: an exit that
+  // happens before the agent existed has no turns to report, which is the truth.
+  let turns = null;
+  try {
+    turns = result?.num_turns ?? stallDetector.inspect().toolTurns;
+  } catch {
+    turns = null;
+  }
+  // SPEND is what the run has actually totalled so far - the reviewer and the
+  // classifier report through it too. When the fixer never reported, that figure
+  // is real but short, and saying so is the point.
+  const anySpend = SPEND.input || SPEND.output || SPEND.cacheRead || SPEND.cacheCreation;
+  // Tokens only, no money: renderSpend's dollar figure is Anthropic's list price
+  // whatever endpoint served the request - wrong by 195x once - and on this path
+  // there is no cost figure to report at all. Quantities are the honest half.
+  const n = (v) => Number(v).toLocaleString("en-US");
+  const bits = [n(SPEND.input) + " in"];
+  if (SPEND.cacheRead) bits.push(n(SPEND.cacheRead) + " cached");
+  if (SPEND.cacheCreation) bits.push(n(SPEND.cacheCreation) + " cache-write");
+  bits.push(n(SPEND.output) + " out");
+  let subtype = "";
+  let haveResult = false;
+  try {
+    subtype = result?.subtype || "";
+    haveResult = Boolean(result);
+  } catch {
+    subtype = "";
+  }
+  log(
+    agentFinishedLine({
+      subtype,
+      turns,
+      spend: anySpend ? bits.join(" · ") + " tokens" : "",
+      partial: !haveResult,
+    })
+  );
+}
+
 function fail(message, outcome = "failed") {
+  announceRun();
   console.error("\n[ERROR] " + clean(message));
   writeOutputs({ outcome, changed: "false", tests_passed: "false", summary: message });
   writeStepSummary("### Patchery\n\nFailed: " + message);
@@ -393,6 +447,7 @@ function fail(message, outcome = "failed") {
  * hand. A slug makes it a number.
  */
 function refuse(message, reason = "unspecified") {
+  announceRun();
   console.error("\n[BLOCKED] " + clean(message));
   writeOutputs({
     outcome: "blocked-by-guard",
@@ -411,6 +466,7 @@ function refuse(message, reason = "unspecified") {
  * PR step is gated on `changed`, not on the exit code.
  */
 function stop(outcome, message, extra = {}) {
+  announceRun();
   log("\n" + message);
   writeStepSummary("### Patchery\n\n" + message);
   writeOutputs({ outcome, changed: "false", files: "", summary: message, ...extra });
@@ -851,6 +907,10 @@ if (!result) {
 }
 
 const modelsUsed = Object.keys(result.modelUsage ?? {});
+// The happy path keeps its own richer line - it has the cost figure and the
+// model list, which the exit paths cannot know. Marked as said so announceRun()
+// does not print a second, poorer one on the way out.
+telemetrySaid = true;
 log(
   "\n-> agent finished: " +
     result.subtype +
