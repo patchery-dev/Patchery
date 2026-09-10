@@ -263,7 +263,24 @@ export function packageMemberUse(rawText = "", packageName = "", surface = []) {
  *
  * `files` is `{path, text}[]` - the project's own source, never node_modules.
  */
-export function upgradeSurfaceReport({ packageName = "", beforeText = "", afterText = "", files = [] } = {}) {
+export function upgradeSurfaceReport({
+  packageName = "",
+  beforeText = "",
+  afterText = "",
+  files = [],
+  // Where to look for @deprecated, when that is not the entry file.
+  //
+  // MEASURED, and it killed the first version of this: mocha keeps its
+  // deprecation tags in lib/errors.js, and neither mocha nor chai ships a .d.ts.
+  // Reading only the entry found ZERO on both - a check that had never once
+  // fired on a real package while looking like it worked.
+  //
+  // Widening the search is safe because of what happens to the result: a name
+  // is only reported if it is ALSO in the public surface and ALSO used by the
+  // caller's code, so an internal function marked deprecated never reaches a
+  // reader.
+  deprecationText = null,
+} = {}) {
   const diff = surfaceDiff(beforeText, afterText);
   const gone = new Set(diff.removed);
   const atRisk = [];
@@ -271,7 +288,7 @@ export function upgradeSurfaceReport({ packageName = "", beforeText = "", afterT
   // Deprecations are read from the NEW version only. A name the old version
   // already called deprecated is not news brought by this upgrade, and telling
   // someone about it here would attach an old warning to a new decision.
-  const deprecated = deprecatedNames(afterText);
+  const deprecated = deprecatedNames(deprecationText ?? afterText);
   const deprecatedByName = new Map(deprecated.map((d) => [d.name, d.note]));
   const surviving = new Set(diff.kept.concat(diff.added));
   const fading = [];
@@ -399,6 +416,47 @@ export function dirReader(dir, io = fs, join = path.join) {
   };
 }
 
+/**
+ * Every JavaScript file a package ships, concatenated, bounded.
+ *
+ * For the deprecation scan only, and bounded twice - file count and total bytes -
+ * because a package like a bundled test runner ships megabytes of generated code
+ * and reading all of it would turn a fast check into a slow one for no gain. What
+ * is skipped is not announced to the reader, and that is deliberate: nothing here
+ * claims completeness, and the report never says a package has no deprecations.
+ */
+export function packageBodyText(dir, io = fs, join = path.join, maxFiles = 300, maxBytes = 2_000_000) {
+  const parts = [];
+  let bytes = 0;
+  let seen = 0;
+  const walk = (at) => {
+    if (seen >= maxFiles || bytes >= maxBytes) return;
+    let entries = [];
+    try {
+      entries = io.readdirSync(at, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (seen >= maxFiles || bytes >= maxBytes) return;
+      const full = join(at, e.name);
+      if (e.isDirectory()) {
+        if (e.name === "node_modules" || e.name === "test" || e.name === "__tests__") continue;
+        walk(full);
+      } else if (/\.(?:js|mjs|cjs|d\.ts|ts)$/i.test(e.name) && !/\.map$/i.test(e.name)) {
+        try {
+          const text = io.readFileSync(full, "utf8");
+          seen++;
+          bytes += text.length;
+          parts.push(text);
+        } catch {}
+      }
+    }
+  };
+  walk(dir);
+  return parts.join("\n");
+}
+
 /** Both halves of the comparison, read off two installed copies. */
 export function readPackageSurface(dir, io = fs, join = path.join) {
   let pkgJson = {};
@@ -455,6 +513,7 @@ if (process.argv[1] && process.argv[1].endsWith("surface-diff.mjs")) {
     beforeText: before.text,
     afterText: after.text,
     files,
+    deprecationText: packageBodyText(afterDir),
   });
   console.log(renderSurfaceReport(report) || "Nothing to report: no names left, arrived or matched.");
 }

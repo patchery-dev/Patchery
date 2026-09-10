@@ -6548,4 +6548,28 @@ check("a deprecation the OLD version already carried is not reported as news", (
   assert.deepStrictEqual(r.atRisk, []);
 });
 
+check("a deprecation outside the entry file is found, and an internal one never reaches a reader", () => {
+  // MEASURED, and it killed the first version: mocha keeps its deprecation tags
+  // in lib/errors.js, not the entry, and neither mocha nor chai ships a .d.ts.
+  // Reading only the entry found ZERO on both - a check that had never once fired
+  // on a real package while looking like it worked.
+  //
+  // Widening the search is safe because the result is intersected twice: a name
+  // must be in the public surface AND used by the caller's code.
+  const r = upgradeSurfaceReport({
+    packageName: "m",
+    beforeText: "exports.pub = 1;",
+    afterText: "exports.pub = 1;",
+    deprecationText:
+      "/** @deprecated use other */\nfunction pub(){}\n" +
+      "/** @deprecated */\nfunction internalOnly(){}",
+    files: [{ path: "a.js", text: 'const m = require("m");\nm.pub();' }],
+  });
+  assert.strictEqual(r.fading.length, 1);
+  assert.strictEqual(r.fading[0].name, "pub");
+  // internalOnly is deprecated in the package and is NOT part of its public
+  // surface, so a reader must never see it.
+  assert.ok(!r.fading.some((x) => x.name === "internalOnly"));
+});
+
 console.log("\n" + pass + " checks passed.\n");
