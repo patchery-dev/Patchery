@@ -145,6 +145,7 @@ import {
   proofLevel,
   proofBanner,
 } from "./guard.mjs";
+import { createStderrSink, stderrNote } from "./sdk-stderr.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -1707,6 +1708,132 @@ check("nonsense is an error, not a silent default", () => {
 check("the message says what to do about it", () =>
   assert.match(timeoutReason("reviewer", 20), /model-timeout-minutes/)
 );
+
+console.log("\ncreateStderrSink - the runtime's last words, which used to be discarded");
+// Six legs of run #13 died in eight seconds and left one line: `process exited
+// with code 1`. The child had said why; the SDK opens its stderr as "ignore"
+// unless asked, so the operating system dropped it. These checks are on the
+// asking.
+check("a crash arriving split across two reads is still one readable line", () => {
+  const out = [];
+  const s = createStderrSink({ write: (l) => out.push(l) });
+  s.onData("ReferenceError: fetch is ");
+  s.onData("not defined\n");
+  assert.strictEqual(s.first(), "ReferenceError: fetch is not defined");
+  assert.strictEqual(out.length, 1);
+});
+// The case this was written for. A process that dies at startup dies mid-line,
+// so the one line worth having never gets its newline.
+check("a last line with no newline is released by flush, not lost", () => {
+  const s = createStderrSink();
+  s.onData("SyntaxError: Unexpected token '?'");
+  assert.strictEqual(s.first(), "");
+  s.flush();
+  assert.strictEqual(s.first(), "SyntaxError: Unexpected token '?'");
+  assert.strictEqual(s.count(), 1);
+});
+check("flushing twice does not report the same line twice", () => {
+  const s = createStderrSink();
+  s.onData("boom");
+  s.flush();
+  s.flush();
+  assert.strictEqual(s.count(), 1);
+});
+// The hard rule. This callback runs on the SDK's own `data` event: one throw
+// and the listener dies, so the failure we opened stderr to read would take the
+// reading of it down with it - and look exactly like a child that said nothing.
+check("a writer that throws never reaches the SDK, and counting continues", () => {
+  const s = createStderrSink({
+    write: () => {
+      throw new Error("the log is gone");
+    },
+  });
+  assert.doesNotThrow(() => s.onData("first\nsecond\n"));
+  assert.doesNotThrow(() => s.flush());
+  assert.strictEqual(s.first(), "first");
+  assert.strictEqual(s.count(), 2);
+});
+check("nothing thrown at it can get back out", () => {
+  const s = createStderrSink();
+  assert.doesNotThrow(() => s.onData(null));
+  assert.doesNotThrow(() => s.onData(undefined));
+  assert.doesNotThrow(() => s.onData(Buffer.from("from a buffer\n")));
+  assert.strictEqual(s.first(), "from a buffer");
+});
+check("a chatty child cannot grow the buffer without limit", () => {
+  const out = [];
+  const s = createStderrSink({ maxLines: 3, write: (l) => out.push(l) });
+  for (let i = 0; i < 50; i++) s.onData("line " + i + "\n");
+  assert.strictEqual(s.count(), 50);
+  assert.strictEqual(s.lines().length, 3);
+  assert.strictEqual(s.suppressed(), 47);
+  // Three lines plus the one line saying the rest are still being counted.
+  assert.strictEqual(out.length, 4);
+  assert.match(out[3], /suppressed/);
+});
+// "It said nothing" and "we never listened" are different findings, and before
+// this change every run looked like the second one. The empty string is the
+// only honest answer to the first.
+check("silence is reported as silence, not as a placeholder", () => {
+  const s = createStderrSink();
+  assert.strictEqual(stderrNote(s), "");
+  s.onData("\n   \n");
+  assert.strictEqual(stderrNote(s), "");
+});
+check("the note names the error and how much else there was", () => {
+  const s = createStderrSink();
+  s.onData("ReferenceError: structuredClone is not defined\n    at file:///cli.js\n");
+  assert.match(stderrNote(s), /structuredClone is not defined/);
+  assert.match(stderrNote(s), /1 more stderr line\b/);
+});
+// The shape Node actually prints, taken from the KAPI 0 run on 2026-09-10:
+// path, source line, caret, error. Quoting the first line quotes the path, and
+// that is what the first version of this did - the summary said
+// `...cli.js:228` and named nothing.
+check("the note quotes the thrown error, not the path Node prints above it", () => {
+  const s = createStderrSink();
+  s.onData("file:///C:/x/node_modules/@anthropic-ai/claude-agent-sdk/cli.js:228\n");
+  s.onData("var QiQ=Symbol.for(\"undici.globalDispatcher.1\")\n");
+  s.onData("       ^\n");
+  s.onData("ReferenceError: ReadableStream is not defined\n");
+  s.onData("    at file:///C:/x/cli.js:228:18617\n");
+  assert.match(s.first(), /cli\.js:228$/);
+  assert.strictEqual(s.cause(), "ReferenceError: ReadableStream is not defined");
+  assert.match(stderrNote(s), /ReadableStream is not defined/);
+  assert.doesNotMatch(stderrNote(s), /cli\.js:228$/);
+});
+check("with nothing that looks like an error, the first line is still reported", () => {
+  const s = createStderrSink();
+  s.onData("npm warn deprecated something\nstill going\n");
+  assert.strictEqual(s.cause(), "");
+  assert.match(stderrNote(s), /npm warn deprecated something/);
+});
+// The SDK's cli.js is a bundle whose source "lines" are hundreds of kilobytes,
+// and Node prints the one it died on. Uncut, that single line took the KAPI 0
+// run log from 3 KB to 108 KB.
+check("one enormous line cannot flood the log or the summary", () => {
+  const out = [];
+  const s = createStderrSink({ maxLineChars: 80, write: (l) => out.push(l) });
+  s.onData("x".repeat(200000) + "\n");
+  assert.ok(out[0].length < 200, "a bundle line reached the log at full length");
+  assert.match(out[0], /\[\+199920 chars\]/);
+  assert.strictEqual(s.count(), 1);
+});
+check("the note cannot throw either - it runs on the failure path", () =>
+  assert.doesNotThrow(() => {
+    assert.strictEqual(stderrNote(null), "");
+    assert.strictEqual(stderrNote({ first: () => { throw new Error("x"); }, count: () => 0 }), "");
+  })
+);
+// The wiring, not just the helper: a sink nobody passed to the SDK is the same
+// as no sink at all, and this file is the only thing that would notice.
+check("every query() call in agent.mjs is given a stderr sink", () => {
+  const src = fs.readFileSync(path.join(root, "scripts", "agent.mjs"), "utf8");
+  const calls = src.match(/\bquery\(\{/g) || [];
+  const sinks = src.match(/stderr: \w+\.onData/g) || [];
+  assert.ok(calls.length >= 3, "expected agent.mjs to still call query()");
+  assert.strictEqual(sinks.length, calls.length);
+});
 
 console.log("\nharnessCrash - a dead runtime is not an agent with no ideas");
 // Three benchmark cases sat in NO-CHANGE because the SDK's child process died

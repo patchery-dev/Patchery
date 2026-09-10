@@ -77,6 +77,7 @@ import {
   proofLevel,
   proofBanner,
 } from "./guard.mjs";
+import { createStderrSink, stderrNote } from "./sdk-stderr.mjs";
 
 // ------------------------------------------------------------------ config
 
@@ -924,6 +925,9 @@ const stallDetector = createStallDetector({
 });
 
 const agentDeadline = deadline("fixing agent");
+// Without this the SDK opens its child's stderr as "ignore" and the operating
+// system discards whatever the runtime says on its way out. See sdk-stderr.mjs.
+const agentStderr = createStderrSink({ label: "agent", write: (line) => log(line) });
 try {
   for await (const message of query({
     prompt,
@@ -933,6 +937,7 @@ try {
       permissionMode: "bypassPermissions",
       maxTurns: MAX_TURNS,
       abortController: agentDeadline.abortController,
+      stderr: agentStderr.onData,
     },
   })) {
     // Proof the model is still answering. Without this the deadline is a budget
@@ -983,6 +988,9 @@ try {
     }
   }
 } catch (err) {
+  // A child that dies at startup dies mid-line. Release the buffer before
+  // reading it, or the one line worth having is the one still held here.
+  agentStderr.flush();
   // An abort surfaces here as an ordinary throw. Say which it was: "the agent
   // crashed" sends someone reading a stack trace, "it stopped answering" sends
   // them to the provider.
@@ -999,9 +1007,23 @@ try {
   // as a plain failure it became NO-CHANGE - "Patchery had nothing to offer" - for
   // three runs where the agent never got to have an offer.
   const runtimeDeath = harnessCrash(err);
-  if (runtimeDeath) fail(runtimeDeath, "harness-error");
-  fail("The agent crashed: " + (err?.message ?? err));
+  // The cause, if the runtime left one. Appended to the message rather than
+  // only logged, because the log is 4000 lines and the summary is the field a
+  // benchmark row carries: run #13 crashed seven times and every row said
+  // `process exited with code 1`, which named the symptom in all seven.
+  const said = stderrNote(agentStderr);
+  // Joined here rather than in the call, because the outcome census reads these
+  // call sites with a regex that stops at the first `)` - an expression in the
+  // argument list makes `harness-error` invisible to the contract check that
+  // exists to keep action.yml honest. Selftest caught exactly that.
+  const deathMessage = said ? runtimeDeath + " " + said : runtimeDeath;
+  if (runtimeDeath) fail(deathMessage, "harness-error");
+  const crashMessage = "The agent crashed: " + (err?.message ?? err) + (said ? ". " + said : "");
+  fail(crashMessage);
 } finally {
+  // Also on the way out of a healthy run: a warning the runtime printed without
+  // a trailing newline is still a warning.
+  agentStderr.flush();
   agentDeadline.done();
 }
 
@@ -1895,7 +1917,12 @@ async function runReviewPass(entries) {
     const treeBefore = JSON.stringify(workingTreeEntries());
 
     const reviewDeadline = deadline("reviewer");
+    // The reviewer is the call most likely to be pointed at a different
+    // provider, which makes it the one whose failures are least like ours - and
+    // it was just as silent.
+    const reviewStderr = createStderrSink({ label: "review", write: (line) => log(line) });
     const reviewOpts = {
+      stderr: reviewStderr.onData,
       cwd: TARGET_DIR,
       systemPrompt: REVIEW_SYSTEM_PROMPT,
       // The repository under review is third-party: its CLAUDE.md is, in the threat
@@ -1984,10 +2011,13 @@ async function runReviewPass(entries) {
         }
       }
     } catch (err) {
+      reviewStderr.flush();
+      const said = stderrNote(reviewStderr);
       callError = reviewDeadline.expired()
         ? reviewDeadline.reason()
-        : "the reviewer crashed: " + (err?.message ?? err);
+        : "the reviewer crashed: " + (err?.message ?? err) + (said ? ". " + said : "");
     } finally {
+      reviewStderr.flush();
       reviewDeadline.done();
     }
 
@@ -2064,6 +2094,7 @@ if (VERIFY_REPAIR && review) {
 
     let repairFailed = null;
     const repairDeadline = deadline("repair turn");
+    const repairStderr = createStderrSink({ label: "repair", write: (line) => log(line) });
     try {
       for await (const message of query({
         prompt: buildRepairPrompt({ packageName: PACKAGE, testCommand: TEST_COMMAND, concerns: actionable }),
@@ -2073,6 +2104,7 @@ if (VERIFY_REPAIR && review) {
           permissionMode: "bypassPermissions",
           abortController: repairDeadline.abortController,
           maxTurns: VERIFY_REPAIR_TURNS,
+          stderr: repairStderr.onData,
         },
       })) {
         repairDeadline.touch();
@@ -2084,10 +2116,13 @@ if (VERIFY_REPAIR && review) {
         }
       }
     } catch (err) {
+      repairStderr.flush();
+      const said = stderrNote(repairStderr);
       repairFailed = repairDeadline.expired()
         ? repairDeadline.reason()
-        : "the repair turn crashed: " + (err?.message ?? err);
+        : "the repair turn crashed: " + (err?.message ?? err) + (said ? ". " + said : "");
     } finally {
+      repairStderr.flush();
       repairDeadline.done();
     }
 
