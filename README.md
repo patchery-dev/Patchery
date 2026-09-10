@@ -85,9 +85,13 @@ one to measure. Where the break stops your test files loading at all, there is
 no count to take, and the pull request says so rather than leaving the row
 blank: a check that could not run must not look like one that passed.
 
-**An independent reviewer.** A second model, on a different provider, is given
-the diff and asked to refute it. It does not see the first model's reasoning, so
-it cannot inherit its mistakes. Its verdict is attached to the pull request
+**An independent reviewer.** A second model is given the diff and asked to
+refute it, in a separate call with no write access. It does not see the first
+model's reasoning, so it cannot inherit its mistakes. Set `verify-model` and
+`verify-base-url` and it runs on whatever provider you choose; leave them empty
+and it is the same model, still in a separate call — and the pull request only
+claims "a different model" when the telemetry confirms one actually ran. Our own
+benchmark runs put the reviewer on a different provider from the fixer. Its verdict is attached to the pull request
 whether it agrees or not — and with `verify-mode: block` it stops the pull
 request from opening at all.
 
