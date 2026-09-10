@@ -525,6 +525,13 @@ jobs:
           path: |
             /tmp/benchmark.json
             ${{ steps.patchery.outputs.diagnosis-file }}
+            # The reviewer's reasoning, and the patches a revert was about to
+            # delete. Both were being written and then thrown away with the
+            # runner, which is why "what did the reviewer object to?" had no
+            # answer anywhere and why a discarded patch could never be checked
+            # against an independent oracle.
+            ${{ steps.patchery.outputs.pr-body-file }}
+            ${{ runner.temp }}/sma-*.patch
             /tmp/census-*.json
             /tmp/*.log
           if-no-files-found: ignore
