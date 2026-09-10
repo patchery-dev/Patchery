@@ -42,6 +42,7 @@ import {
   deprecatedNames,
 } from "./surface-diff.mjs";
 import { bumpFromTitle, isMajorMove, sentinelVerdict, renderSentinel } from "./sentinel.mjs";
+import { breakingKey, isBreakingMove } from "./find-bumps.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
 import { pendingMajors, renderScan, importSites, withImpact } from "./scan-deps.mjs";
 import { knownGuardReasons, documentedOutcomes, emittedOutcomes, gateCensus, renderCensus } from "./gate-census.mjs";
@@ -6570,6 +6571,53 @@ check("a deprecation outside the entry file is found, and an internal one never 
   // internalOnly is deprecated in the package and is NOT part of its public
   // surface, so a reader must never see it.
   assert.ok(!r.fading.some((x) => x.name === "internalOnly"));
+});
+
+check("the breaking line of a 0.x package is its minor, not its major", () => {
+  // MEASURED on this repository, by running our own scanner on ourselves. It
+  // said "no dependency has a newer major" while we sat on
+  // @anthropic-ai/claude-agent-sdk ^0.1.77 and npm was publishing 0.3.267 - two
+  // breaking releases behind, told we were current. semver puts 0.x breaking
+  // changes in the minor and npm implements it: ^0.1.77 resolves <0.2.0.
+  assert.deepStrictEqual(breakingKey("^0.1.77"), { line: 1, at: "minor", label: "0.1" });
+  assert.deepStrictEqual(breakingKey("^4.18.2"), { line: 4, at: "major", label: "4" });
+  // A range that names no breaking line at all is null, never zero.
+  assert.strictEqual(breakingKey("^0"), null);
+  assert.strictEqual(breakingKey("workspace:*"), null);
+});
+
+check("isBreakingMove sees 0.1 to 0.2, and does not see 0.1 to 0.1.90", () => {
+  assert.strictEqual(isBreakingMove("^0.1.77", "0.2.0"), true);
+  assert.strictEqual(isBreakingMove("^0.1.77", "0.3.267"), true);
+  assert.strictEqual(isBreakingMove("^0.1.77", "0.1.90"), false);
+  // Crossing out of 0.x is breaking; falling back into it is not an upgrade.
+  assert.strictEqual(isBreakingMove("^0.9.0", "1.0.0"), true);
+  assert.strictEqual(isBreakingMove("^1.0.0", "0.9.0"), false);
+  assert.strictEqual(isBreakingMove("^4.18.2", "5.0.0"), true);
+  assert.strictEqual(isBreakingMove("^4.18.2", "4.19.0"), false);
+  // Unreadable is null - the caller must skip, never guess.
+  assert.strictEqual(isBreakingMove("workspace:*", "1.0.0"), null);
+});
+
+check("a 0.x dependency two breaking releases behind is a candidate, aimed at the right line", () => {
+  const r = pendingMajors(
+    { dependencies: { "@anthropic-ai/claude-agent-sdk": "^0.1.77" } },
+    { "@anthropic-ai/claude-agent-sdk": "0.3.267" }
+  );
+  assert.strictEqual(r.candidates.length, 1);
+  // "0" would install the oldest 0.x ever published, which is not the upgrade
+  // anyone means by this.
+  assert.strictEqual(r.candidates[0]["breaking-version"], "0.3");
+  assert.strictEqual(r.skipped.length, 0);
+});
+
+check("a version pair that cannot be compared is skipped, never made a candidate", () => {
+  const r = pendingMajors(
+    { dependencies: { thing: "^1.0.0" } },
+    { thing: "not-a-version" }
+  );
+  assert.strictEqual(r.candidates.length, 0);
+  assert.strictEqual(r.skipped.length, 1);
 });
 
 console.log("\n" + pass + " checks passed.\n");

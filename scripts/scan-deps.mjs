@@ -21,7 +21,7 @@
  *   node scripts/scan-deps.mjs --json               # machine-readable
  */
 
-import { rangeMajor, isOutOfScope } from "./find-bumps.mjs";
+import { rangeMajor, isOutOfScope, breakingKey, isBreakingMove } from "./find-bumps.mjs";
 import { packageBindings } from "./guard.mjs";
 
 /**
@@ -104,16 +104,36 @@ export function pendingMajors(pkg = {}, latestByName = {}) {
       continue;
     }
 
-    if (to <= have) {
-      skipped.push({ name, why: "already on the newest major (" + have + ")" });
+    // Compared on the breaking LINE, not the major. On 0.x the minor is where
+    // breaking releases land, and comparing majors there says "you are current"
+    // to a project two breaking releases behind - measured on this repository's
+    // own dependency.
+    const moved = isBreakingMove(range, latest);
+    if (moved === null) {
+      // Unreadable is a skip, never a candidate. Guessing here would install a
+      // version nobody asked for - the same rule the range reader already follows.
+      skipped.push({ name, why: "cannot compare these versions: " + range + " -> " + latest });
       continue;
     }
+    if (moved === false) {
+      const line = breakingKey(range);
+      skipped.push({ name, why: "already on the newest " + (line ? line.at + " (" + line.label + ")" : "version") });
+      continue;
+    }
+
+    // The line to install, not the major. On 0.x these differ - "0" would install
+    // the oldest 0.x published, which is not the upgrade anyone means.
+    const line = breakingKey(latest);
 
     candidates.push({
       package: name,
       from: have,
+      // The declared range, kept whole. A caller that wants to SHOW where the
+      // project sits needs the breaking line, and `have` is only the major -
+      // which reads as "0" for every 0.x project and hides the answer.
+      range,
       to,
-      "breaking-version": String(to),
+      "breaking-version": line ? line.label : String(to),
       latest,
       runtime: runtime.has(name),
     });

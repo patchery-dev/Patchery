@@ -133,6 +133,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { readPackageSurface, upgradeSurfaceReport, renderSurfaceReport } from "./surface-diff.mjs";
 import { pendingMajors } from "./scan-deps.mjs";
+import { breakingKey } from "./find-bumps.mjs";
 
 /** Fetch one version of one package into a throwaway directory. */
 export function fetchVersion(name, version, npm = "npm") {
@@ -221,14 +222,22 @@ export function latestVersion(name, npm = "npm") {
  */
 export function scanTargets(pkgJson, latestByName, cap = 10) {
   const found = pendingMajors(pkgJson, latestByName);
-  // `from` is the declared MAJOR, not a full version - that is all a range gives
-  // us, and asking npm for "express@4" resolves to the newest 4.x, which is the
-  // honest comparison anyway: what you would be on today versus what is offered.
-  const targets = found.candidates.map((c) => ({
-    package: c.package,
-    from: String(c.from),
-    to: String(c.latest),
-  }));
+  // `from` is the breaking LINE the range sits on, not a full version - that is
+  // all a range gives us, and asking npm for "express@4" resolves to the newest
+  // 4.x, which is the honest comparison anyway: what you would be on today
+  // versus what is offered.
+  //
+  // The LINE, not the major, because on 0.x they differ: a project on ^0.1.77
+  // reported as "0" reads as though it had never moved, and this repository is
+  // the case that showed it.
+  const targets = found.candidates.map((c) => {
+    const line = breakingKey(String(c.range ?? "") || String(c.from));
+    return {
+      package: c.package,
+      from: line ? line.label : String(c.from),
+      to: String(c.latest),
+    };
+  });
   return {
     targets: targets.slice(0, cap),
     dropped: Math.max(0, targets.length - cap),

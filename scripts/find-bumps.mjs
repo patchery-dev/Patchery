@@ -71,6 +71,43 @@ async function api(url, { raw = false } = {}) {
  * cannot say what it is pinned to and guessing would put a fictional row in the
  * benchmark.
  */
+/**
+ * Where a package puts its breaking changes.
+ *
+ * For 1.0.0 and above it is the major, and everyone knows that. For 0.x it is
+ * the MINOR - semver says so and npm implements it: `^0.1.77` resolves within
+ * `>=0.1.77 <0.2.0`, so 0.1 to 0.2 is a breaking release wearing a minor's
+ * number.
+ *
+ * Found by running our own scanner on our own repository, which is the whole
+ * argument for doing that. It reported `no dependency has a newer major`, and
+ * we were on `@anthropic-ai/claude-agent-sdk@^0.1.77` while npm was publishing
+ * 0.3.267 - two breaking releases behind, told we were current.
+ *
+ * Returned as a comparable string rather than a number, because 0.2 and 0.10
+ * cannot both be a number and still order correctly.
+ */
+export function breakingKey(version) {
+  const m = /^\D*(\d+)(?:\.(\d+))?/.exec(String(version || "").trim());
+  if (!m) return null;
+  const major = Number(m[1]);
+  if (major > 0) return { line: major, at: "major", label: String(major) };
+  const minor = m[2] === undefined ? null : Number(m[2]);
+  // `0` on its own, or `^0`, does not name a breaking line at all.
+  if (minor === null) return null;
+  return { line: minor, at: "minor", label: "0." + minor };
+}
+
+/** Is `to` a breaking move away from `from`? null when either cannot be read. */
+export function isBreakingMove(from, to) {
+  const a = breakingKey(from);
+  const b = breakingKey(to);
+  if (!a || !b) return null;
+  // 0.x to 1.x is breaking; 1.x to 0.x is not an upgrade at all.
+  if (a.at !== b.at) return a.at === "minor";
+  return b.line > a.line;
+}
+
 export function rangeMajor(range) {
   const m = String(range || "").match(/(\d+)(?:\.\d+)*/);
   return m ? Number(m[1]) : null;
