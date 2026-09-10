@@ -1710,6 +1710,48 @@ check("the message says what to do about it", () =>
   assert.match(timeoutReason("reviewer", 20), /model-timeout-minutes/)
 );
 
+console.log("\nnothing agent.mjs writes to disk escapes redaction");
+// A patch is the one file here whose content is the agent's own edits rather
+// than our prose, so it is where a key the agent copied out of the environment
+// into a file would be written down verbatim - and benchmark-run.yml uploads
+// `sma-*.patch` to a run artifact on a public repository. savePatch was the
+// only one of five writes in agent.mjs that did not call clean(), and nothing
+// said so, which is why this check exists rather than a comment.
+check("every file agent.mjs writes goes through clean()", () => {
+  const src = fs.readFileSync(path.join(root, "scripts", "agent.mjs"), "utf8");
+  const writes = [...src.matchAll(/fs\.(?:write|append)FileSync\(([^;]*?)\);/gs)].map((m) => m[1]);
+  assert.ok(writes.length >= 5, "expected agent.mjs to still write files");
+  const bare = writes.filter((args) => !/\bclean\(/.test(args));
+  // Exactly one exemption, named rather than pattern-matched: writeOutputs
+  // redacts each value as it builds the lines, so the joined string it hands to
+  // appendFileSync is already clean. Anything else showing up here is a new
+  // unredacted write, which is the thing being prevented.
+  assert.strictEqual(bare.length, 1, "unredacted write(s) in agent.mjs: " + JSON.stringify(bare));
+  assert.match(bare[0], /lines\.join/, "the one exemption must still be writeOutputs");
+});
+check("and the exempted writer redacts every value it joins", () => {
+  const src = fs.readFileSync(path.join(root, "scripts", "agent.mjs"), "utf8");
+  const body = /function writeOutputs\(obj\) \{([\s\S]*?)\n\}/.exec(src);
+  assert.ok(body, "writeOutputs not found");
+  assert.match(body[1], /clean\(String\(v\)\)/);
+});
+// The behaviour, not just the shape: a credential sitting in a diff has to come
+// out. Two shapes, because a patch can carry either - a key the pattern matcher
+// recognises on its own, and this run's own token, which no pattern would.
+check("a key inside a patch body is redacted by the same function", () => {
+  const patch = [
+    "diff --git a/src/client.js b/src/client.js",
+    "+const client = new Client('sk-abcdefghijklmnopqrstuvwxyz123456');",
+    "+const url = 'https://gateway.internal/v1';",
+  ].join("\n");
+  const out = redactSecrets(patch, ["https://gateway.internal/v1"]);
+  assert.doesNotMatch(out, /sk-abcdefghijklmnopqrstuvwxyz123456/);
+  assert.doesNotMatch(out, /gateway\.internal/);
+  // The diff itself must survive - a redacted patch is still evidence, and a
+  // patch redacted into uselessness would push the next person to turn it off.
+  assert.match(out, /diff --git a\/src\/client\.js/);
+});
+
 console.log("\nwithOwnNodeFirst - the child must not resolve `node` from a runner's PATH");
 // The SDK spawns the bare string "node", so the child's Node comes from PATH and
 // not from the parent. On a runner where setup-node put Node 16 in front, six

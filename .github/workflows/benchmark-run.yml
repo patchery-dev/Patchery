@@ -530,6 +530,14 @@ jobs:
             # runner, which is why "what did the reviewer object to?" had no
             # answer anywhere and why a discarded patch could never be checked
             # against an independent oracle.
+            #
+            # This repository is public, so these artifacts are readable by
+            # anyone with a GitHub account. The patches are redacted where they
+            # are written (agent.mjs savePatch, through clean()) rather than
+            # here, because redacting at the upload would leave the unredacted
+            # copy sitting on the runner and would not survive anyone adding a
+            # second upload. selftest fails if any write in agent.mjs stops
+            # going through clean().
             ${{ steps.patchery.outputs.pr-body-file }}
             ${{ runner.temp }}/sma-*.patch
             /tmp/census-*.json

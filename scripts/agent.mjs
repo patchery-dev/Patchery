@@ -743,7 +743,14 @@ function savePatch(entries, name) {
       } catch {}
     }
     if (!text.trim()) return out;
-    fs.writeFileSync(out.path, text, "utf8");
+    // Redacted like everything else this script writes, and it is the write that
+    // needed it most. A patch is the only artifact here whose content comes from
+    // the agent's own edits rather than from us, so it is the one place a key the
+    // agent copied out of the environment and into a file would be recorded
+    // verbatim - and benchmark-run.yml uploads these patches to a run artifact on
+    // a public repository. Four of the five writes in this file already went
+    // through clean(); this one did not, and nothing said so.
+    fs.writeFileSync(out.path, clean(text), "utf8");
     // Verified, not assumed: the revert below deletes the only other copy, and
     // claiming a save that did not happen is worse than admitting it did not.
     out.saved = fs.statSync(out.path).size > 0;
