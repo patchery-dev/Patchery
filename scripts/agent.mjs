@@ -64,6 +64,8 @@ import {
   isHarnessConfig,
   harnessConfigReason,
   dependencyMisuseReasons,
+  callSiteScan,
+  callSiteNote,
   failureChanged,
   chainedFailureMessage,
   actionableConcerns,
@@ -1270,6 +1272,38 @@ if (changed.length === 0) {
   // "fixes" an EBADENGINE is either lying or breaking the project's own users.
   // Where that is not established, the header claims only the work that was
   // actually done: the break was traced.
+  // Where the package is actually imported, counted rather than asserted.
+  //
+  // A run #11 leg told its reader "Every call site in this project's own source:
+  // there are none" about a repository that imports the package in
+  // test/integration.mjs. Nothing in the run was in a position to disagree with
+  // the model about a fact git can settle in a second.
+  //
+  // Tracked files only: node_modules is where the break lives, not where the
+  // project calls it from, and an untracked scratch file is not this project's
+  // source either. A failure to list them yields null, and null prints nothing -
+  // an empty search must never reach a reader as "no call sites".
+  const callSites = (() => {
+    try {
+      const listed = git(["ls-files", "--", targetRel || "."], { trim: false })
+        .split("\n")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      const files = [];
+      for (const rel of listed) {
+        try {
+          files.push({ path: rel, text: fs.readFileSync(path.join(repoRoot, rel), "utf8") });
+        } catch {
+          // Unreadable is not empty. Skipping it lowers `searched`, which is
+          // reported, rather than silently counting it as a file with no imports.
+        }
+      }
+      return callSiteScan({ packageName: PACKAGE, files });
+    } catch {
+      return callSiteScan({ packageName: PACKAGE, files: null });
+    }
+  })();
+
   const isVerdict = Boolean(classification.kind) && Boolean(notes);
   const handover = [
     !isVerdict
@@ -1283,6 +1317,13 @@ if (changed.length === 0) {
     handover.push("**What broke.** " + classification.what + ".");
     if (classification.evidence) handover.push("", "```", classification.evidence, "```");
     handover.push("");
+  }
+  {
+    // Placed before the agent's own words, deliberately: a reader who is about to
+    // be told where the call sites are should already know what the machine
+    // counted.
+    const line = callSiteNote(callSites, PACKAGE);
+    if (line) handover.push(line, "");
   }
   if (classification.inScope === false) {
     handover.push(
@@ -1310,14 +1351,29 @@ if (changed.length === 0) {
   // checked at all, so it is handed over as a diagnosis to be read rather than a
   // result to be trusted. Stating that limit is what makes the rest worth
   // believing.
+  // Three endings, because there are three runs here and two of them used to
+  // share a sentence.
+  //
+  // "A patch would encode a decision that is yours" is true where the
+  // classification says no code change fixes the break. It was printed on every
+  // leg that wrote notes, including one whose own line four rows above read
+  // "This is an ordinary migration and should be fixable". One sentence said the
+  // run fell short and the other said it was right to stop, on the same screen,
+  // and a reader had no way to choose. The ending now follows the same
+  // classification the line above it follows.
+  const tail =
+    "Above is the reasoning that got there. Unlike a fix, none of it has been machine-checked: " +
+    "read it as a diagnosis and check its claims.";
+  const read = "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) ";
   handover.push(
-    isVerdict
-      ? "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) and shipped no patch, " +
-        "because on this break a patch would encode a decision that is yours, in a place you would " +
-        "not look for it. Above is the reasoning that got there. Unlike a fix, none of it has been " +
-        "machine-checked: read it as a diagnosis and check its claims."
-      : "It read " + readCount + " file(s) over " + s.toolTurns + " turn(s) and changed none. " +
-        "Nothing was delivered because nothing could be proved."
+    !isVerdict
+      ? read + "and changed none. Nothing was delivered because nothing could be proved."
+      : classification.inScope === false
+      ? read + "and shipped no patch, because on this break a patch would encode a decision " +
+        "that is yours, in a place you would not look for it. " + tail
+      : read + "and shipped no patch. This break is the kind that is normally fixable at the " +
+        "call site, so read what follows as a run that stopped short of one rather than as a " +
+        "verdict that none exists. " + tail
   );
   const message = handover.join("\n");
   log("\n" + message);

@@ -1280,6 +1280,70 @@ export function untrackedHunk(pathName, body) {
   );
 }
 
+/** Files whose contents can hold an import of a JavaScript package. */
+const SOURCE_EXT = /\.(?:js|mjs|cjs|jsx|ts|tsx|mts|cts)$/i;
+
+/**
+ * Where a package is imported in the project's own source.
+ *
+ * This exists because a leg of run #11 told its reader, in bold, "Every call
+ * site in this project's own source: there are none" - and the repository it
+ * said that about imports the package in `test/integration.mjs`. One line, one
+ * second to find, and nothing in the run was in a position to disagree with the
+ * model about a fact the machine can settle.
+ *
+ * It REPORTS. It gates nothing and decides no outcome. That restraint is the
+ * point: a count of zero would be a tempting way to move a leg into a column
+ * that does not count against us, and a rule that pays us for finding nothing
+ * is a rule that will find nothing.
+ *
+ * Import position only, via packageBindings, which strips comments first. A
+ * plain word search is useless here - `which` appears in nine files of yargs as
+ * ordinary English and in exactly one as a dependency.
+ *
+ * `hits` is null, never 0, when there was nothing to search. The census rule:
+ * "we could not count" must not be readable as "we counted zero".
+ */
+export function callSiteScan({ packageName = "", files = null } = {}) {
+  if (!packageName) return { hits: null, searched: 0, where: [], why: "no package name given" };
+  if (!Array.isArray(files)) return { hits: null, searched: 0, where: [], why: "the file list could not be read" };
+  const source = files.filter((f) => f && SOURCE_EXT.test(String(f.path || "")));
+  if (source.length === 0) return { hits: null, searched: 0, where: [], why: "no source files to search" };
+  let hits = 0;
+  const where = [];
+  for (const f of source) {
+    const found = packageBindings(String(f.text || ""), packageName);
+    if (found.count > 0) {
+      hits += found.count;
+      where.push({ path: f.path, statements: found.statements });
+    }
+  }
+  return { hits, searched: source.length, where, why: null };
+}
+
+/**
+ * The scan as one sentence for a human, or "" when there is nothing to say.
+ *
+ * Never phrased as a verdict. Zero import sites is a fact about where the
+ * package is reached from, not a ruling that there was nothing to do.
+ */
+export function callSiteNote(scan, packageName) {
+  if (!scan || scan.hits === null) return "";
+  const files = scan.searched + " source file(s)";
+  if (scan.hits === 0) {
+    return (
+      "**Where `" + packageName + "` is imported.** Nowhere in this project's own source - " +
+      "searched " + files + ". It is reached through another dependency, so there may be no " +
+      "call site here to change."
+    );
+  }
+  const list = scan.where.map((w) => "`" + w.path + "`").join(", ");
+  return (
+    "**Where `" + packageName + "` is imported.** " + scan.hits + " import site(s) across " +
+    files + ": " + list + "."
+  );
+}
+
 /**
  * What to tell a human about work that was kept, or that we failed to keep.
  *

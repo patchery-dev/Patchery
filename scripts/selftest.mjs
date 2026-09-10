@@ -92,6 +92,8 @@ import {
   renderSpend,
   agentFinishedLine,
   dependencyMisuseReasons,
+  callSiteScan,
+  callSiteNote,
   packageBindings,
   failureChanged,
   failureSignature,
@@ -6232,6 +6234,47 @@ check("golden is not poison, so a guard that blocks everything would be caught",
     files: [{ relPath: "app.js", beforeText: FIXTURE_BEFORE, afterText: after }],
   });
   assert.deepStrictEqual(reasons, [], "the guard blocks the known-good fix too");
+});
+
+// ---------------------------------------------------------------------------
+// callSiteScan - the count that would have contradicted a model's claim.
+// ---------------------------------------------------------------------------
+
+check("callSiteScan finds the one real import among nine English words", () => {
+  // The measured case. yargs at the benchmarked commit mentions "which" in nine
+  // files as ordinary English and imports it in exactly one - and the agent
+  // reported "there are none".
+  const files = [
+    { path: "lib/parser.js", text: "// decide which branch to take\nconst n = 1;" },
+    { path: "docs/guide.md", text: "import which from 'which'" },
+    { path: "test/integration.mjs", text: "import which from 'which'\nwhich('node');" },
+  ];
+  const s = callSiteScan({ packageName: "which", files });
+  // The markdown file is not source and is not searched; the comment is stripped.
+  assert.strictEqual(s.searched, 2);
+  assert.strictEqual(s.hits, 1);
+  assert.deepStrictEqual(s.where.map((w) => w.path), ["test/integration.mjs"]);
+});
+
+check("callSiteScan says null, never zero, when it could not search", () => {
+  // Same contract as the test census. A scan that found nothing to look at must
+  // not be readable as "the package is imported nowhere" - that reading is the
+  // one that would move a leg into a column costing us nothing.
+  for (const files of [null, undefined, []]) {
+    const s = callSiteScan({ packageName: "which", files });
+    assert.strictEqual(s.hits, null);
+    assert.strictEqual(callSiteNote(s, "which"), "");
+  }
+  assert.strictEqual(callSiteScan({ packageName: "", files: [] }).hits, null);
+});
+
+check("callSiteNote reports zero as a location, not as a verdict", () => {
+  const none = callSiteNote(callSiteScan({ packageName: "which", files: [{ path: "a.js", text: "const x=1;" }] }), "which");
+  assert.match(none, /Nowhere in this project's own source/);
+  // It must not tell the reader there was nothing to do - that is a judgement,
+  // and this function only reports where imports are.
+  assert.doesNotMatch(none, /nothing to (do|fix)|no fix|cannot be fixed/i);
+  assert.match(none, /searched 1 source file/);
 });
 
 console.log("\n" + pass + " checks passed.\n");
