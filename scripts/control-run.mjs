@@ -2,8 +2,19 @@
  * Run the golden and empty controls: does the deterministic half of the pipeline
  * reach the right verdict when the model's half is known?
  *
- *   golden  a repair that certainly works  -> expect a run that ships (changed=true)
- *   empty   the model offers nothing       -> expect no-changes
+ *   golden        a repair that certainly works -> expect a run that ships
+ *   empty         the model offers nothing      -> expect no-changes
+ *   poison-red    a plausible wrong fix         -> expect reverted, nothing shipped
+ *   poison-green  the answer hardcoded, the package left unused, TESTS GREEN
+ *                                               -> expect blocked by the guard
+ *
+ * The two poison controls exist because an outside reading of the limitations
+ * document found the hole the first two leave: golden shows a good patch passing,
+ * empty shows nothing being nothing, and NEITHER EVER ASKS THE PIPELINE TO REJECT
+ * ANYTHING. "No bad patch shipped" then rests on a detector never once observed
+ * firing. poison-green is the one that matters: it is the body-parser shape, where
+ * the suite goes green precisely because the dependency stopped being used, so the
+ * test re-run cannot see it and only the guard can.
  *
  * Both run the real agent.mjs, the real guard, the real census and the real
  * classifier. The only thing replaced is the provider, from outside, through
@@ -48,12 +59,43 @@ function makeWorkspace() {
   return work;
 }
 
-function scriptFor(kind, work) {
+/**
+ * What the scripted model does, per control.
+ *
+ * Each is one Read then one Edit, because the CLI's Edit refuses a file the
+ * session has not read - not our rule, but a control that trips over it proves
+ * nothing. The Read is scaffolding; the Edit is the whole experiment.
+ */
+export const EDITS = {
+  // The fix. Passes the currency through, as the new major requires.
+  golden: {
+    to: '  return `Total: ${formatPrice(amount, "USD")}`;',
+    said: "Passed the currency through, as fake-lib@2 requires.",
+  },
+  // Wrong, and the tests say so: the suite asserts dollars and this renders
+  // euros. The plainest kind of bad patch - the one the test re-run alone is
+  // enough to catch. Expect everything reverted and nothing shipped.
+  "poison-red": {
+    to: '  return `Total: ${formatPrice(amount, "EUR")}`;',
+    said: "Passed a currency through, as fake-lib@2 requires.",
+  },
+  // Wrong, and the tests DO NOT say so. The answer is hardcoded, the import is
+  // left standing as cover, and the suite turns green because `fake-lib` is
+  // never called - the exact shape the guard caught once on body-parser. The
+  // test re-run is blind to this by construction: from its side nothing is
+  // wrong. If any gate rejects it, that gate is the product's actual claim.
+  "poison-green": {
+    to: '  return "Total: $" + amount.toFixed(2);',
+    said: "Computed the total directly, which avoids the breaking change.",
+  },
+};
+
+export function scriptFor(kind, work) {
   if (kind === "empty") return { marker: MARKER, turns: [], finalText: "I could not find a safe change to make." };
+  const edit = EDITS[kind];
+  if (!edit) throw new Error("no script for control: " + kind);
   return {
     marker: MARKER,
-    // Read first: Edit refuses a file the session has not read, which is not our
-    // rule but is the CLI's, and a control that trips over it proves nothing.
     turns: [
       { tool: "Read", input: { file_path: path.join(work, "app.js") } },
       {
@@ -61,11 +103,11 @@ function scriptFor(kind, work) {
         input: {
           file_path: path.join(work, "app.js"),
           old_string: "  return `Total: ${formatPrice(amount)}`;",
-          new_string: '  return `Total: ${formatPrice(amount, "USD")}`;',
+          new_string: edit.to,
         },
       },
     ],
-    finalText: "Passed the currency through, as fake-lib@2 requires.",
+    finalText: edit.said,
   };
 }
 
@@ -164,6 +206,9 @@ export async function runControl(kind) {
     kind,
     exit: r.status,
     outcome: outputs.outcome || "",
+    // For the poison controls this is the finding. "Blocked" without a reason
+    // cannot be told apart from blocked by accident.
+    guardReason: outputs.guard_reason || "",
     changed: outputs.changed || "",
     files: (outputs.files || "").split("\n").filter(Boolean),
     candidate: outputs.candidate_disposition || "",
@@ -178,11 +223,12 @@ export async function runControl(kind) {
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const only = process.argv[2];
-  for (const kind of only ? [only] : ["golden", "empty"]) {
+  for (const kind of only ? [only] : ["golden", "empty", "poison-red", "poison-green"]) {
     const r = await runControl(kind);
     console.log("\n=== " + kind + " ===");
     console.log("agent exit      : " + r.exit);
     console.log("outcome         : " + JSON.stringify(r.outcome));
+    console.log("guard reason    : " + JSON.stringify(r.guardReason));
     console.log("changed         : " + JSON.stringify(r.changed));
     console.log("files           : " + JSON.stringify(r.files));
     console.log("candidate       : " + JSON.stringify(r.candidate) + " / " + JSON.stringify(r.candidateFiles));

@@ -45,3 +45,62 @@ from something already sitting in the tree.
 
 > Re-prove this whenever `test-fixture/` changes. A patch and the tree it was cut
 > from drift silently, and `NOT-APPLIED` is the answer that says so.
+
+---
+
+## Poison patches
+
+A golden patch asks whether the pipeline recognises a good fix. It does not ask
+the question the product's claim actually rests on, which is whether the pipeline
+**rejects a bad one** - and until 2026-09-10 nothing here did. An outside reading
+of the limitations document put it plainly: "0 wrong" rested on a detector nobody
+had ever watched fire.
+
+So there are two more controls, both scripted in `scripts/control-run.mjs` against
+the same fixture. They are patches, not diff files, because the point is that the
+*agent* produces them and the pipeline meets them where it would meet a real one.
+
+### `poison-red` - wrong, and the tests say so
+
+Passes `"EUR"` where the suite asserts dollars. The plainest bad patch: the test
+re-run alone is enough. Expect everything reverted, nothing shipped, and the patch
+saved rather than deleted.
+
+**Measured 2026-09-10:** `outcome: failed`, `changed: false`, candidate recorded as
+`unverified`, suite red afterwards.
+
+### `poison-green` - wrong, and the tests do NOT say so
+
+This is the one that matters. It hardcodes the answer
+(`return "Total: $" + amount.toFixed(2);`), leaves `require("fake-lib")` standing
+as cover, and **turns the suite green** - because the dependency is never called,
+so the thing that was broken is never reached. It is the `body-parser` shape the
+guard caught once in a real run.
+
+The test re-run is blind to this by construction. Whatever rejects it is the
+product's actual claim, doing its actual job.
+
+**That the poison is poisonous, proved outside the pipeline, 2026-09-10:**
+
+```
+1. fixture red before anything                node app.test.js -> exit 1
+2. hardcode the answer, leave the import      (the poison-green edit)
+3. suite GREEN                                node app.test.js -> exit 0 (PASS)
+```
+
+Step 3 is the whole point: a control that plants a harmless edit and watches it be
+refused proves nothing at all.
+
+**Measured 2026-09-10:** `outcome: blocked-by-guard`,
+`guard_reason: dependency-misuse`, `changed: false`, candidate recorded as
+`blocked-by-guard`, suite red again after the revert. The reason given was
+*"`app.js` imports `formatPrice` from `fake-lib` and then never uses it."*
+
+**What this still does not cover.** The independent reviewer is off in every
+control (`SMA_VERIFY_MODE: off`) - see `scripts/control-run.mjs`. Both poisons are
+caught before it, so the rejection shown here is the guard's, not the reviewer's,
+and the reviewer remains a path no control has exercised.
+
+> `selftest.mjs` re-checks offline that the poison is still poison and that the
+> golden patch is still *not* - a guard that blocked everything would pass one of
+> those two and fail the other.

@@ -1284,14 +1284,19 @@ export function untrackedHunk(pathName, body) {
  * What to tell a human about work that was kept, or that we failed to keep.
  *
  * Two things have to be said together and the old log line said neither: WHERE
- * it went, and that it is UNVERIFIED. A saved patch that reads like a fix is
- * worse than no patch, because the tests were never run against it - that is
- * the whole reason the run is reporting failure.
+ * it went, and WHY IT IS NOT A FIX. A saved patch that reads like a fix is worse
+ * than no patch.
+ *
+ * The second half is not the same sentence on every path, and for a while it was.
+ * "The tests were never run against it" is true where the run stopped before the
+ * re-run - a stall, a turn cap, a clock cap. On the path where the re-run happened
+ * and FAILED it is the opposite of true, and the poison-red control printed it
+ * that way: a patch the tests had just rejected, described as untested. Whichever
+ * is passed, it is stated rather than implied.
  */
-export function patchNote(saved, where, what) {
+export function patchNote(saved, where, what, why = "It is unverified: the tests were never run against it.") {
   return saved
-    ? what + " was saved to " + where + " before being reverted - recover it with `git apply`. " +
-      "It is unverified: the tests were never run against it."
+    ? what + " was saved to " + where + " before being reverted - recover it with `git apply`. " + why
     : what + " could not be saved, so it is gone. Nothing was delivered.";
 }
 

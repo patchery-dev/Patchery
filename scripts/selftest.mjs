@@ -29,6 +29,7 @@ import {
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
 import { goldenVerdict, renderGolden } from "./golden-verdict.mjs";
 import { classifyRequest, turnMessage, streamFrames, routeOf } from "./control-stub.mjs";
+import { scriptFor } from "./control-run.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
 import { pendingMajors, renderScan, importSites, withImpact } from "./scan-deps.mjs";
 import { knownGuardReasons, documentedOutcomes, emittedOutcomes, gateCensus, renderCensus } from "./gate-census.mjs";
@@ -2448,9 +2449,23 @@ check("patchNote says where the work went AND that it is unverified", () => {
   const n = patchNote(true, "/tmp/sma-capped.patch", "The partial work");
   assert.match(n, /\/tmp\/sma-capped\.patch/);
   // Both halves, always. A saved patch that reads like a fix is worse than no
-  // patch: the tests were never run against it, which is why the run failed.
+  // patch: on this path the tests were never run against it, which is why the
+  // run failed.
   assert.match(n, /unverified/);
   assert.match(n, /git apply/);
+});
+
+check("patchNote does not call a patch untested when the tests rejected it", () => {
+  // The default sentence is true of a stall or a cap and false of the path where
+  // the re-run happened and failed. poison-red printed it that way once.
+  const n = patchNote(
+    true,
+    "/tmp/sma-unverified.patch",
+    "The change that did not hold",
+    "It is not a fix: your tests were run against it and they failed."
+  );
+  assert.match(n, /run against it and they failed/);
+  assert.doesNotMatch(n, /never run against it/);
 });
 
 check("patchNote admits a save that did not happen instead of claiming one", () => {
@@ -6171,6 +6186,52 @@ check("the stub knows its three endpoints apart", () => {
   assert.strictEqual(routeOf("/v1/messages?beta=true"), "messages");
   assert.strictEqual(routeOf("/v1/messages/count_tokens?beta=true"), "count_tokens");
   assert.strictEqual(routeOf("/api/event_logging/batch"), "other");
+});
+
+// ---------------------------------------------------------------------------
+// The poison controls, checked offline: is the bad patch actually bad?
+//
+// A control that plants a bad patch is worthless if the patch is not bad, and
+// nothing in the run itself would say so - a pipeline that rejects a harmless
+// edit looks exactly like a pipeline that rejects a dangerous one. These two
+// checks are the control's own control, and they are pure: no run, no model.
+// ---------------------------------------------------------------------------
+
+const FIXTURE_BEFORE =
+  'const { formatPrice } = require("fake-lib");\n\n' +
+  "function renderCartTotal(amount) {\n" +
+  "  return `Total: ${formatPrice(amount)}`;\n" +
+  "}\n\nmodule.exports = { renderCartTotal };\n";
+
+function fixtureAfter(kind) {
+  const s = scriptFor(kind, "/work");
+  const e = s.turns.find((t) => t.tool === "Edit");
+  assert.ok(e, kind + ": no Edit turn");
+  assert.ok(FIXTURE_BEFORE.includes(e.input.old_string), kind + ": the edit does not match the fixture");
+  return FIXTURE_BEFORE.replace(e.input.old_string, e.input.new_string);
+}
+
+check("poison-green really does abandon the package the run was sent to migrate", () => {
+  const after = fixtureAfter("poison-green");
+  // The import still stands - that is the point. A check that only asked
+  // "is the package still imported?" would wave this through.
+  assert.match(after, /require\("fake-lib"\)/);
+  assert.doesNotMatch(after, /formatPrice\(/);
+  const reasons = dependencyMisuseReasons({
+    packageName: "fake-lib",
+    files: [{ relPath: "app.js", beforeText: FIXTURE_BEFORE, afterText: after }],
+  });
+  assert.strictEqual(reasons.length, 1, "the guard has nothing to say about the poison");
+  assert.match(reasons[0].reason, /never uses it/);
+});
+
+check("golden is not poison, so a guard that blocks everything would be caught", () => {
+  const after = fixtureAfter("golden");
+  const reasons = dependencyMisuseReasons({
+    packageName: "fake-lib",
+    files: [{ relPath: "app.js", beforeText: FIXTURE_BEFORE, afterText: after }],
+  });
+  assert.deepStrictEqual(reasons, [], "the guard blocks the known-good fix too");
 });
 
 console.log("\n" + pass + " checks passed.\n");

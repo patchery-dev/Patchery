@@ -1681,7 +1681,14 @@ if (!after.ok) {
           " new failure(s) on top. Everything was reverted, no PR will be opened."
         : "Tests still fail after the fix. Everything was reverted, no PR will be opened.") +
       " " +
-      patchNote(unverified.saved, unverified.path, "The change that did not hold")
+      patchNote(
+        unverified.saved,
+        unverified.path,
+        "The change that did not hold",
+        // Not the default sentence. The tests DID run against this one - that is
+        // how we know to revert it.
+        "It is not a fix: your tests were run against it and they failed."
+      )
   );
 }
 
