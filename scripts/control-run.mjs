@@ -129,6 +129,20 @@ export async function runControl(kind) {
       SMA_CHANGELOG: "fake-lib 2.0.0: formatPrice(amount, currency) now requires currency.",
       SMA_EXTRA_INSTRUCTIONS: MARKER,
       SMA_MAX_TURNS: "6",
+      // The reviewer is OFF, and the control is narrower because of it.
+      //
+      // It is a second model call with its own structured-output contract, and
+      // the stub can be made to answer it but not yet in the shape the CLI
+      // accepts - six attempts, then a timeout. Rather than hold the whole
+      // control behind that, this states the gap: THE CONTROL DOES NOT EXERCISE
+      // THE REVIEW STEP.
+      //
+      // What it still covers is the part that decides a run can ship: the
+      // guard, the census, the git-verified diff, and the classifier. The
+      // reviewer can only ever LOWER an outcome, so a control that skips it
+      // tests every gate capable of raising one - which is the direction a
+      // false pass would come from.
+      SMA_VERIFY_MODE: "off",
       ANTHROPIC_BASE_URL: base,
       ANTHROPIC_AUTH_TOKEN: "control-stub-not-a-key",
       ANTHROPIC_API_KEY: "control-stub-not-a-key",

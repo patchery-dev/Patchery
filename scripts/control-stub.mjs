@@ -37,6 +37,7 @@
 
 import http from "node:http";
 import fs from "node:fs";
+import { REVIEW_CHECKS } from "./guard.mjs";
 
 const MODEL = "control-stub";
 
@@ -49,6 +50,11 @@ const MODEL = "control-stub";
  */
 export function classifyRequest(body, marker) {
   const text = String(body || "");
+  // The reviewer is a second conversation with its own schema, and it does not
+  // carry the fixer's marker. Left as an aside it got a bland "ok", the parser
+  // never got a verdict, and the run looped until it was killed - which is where
+  // the golden control stopped on its first end-to-end attempt.
+  if (text.includes("reconstructed_intent")) return "review";
   // The marker is in the opening prompt and the transcript carries it forward,
   // so it identifies the conversation on EVERY turn, not just the first. An
   // earlier version looked for a tool_result before the marker and treated the
@@ -64,7 +70,9 @@ export function turnMessage(script, n, kind) {
   const turns = (script && Array.isArray(script.turns) ? script.turns : []).filter(Boolean);
   const turn = kind === "scripted" ? turns[n] : null;
   const base = { id: "msg_control_" + n, type: "message", role: "assistant", model: MODEL };
-  if (!turn) {
+  if (kind === "review") {
+    return { ...base, content: [{ type: "text", text: JSON.stringify(reviewPayload(script)) }], stop_reason: "end_turn" };
+  }  if (!turn) {
     const text = kind === "scripted" && script && script.finalText ? script.finalText : "ok";
     return { ...base, content: [{ type: "text", text }], stop_reason: "end_turn" };
   }
@@ -75,8 +83,29 @@ export function turnMessage(script, n, kind) {
   };
 }
 
-/** One Anthropic-style SSE frame. */
-function frame(event, data) {
+/**
+ * A verdict in the shape the reviewer's schema demands.
+ *
+ * Built from REVIEW_CHECKS rather than a copied list, so a check added to the
+ * product cannot leave the control answering an older contract - the review
+ * would fail to parse and the control would report a pipeline fault that is
+ * really a stale fixture.
+ */
+export function reviewPayload(script) {
+  const want = (script && script.review) || {};
+  const result = want.checkResult || "could_not_refute";
+  return {
+    reconstructed_intent: want.intent || "Pass the currency through, as the new major requires.",
+    checks: Object.fromEntries(
+      REVIEW_CHECKS.map((name) => [name, { result, reasoning: "control stub: fixed verdict, no model ran" }])
+    ),
+    concerns: want.concerns || [],
+    verdict: want.verdict || "not_refuted",
+    confidence: typeof want.confidence === "number" ? want.confidence : 90,
+  };
+}
+
+/** One Anthropic-style SSE frame. */function frame(event, data) {
   return "event: " + event + "\ndata: " + JSON.stringify(data) + "\n\n";
 }
 
