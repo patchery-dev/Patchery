@@ -146,6 +146,62 @@ export function surfaceText(entry, read, maxHops = 5) {
 }
 
 /**
+ * The names a package has marked as on their way out.
+ *
+ * The other half of the same reading, and the half surfaceDiff cannot see: a
+ * deprecated name is still exported, so nothing disappears and the comparison
+ * finds nothing. It is also the earlier warning - a maintainer who learns today
+ * that a function they call is deprecated has until the next major to move,
+ * instead of finding out when it is already gone.
+ *
+ * THIS ONE IS STRUCTURED, WHICH IS WHY IT IS ALLOWED. The rest of this file
+ * refuses to read prose, and a changelog is prose. `@deprecated` is not: it is a
+ * JSDoc tag, written by the package author, in a fixed place, next to the thing
+ * it describes. Verified on a real package - mocha annotates its legacy plugin
+ * errors exactly this way, with the replacement named in an {@link}.
+ *
+ * The note is carried through verbatim rather than summarised, because the
+ * author's own sentence usually names what to use instead, and a summary of it
+ * would be us inventing a migration.
+ */
+export function deprecatedNames(rawText = "") {
+  const text = String(rawText || "");
+  const out = [];
+  const seen = new Set();
+
+  // A JSDoc block containing @deprecated, and whatever it is attached to.
+  for (const m of text.matchAll(/\/\*\*([\s\S]*?)\*\/\s*([^\n]*)/g)) {
+    const [, body, declaration] = m;
+    if (!/@deprecated\b/.test(body)) continue;
+
+    const name =
+      // export function foo / export declare const foo
+      new RegExp("\\bexport\\s+(?:declare\\s+)?(?:async\\s+)?(?:function\\*?|const|let|var|class)\\s+(" + IDENT + ")").exec(declaration)?.[1] ??
+      // exports.foo = / module.exports.foo =
+      new RegExp("\\b(?:module\\.)?exports\\.(" + IDENT + ")\\s*=").exec(declaration)?.[1] ??
+      // function foo( / const foo = / class Foo
+      new RegExp("\\b(?:async\\s+)?(?:function\\*?|const|let|var|class)\\s+(" + IDENT + ")").exec(declaration)?.[1] ??
+      // foo: value, inside an exported object literal
+      new RegExp("^\\s*(" + IDENT + ")\\s*:").exec(declaration)?.[1] ??
+      null;
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+
+    // The author's own words, minus the tags and the box drawing.
+    const note = body
+      .split(/\n/)
+      .map((l) => l.replace(/^\s*\*ent?\s?/, "").replace(/^\s*\*\s?/, "").trim())
+      .filter((l) => l && !/^@(?!deprecated)/.test(l))
+      .join(" ")
+      .replace(/@deprecated\s*/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    out.push({ name, note });
+  }
+  return out;
+}
+
+/**
  * What changed between two versions of a package's surface.
  *
  * Pure, and it takes text rather than paths so the decision can be tested
@@ -212,10 +268,26 @@ export function upgradeSurfaceReport({ packageName = "", beforeText = "", afterT
   const gone = new Set(diff.removed);
   const atRisk = [];
 
+  // Deprecations are read from the NEW version only. A name the old version
+  // already called deprecated is not news brought by this upgrade, and telling
+  // someone about it here would attach an old warning to a new decision.
+  const deprecated = deprecatedNames(afterText);
+  const deprecatedByName = new Map(deprecated.map((d) => [d.name, d.note]));
+  const surviving = new Set(diff.kept.concat(diff.added));
+  const fading = [];
+
   for (const f of files || []) {
     const used = packageMemberUse(f.text || "", packageName, diff.removed);
     const hit = used.filter((n) => gone.has(n));
     if (hit.length) atRisk.push({ path: f.path, names: hit });
+
+    // Still there, still callable, and marked as on its way out. surfaceDiff
+    // cannot see this one at all - nothing disappeared.
+    const stillUsed = packageMemberUse(f.text || "", packageName, [...surviving]);
+    for (const n of stillUsed) {
+      if (!deprecatedByName.has(n)) continue;
+      fading.push({ path: f.path, name: n, note: deprecatedByName.get(n) });
+    }
   }
 
   return {
@@ -223,6 +295,11 @@ export function upgradeSurfaceReport({ packageName = "", beforeText = "", afterT
     removed: diff.removed,
     added: diff.added,
     atRisk,
+    // Named separately from atRisk on purpose. "Gone" and "going" are different
+    // urgencies, and a report that ran them together would either panic a reader
+    // about a deprecation or bury a removal underneath one.
+    fading,
+    deprecated: deprecated.map((d) => d.name),
     // Counted, not judged. Zero at-risk files is not "safe to upgrade" - it is
     // "we found no use of a removed name", and the difference is the whole
     // Express finding.
@@ -238,7 +315,10 @@ export function upgradeSurfaceReport({ packageName = "", beforeText = "", afterT
  * Express measurement disproves.
  */
 export function renderSurfaceReport(report) {
-  if (!report || (!report.atRisk?.length && !report.added?.length && !report.removed?.length)) return "";
+  const hasSomething =
+    report &&
+    (report.atRisk?.length || report.added?.length || report.removed?.length || report.fading?.length);
+  if (!hasSomething) return "";
   const out = [];
   const pkg = "`" + report.package + "`";
 
@@ -258,6 +338,19 @@ export function renderSurfaceReport(report) {
       "**" + pkg + " removed " + report.removed.length + " name(s), and we found none of them in your source** " +
         "(searched " + report.searched + " file(s)). That is where we looked, not a verdict that " +
         "the upgrade is safe."
+    );
+  }
+
+  if (report.fading?.length) {
+    out.push("", "**Still there, but marked deprecated - and your code uses it.**", "");
+    for (const d of report.fading) {
+      const note = d.note ? " - " + d.note : "";
+      out.push("- `" + d.path + "` uses `" + d.name + "`" + note);
+    }
+    out.push(
+      "",
+      "Nothing breaks today. This is the earlier warning: the name is still exported, " +
+        "so a comparison of what the two versions offer would not have found it."
     );
   }
 

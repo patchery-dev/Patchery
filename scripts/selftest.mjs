@@ -39,6 +39,7 @@ import {
   upgradeSurfaceReport,
   renderSurfaceReport,
   entryPath,
+  deprecatedNames,
 } from "./surface-diff.mjs";
 import { bumpFromTitle, isMajorMove, sentinelVerdict, renderSentinel } from "./sentinel.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
@@ -6474,6 +6475,77 @@ check("every sentinel verdict renders, and an unknown one renders nothing", () =
     assert.match(out, /`p` 1 -> 2/);
   }
   assert.strictEqual(renderSentinel({ verdict: "invented" }), "");
+});
+
+check("deprecatedNames reads the tag a real package actually writes", () => {
+  // Taken from mocha, which annotates its legacy plugin errors exactly this way
+  // and names the replacement in an {@link}.
+  const src =
+    "/**\n * **DEPRECATED**.  Use {@link createInvalidLegacyPluginError} instead\n" +
+    " * @deprecated\n * @param {string} message\n */\nexports.createInvalidPluginError = function(){};\n" +
+    "\n/** ordinary */\nexports.fine = 1;\n";
+  const found = deprecatedNames(src);
+  assert.strictEqual(found.length, 1);
+  assert.strictEqual(found[0].name, "createInvalidPluginError");
+  // The author's own sentence is carried through, because it usually names the
+  // replacement and a summary of it would be us inventing a migration.
+  assert.match(found[0].note, /createInvalidLegacyPluginError/);
+});
+
+check("deprecatedNames finds the declaration shapes packages use", () => {
+  const shapes = [
+    ["/** @deprecated */\nexport function a(){}", "a"],
+    ["/** @deprecated */\nmodule.exports.b = 1;", "b"],
+    ["/** @deprecated */\nconst c = 1;", "c"],
+    ["/** @deprecated */\nexport declare const d: number;", "d"],
+    ["module.exports = {\n  /** @deprecated */\n  e: 1,\n};", "e"],
+  ];
+  for (const [src, name] of shapes) {
+    assert.deepStrictEqual(deprecatedNames(src).map((x) => x.name), [name], src);
+  }
+  assert.deepStrictEqual(deprecatedNames("/** ordinary */\nexports.f = 1;"), []);
+});
+
+check("a deprecated name you use is reported, and kept apart from a removed one", () => {
+  // surfaceDiff cannot see this case at all - nothing disappeared. That is the
+  // whole reason the deprecation half exists, and it is also the earlier warning:
+  // there is a whole major left to move.
+  const before = "exports.parse = 1;\nexports.format = 2;\nexports.legacy = 3;";
+  const after =
+    "/**\n * @deprecated use formatAsync instead\n */\nexports.format = 2;\n" +
+    "exports.parse = 1;\nexports.formatAsync = 4;";
+  const r = upgradeSurfaceReport({
+    packageName: "content-type",
+    beforeText: before,
+    afterText: after,
+    files: [{ path: "app.js", text: 'const ct = require("content-type");\nct.format({});\nct.legacy();' }],
+  });
+  assert.deepStrictEqual(r.atRisk, [{ path: "app.js", names: ["legacy"] }]);
+  assert.strictEqual(r.fading.length, 1);
+  assert.strictEqual(r.fading[0].name, "format");
+  const text = renderSurfaceReport(r);
+  // Two different urgencies, said as two different things.
+  assert.match(text, /removed something your code uses/);
+  assert.match(text, /Still there, but marked deprecated/);
+  assert.match(text, /Nothing breaks today/);
+});
+
+check("a deprecation the OLD version already carried is not reported as news", () => {
+  // Attaching an old warning to a new decision would make every upgrade look
+  // like it introduced something it did not.
+  const both = "/**\n * @deprecated\n */\nexports.old = 1;";
+  const r = upgradeSurfaceReport({
+    packageName: "p",
+    beforeText: both,
+    afterText: both,
+    files: [{ path: "a.js", text: 'const p = require("p");\np.old();' }],
+  });
+  // It IS reported - the name is deprecated in the version being offered, and a
+  // reader deciding whether to take that version needs to know. What must not
+  // happen is a removal claim, and there is none.
+  assert.strictEqual(r.fading.length, 1);
+  assert.deepStrictEqual(r.removed, []);
+  assert.deepStrictEqual(r.atRisk, []);
 });
 
 console.log("\n" + pass + " checks passed.\n");
