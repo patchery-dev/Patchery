@@ -583,6 +583,22 @@ runs:
         ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.anthropic-model }}
         ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.anthropic-model }}
         CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.anthropic-model }}
+        # The CLI ships telemetry to a first-party endpoint. Pointed at another
+        # provider it cannot reach that endpoint, keeps retrying, and folds every
+        # failure into the error it eventually throws: "1P event logging: 29 events
+        # failed to export", repeated, wrapped around the one sentence that says
+        # what actually went wrong. Two legs of run #11 died that way and the real
+        # error - `only prompt commands are supported in streaming mode` - was
+        # buried in the middle of it.
+        #
+        # Turned off so a crash report is readable. This is NOT claimed to be
+        # outcome-neutral: if the queue of failed exports was itself part of what
+        # killed those runs, this changes their result. We do not know that it was,
+        # and this is stated rather than assumed either way.
+        DISABLE_TELEMETRY: "1"
+        DISABLE_ERROR_REPORTING: "1"
+        # Nothing in a CI run should be fetching a new version of itself mid-job.
+        DISABLE_AUTOUPDATER: "1"
         OURS_NODE: ${{ steps.node.outputs.ours }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
