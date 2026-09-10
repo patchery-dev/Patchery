@@ -251,7 +251,7 @@ and `node-formidable/formidable` — not one suite noticed. They are rows in
 [`benchmark/candidates.json`](benchmark/candidates.json); check them yourself. Closing that gap needs a second trigger that does
 not wait for red, which is the next thing being built.
 
-The engine has 755 offline checks covering the guard, the census and the outcome
+The engine has 770 offline checks covering the guard, the census and the outcome
 rules. None of them need an API key: `node scripts/selftest.mjs`.
 
 ## Running the workflows

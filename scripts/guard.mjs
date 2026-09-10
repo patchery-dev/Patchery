@@ -1788,11 +1788,20 @@ export function shouldReview({ mode, changedCount, diffBytes, maxDiffBytes } = {
 
 /**
  * Keep the head and the tail, drop the middle, and say so where it was dropped.
+ *
+ * `who` names who did not see the missing part, because that changes with the
+ * caller and a wrong name is worse than none. It was hardcoded to the reviewer
+ * until the agent's own handover started using this - the handover had been
+ * cutting with a bare slice(), which is the silent trim this function exists to
+ * replace, and a live benchmark leg printed a list of callers that stopped
+ * mid-word at "lib/type" with nothing saying it had been cut.
+ *
  * @param {string} text
  * @param {number} maxBytes
+ * @param {string} who whoever did not see the omitted middle
  * @returns {{text: string, truncated: boolean, droppedBytes: number}}
  */
-export function truncateEvidence(text, maxBytes) {
+export function truncateEvidence(text, maxBytes, who = "the reviewer") {
   const s = String(text ?? "");
   const max = Number(maxBytes) || 0;
   if (max <= 0 || s.length <= max) return { text: s, truncated: false, droppedBytes: 0 };
@@ -1802,7 +1811,7 @@ export function truncateEvidence(text, maxBytes) {
   return {
     text:
       s.slice(0, half) +
-      "\n... [" + dropped + " bytes omitted - the reviewer did not see this part] ...\n" +
+      "\n... [" + dropped + " bytes omitted - " + who + " did not see this part] ...\n" +
       s.slice(-half),
     truncated: true,
     droppedBytes: dropped,

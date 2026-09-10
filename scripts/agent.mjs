@@ -66,6 +66,7 @@ import {
   dependencyMisuseReasons,
   callSiteScan,
   callSiteNote,
+  truncateEvidence,
   failureChanged,
   chainedFailureMessage,
   actionableConcerns,
@@ -1332,7 +1333,13 @@ if (changed.length === 0) {
     );
   }
   if (notes) {
-    handover.push("**What the agent concluded.**", "", notes.slice(0, 1500), "");
+    // Announced, not silent. Caught in a live benchmark leg: the agent had listed
+    // the transitive callers of a broken module and the list stopped mid-word, at
+    // "lib/type", with nothing saying it had been cut. A reader has no way to tell
+    // a truncated list from a complete one, and this project has a rule about that
+    // - evidence is never trimmed silently - with a function already written for it.
+    const said = truncateEvidence(notes, 1500, "this summary");
+    handover.push("**What the agent concluded.**", "", said.text, "");
   }
   if (classification.next) handover.push("**What would unblock it.** " + classification.next, "");
   // The closing line is where the old wording did the most damage, because it is

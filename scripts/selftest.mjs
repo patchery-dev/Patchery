@@ -30,6 +30,17 @@ import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.m
 import { goldenVerdict, renderGolden } from "./golden-verdict.mjs";
 import { classifyRequest, turnMessage, streamFrames, routeOf } from "./control-stub.mjs";
 import { scriptFor } from "./control-run.mjs";
+import {
+  publicNames,
+  surfaceDiff,
+  reexportTarget,
+  surfaceText,
+  packageMemberUse,
+  upgradeSurfaceReport,
+  renderSurfaceReport,
+  entryPath,
+} from "./surface-diff.mjs";
+import { bumpFromTitle, isMajorMove, sentinelVerdict, renderSentinel } from "./sentinel.mjs";
 import { testScriptUsable, projectKind, parseRepoLine, isProductWorkspace, capBumps } from "./find-bumps.mjs";
 import { pendingMajors, renderScan, importSites, withImpact } from "./scan-deps.mjs";
 import { knownGuardReasons, documentedOutcomes, emittedOutcomes, gateCensus, renderCensus } from "./gate-census.mjs";
@@ -6275,6 +6286,194 @@ check("callSiteNote reports zero as a location, not as a verdict", () => {
   // and this function only reports where imports are.
   assert.doesNotMatch(none, /nothing to (do|fix)|no fix|cannot be fixed/i);
   assert.match(none, /searched 1 source file/);
+});
+
+// ---------------------------------------------------------------------------
+// surface-diff - the only check that does not wait for a test suite to go red.
+// ---------------------------------------------------------------------------
+
+check("publicNames reads the shapes a published package actually uses", () => {
+  const cjs = publicNames("module.exports = { a, b: impl, c };\nexports.d = 1;\nmodule.exports.e = 2;");
+  assert.deepStrictEqual(cjs, ["a", "b", "c", "d", "e"]);
+  const esm = publicNames(
+    "export function f(){}\nexport const g = 1;\nexport class H {}\nexport { i, j as k };\nexport default z;"
+  );
+  assert.deepStrictEqual(esm, ["default", "f", "g", "H", "i", "k"].sort());
+  assert.deepStrictEqual(publicNames("export declare function t(): void;"), ["t"]);
+});
+
+check("publicNames does not count a name that only appears in a comment", () => {
+  // The same rule the guard follows. A changelog pasted into a header would
+  // otherwise invent an export.
+  assert.deepStrictEqual(publicNames("// module.exports = { ghost };\n/* exports.other = 1; */"), []);
+});
+
+check("a re-export entry does not read as a package that changed nothing", () => {
+  // MEASURED, and this is the whole reason surfaceText exists. express\'s entry
+  // file is one line - module.exports = require("./lib/express") - so a reader
+  // that stops there finds zero names in BOTH versions and reports zero changes.
+  // Indistinguishable from a real "nothing changed", and wrong: express 4.22.2
+  // offers `query` and 5.2.1 does not, confirmed at runtime.
+  const entry = 'module.exports = require("./lib/express");';
+  assert.strictEqual(reexportTarget(entry), "./lib/express");
+  assert.deepStrictEqual(publicNames(entry), []);
+
+  const files = {
+    "./index.js": entry,
+    "./lib/express": "exports.query = require('./middleware/query');\nexports.json = 1;",
+  };
+  const walked = surfaceText("./index.js", (p) => files[p] ?? null);
+  assert.strictEqual(walked.why, null);
+  assert.deepStrictEqual(publicNames(walked.text), ["json", "query"]);
+});
+
+check("surfaceText reports a broken trail instead of returning an empty surface", () => {
+  // "We found no exports" and "we could not open the file" must not look the
+  // same - the first is a finding, the second is our own failure.
+  const missing = surfaceText("./index.js", () => null);
+  assert.match(missing.why, /file not found/);
+  assert.strictEqual(missing.text, "");
+  const loop = surfaceText("./a", () => 'module.exports = require("./a");');
+  assert.match(loop.why, /deeper than/);
+});
+
+check("entryPath follows Node's own order, and defaults where a package declares nothing", () => {
+  // express 5 declares neither main nor exports.
+  assert.strictEqual(entryPath({}), "./index.js");
+  assert.strictEqual(entryPath({ main: "lib/x.js" }), "./lib/x.js");
+  assert.strictEqual(entryPath({ main: "m.js", exports: "./e.js" }), "./e.js");
+  assert.strictEqual(entryPath({ main: "m.js", exports: { ".": { require: "./r.js" } } }), "./r.js");
+});
+
+check("packageMemberUse sees a name reached through the module object", () => {
+  // The destructured form is easy. This is the one packageBindings cannot
+  // answer alone: `lib` is not a name the package offers.
+  const surface = ["query", "json", "static"];
+  const via = packageMemberUse('const lib = require("express");\nlib.query();', "express", surface);
+  assert.deepStrictEqual(via, ["query"]);
+  const destructured = packageMemberUse('const { json } = require("express");\njson();', "express", surface);
+  assert.deepStrictEqual(destructured, ["json"]);
+  const bracket = packageMemberUse('const e = require("express");\ne["static"]();', "express", surface);
+  assert.deepStrictEqual(bracket, ["static"]);
+});
+
+check("the surface report separates a removal you use from a removal you do not", () => {
+  const before = "exports.query = 1;\nexports.json = 2;";
+  const after = "exports.json = 2;\nexports.router = 3;";
+  const uses = upgradeSurfaceReport({
+    packageName: "express",
+    beforeText: before,
+    afterText: after,
+    files: [{ path: "server.js", text: 'const e = require("express");\ne.query();' }],
+  });
+  assert.deepStrictEqual(uses.removed, ["query"]);
+  assert.deepStrictEqual(uses.added, ["router"]);
+  assert.strictEqual(uses.atRisk.length, 1);
+  assert.match(renderSurfaceReport(uses), /removed something your code uses/);
+
+  const doesNot = upgradeSurfaceReport({
+    packageName: "express",
+    beforeText: before,
+    afterText: after,
+    files: [{ path: "server.js", text: 'const e = require("express");\ne.json();' }],
+  });
+  assert.strictEqual(doesNot.atRisk.length, 0);
+  const text = renderSurfaceReport(doesNot);
+  // And it must NOT say the upgrade is safe. That sentence is the Express
+  // finding turned into a lie.
+  assert.match(text, /That is where we looked, not a verdict/);
+  assert.doesNotMatch(text, /safe to upgrade|you can upgrade|no risk/i);
+});
+
+check("the report always carries the boundary sentence", () => {
+  const r = upgradeSurfaceReport({
+    packageName: "p",
+    beforeText: "exports.a = 1;",
+    afterText: "exports.b = 1;",
+    files: [],
+  });
+  const text = renderSurfaceReport(r);
+  assert.match(text, /it does not run anything/);
+  // New names are reported, and kept apart from the alarming half.
+  assert.match(text, /New in this version/);
+});
+
+check("surfaceDiff is empty when nothing moved, and says so as an empty report", () => {
+  const same = "exports.a = 1;\nexports.b = 2;";
+  const d = surfaceDiff(same, same);
+  assert.deepStrictEqual(d.removed, []);
+  assert.deepStrictEqual(d.added, []);
+  assert.deepStrictEqual(d.kept, ["a", "b"]);
+  assert.strictEqual(
+    renderSurfaceReport(upgradeSurfaceReport({ packageName: "p", beforeText: same, afterText: same, files: [] })),
+    ""
+  );
+});
+
+// ---------------------------------------------------------------------------
+// sentinel - the two earlier moments, and the sentence that may not drift.
+// ---------------------------------------------------------------------------
+
+check("bumpFromTitle reads what the bump bots actually write", () => {
+  const shapes = [
+    ["Bump express from 4.18.2 to 5.0.0", "express", "4.18.2", "5.0.0"],
+    ["chore(deps): bump express from 4.18.2 to 5.0.0", "express", "4.18.2", "5.0.0"],
+    ["build(deps-dev): Bump @types/node from 20.1.0 to 22.0.0", "@types/node", "20.1.0", "22.0.0"],
+    ["Update express requirement from ^4.18.2 to ^5.0.0", "express", "4.18.2", "5.0.0"],
+  ];
+  for (const [title, name, from, to] of shapes) {
+    assert.deepStrictEqual(bumpFromTitle(title), { package: name, from, to }, title);
+  }
+});
+
+check("bumpFromTitle refuses a grouped bump instead of picking one of them", () => {
+  // A bot that moves several packages at once would otherwise have one of them
+  // installed on its behalf, which is a version nobody asked for.
+  assert.strictEqual(bumpFromTitle("Bump the aws-sdk group with 3 updates"), null);
+  assert.strictEqual(bumpFromTitle("Bump express from 4 to 5 and 2 other packages"), null);
+  assert.strictEqual(bumpFromTitle("Merge pull request #12 from x/y"), null);
+  assert.strictEqual(bumpFromTitle(""), null);
+});
+
+check("isMajorMove says null for a version it cannot read, never false", () => {
+  assert.strictEqual(isMajorMove("4.18.2", "5.0.0"), true);
+  assert.strictEqual(isMajorMove("4.18.2", "4.19.0"), false);
+  // Same rule as the range reader: unreadable is not "no".
+  assert.strictEqual(isMajorMove("workspace:*", "5.0.0"), null);
+  assert.strictEqual(isMajorMove("4.0.0", "latest"), null);
+});
+
+check("an unrunnable suite is reported as unknown, never as a pass", () => {
+  // The worst available lie. A suite that could not run says nothing about the
+  // upgrade, and "green" there would be a claim we never measured.
+  assert.strictEqual(sentinelVerdict({ suite: "unknown" }), "could-not-run-your-tests");
+  assert.strictEqual(sentinelVerdict({ suite: "red" }), "breaks-your-tests");
+  assert.strictEqual(sentinelVerdict({ suite: "green", atRisk: 0 }), "your-tests-did-not-object");
+  assert.strictEqual(sentinelVerdict({ suite: "green", atRisk: 2 }), "green-but-a-name-you-use-is-gone");
+});
+
+check("a green suite is never rendered as permission to upgrade", () => {
+  // This is the Express finding turned into a rule. Four projects took Express 5
+  // and no suite went red; a report that reads "safe to upgrade" off that is a
+  // lie the whole brand is built on not telling.
+  const green = renderSentinel({
+    packageName: "express",
+    from: "4.18.2",
+    to: "5.0.0",
+    verdict: "your-tests-did-not-object",
+  });
+  assert.match(green, /This is not "safe to upgrade"/);
+  assert.match(green, /Express 5 into four projects/);
+  assert.doesNotMatch(green, /you can safely|no risk|good to go/i);
+});
+
+check("every sentinel verdict renders, and an unknown one renders nothing", () => {
+  for (const v of ["breaks-your-tests", "green-but-a-name-you-use-is-gone", "your-tests-did-not-object", "could-not-run-your-tests"]) {
+    const out = renderSentinel({ packageName: "p", from: "1", to: "2", verdict: v });
+    assert.ok(out.length > 40, v);
+    assert.match(out, /`p` 1 -> 2/);
+  }
+  assert.strictEqual(renderSentinel({ verdict: "invented" }), "");
 });
 
 console.log("\n" + pass + " checks passed.\n");
