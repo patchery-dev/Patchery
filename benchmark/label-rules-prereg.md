@@ -79,3 +79,37 @@ hatch this whole gate exists to close. It stays understated until something
 mechanical can tell them apart.
 
 That limitation belongs in the published limitations section, not in a promise.
+
+---
+
+## A fourth rule, pre-registered 2026-09-10 during the frozen run
+
+Found while reading live legs, not from a hypothesis.
+
+**`bcoe/yargs` + `which@7` cannot be fixed by this tool, by our own rule.**
+
+The only place the project imports the package is `test/integration.mjs`
+(measured: 1 import site across 101 source files, and the agent's own exhaustive
+grep agrees). `agent.mjs:892` instructs the agent to NEVER edit test files, and
+`agent.mjs:1514` reverts and refuses if one is touched.
+
+So the only permitted fix does not exist. The case has now burned three legs in
+run #11 and three in this run, and both times it was filed `NO-CHANGE` -
+"Patchery had nothing to offer" - when the truth is that our own rule forbids
+the only available repair.
+
+**Rule D.** If every import site of the package is inside a protected path, no
+permitted fix exists → `NEEDS-DECISION`, reason `only-call-site-is-protected`.
+
+Mechanical: `callSiteScan` already returns the paths, and the protected-path
+test already exists for the guard. No model claim is involved.
+
+**Prediction, written before any implementation: 3 legs move.** The three
+`yargs`/`which` legs of this run, and no others. If a fourth moves, the rule is
+wrong and the table is not.
+
+**NOT IMPLEMENTED YET, AND DELIBERATELY.** The benchmark run is in flight and
+each leg checks the repository out fresh, so changing the classifier now would
+mean different legs of one run were judged by different code. It waits until the
+run is finished. That is the same discipline as the rest of this file: the order
+of operations is the evidence.
