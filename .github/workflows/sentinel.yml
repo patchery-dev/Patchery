@@ -1,0 +1,86 @@
+# Patchery before the build breaks.
+#
+# Everything else in this repository starts when a test suite goes red. Measured,
+# that is not enough: Express 5 went into four projects that depend on it and not
+# one suite noticed. This runs earlier, and asks one question the suite cannot.
+#
+# Three triggers, two moments:
+#
+#   pull_request      the bump bot just opened "bump X from 4 to 5". The new
+#                     version is right there, unmerged, so answer before a human
+#                     reads the PR. Nothing is wasted - it only fires when a
+#                     version actually moved.
+#   schedule          weekly, for a repository with no bump bot or one that wants
+#                     longer notice. Weekly because majors arrive a few times a
+#                     year; daily buys the same answer seven times.
+#   workflow_dispatch to try either by hand.
+#
+# Every decision lives in scripts/sentinel.mjs, which has 770 checks behind it.
+# What is left here is which files to fetch and which script to call, for the
+# reason this repository has a gate about: everything that went wrong in these
+# workflows went wrong in logic buried in a `run:` block, and nothing that had a
+# test did.
+#
+# No model is called and no secret is used. Installing a package and running its
+# tests is arithmetic; the model is only worth paying for once something is
+# actually broken.
+name: Patchery (sentinel)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  schedule:
+    # Monday morning, so a maintainer meets it at the start of a week rather than
+    # at the end of one.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      title:
+        description: 'A bump title to try, e.g. "bump express from 4.18.2 to 5.0.0". Leave empty to scan every dependency instead'
+        required: false
+        default: ""
+      target-dir:
+        description: "Where the project's package.json lives"
+        required: false
+        default: "."
+      test-command:
+        description: "How to run the tests. Empty means the suite is reported as unknown, never as green"
+        required: false
+        default: "npm test"
+
+permissions:
+  contents: read
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    # It reports. It does not gate anything, so it must not be able to fail a
+    # pull request - a sentinel that turned a check red would be making the
+    # maintainer's decision for them, which is the opposite of this product.
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # The Node this action's own code runs on, pinned - not whatever the caller
+      # left behind. Six legs of benchmark run #11 started our code on Node 16
+      # and were dead in under nine seconds because that distinction was missing.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Install the project's dependencies
+        if: hashFiles('package.json') != ''
+        working-directory: ${{ inputs.target-dir || '.' }}
+        run: npm install --no-audit --no-fund
+        continue-on-error: true
+
+      - name: What this upgrade would do to you
+        env:
+          # On a pull request the title is the bump bot's; by hand it is whatever
+          # was typed. Read as data, never interpolated into a shell command.
+          SENTINEL_TITLE: ${{ github.event_name == 'pull_request' && github.event.pull_request.title || inputs.title }}
+          SENTINEL_DIR: ${{ inputs.target-dir || '.' }}
+          SENTINEL_TEST_COMMAND: ${{ inputs.test-command || 'npm test' }}
+          SCAN: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.title == '')) && '--scan' || '' }}
+        run: node scripts/sentinel.mjs $SCAN
