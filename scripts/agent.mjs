@@ -78,6 +78,17 @@ import {
   proofBanner,
 } from "./guard.mjs";
 import { createStderrSink, stderrNote } from "./sdk-stderr.mjs";
+import { withOwnNodeFirst, childNodeLine } from "./sdk-env.mjs";
+
+/**
+ * The environment the SDK's child process gets, with our own Node at the front
+ * of its PATH. See sdk-env.mjs for why this is not `executable`.
+ *
+ * A fresh object per call on purpose: the SDK deletes keys from what it is
+ * handed (`delete env.NODE_OPTIONS`), and three calls sharing one object means
+ * the second one starts from whatever the first was left as.
+ */
+const childEnv = () => withOwnNodeFirst(process.env, process.execPath);
 
 // ------------------------------------------------------------------ config
 
@@ -642,6 +653,9 @@ log("target dir   : " + TARGET_DIR);
 log("package      : " + PACKAGE);
 log("test command : " + TEST_COMMAND);
 log("model        : " + env("ANTHROPIC_MODEL", "(default)"));
+// Which Node the agent's own process will open on. Six legs of run #13 died on
+// this and every run summary looked complete without it.
+log("child node   : " + childNodeLine(process.execPath));
 log("endpoint     : " + (baseUrl || "(Anthropic default)") + (usingCustomEndpoint ? "  [custom]" : ""));
 
 if (!env("ANTHROPIC_AUTH_TOKEN") && !env("ANTHROPIC_API_KEY")) {
@@ -938,6 +952,7 @@ try {
       maxTurns: MAX_TURNS,
       abortController: agentDeadline.abortController,
       stderr: agentStderr.onData,
+      env: childEnv(),
     },
   })) {
     // Proof the model is still answering. Without this the deadline is a budget
@@ -1934,10 +1949,13 @@ async function runReviewPass(entries) {
       maxTurns: VERIFY_MAX_TURNS,
       outputFormat: { type: "json_schema", schema: REVIEW_SCHEMA },
       abortController: reviewDeadline.abortController,
+      env: childEnv(),
     };
     if (VERIFY_MODEL || VERIFY_BASE_URL || VERIFY_AUTH_TOKEN) {
-      // Spread process.env: a partial object here wipes PATH.
-      const reviewEnv = { ...process.env };
+      // Built from childEnv() and not from process.env: a partial object here
+      // wipes PATH, and starting from process.env would drop the one edit to
+      // PATH that decides which Node the reviewer's child opens on.
+      const reviewEnv = childEnv();
       if (VERIFY_MODEL) {
         reviewOpts.model = VERIFY_MODEL;
         // The composite action pins ANTHROPIC_MODEL and all three DEFAULT_* vars to
@@ -2105,6 +2123,7 @@ if (VERIFY_REPAIR && review) {
           abortController: repairDeadline.abortController,
           maxTurns: VERIFY_REPAIR_TURNS,
           stderr: repairStderr.onData,
+          env: childEnv(),
         },
       })) {
         repairDeadline.touch();

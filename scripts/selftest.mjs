@@ -146,6 +146,7 @@ import {
   proofBanner,
 } from "./guard.mjs";
 import { createStderrSink, stderrNote } from "./sdk-stderr.mjs";
+import { withOwnNodeFirst, childNodeLine } from "./sdk-env.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -1708,6 +1709,82 @@ check("nonsense is an error, not a silent default", () => {
 check("the message says what to do about it", () =>
   assert.match(timeoutReason("reviewer", 20), /model-timeout-minutes/)
 );
+
+console.log("\nwithOwnNodeFirst - the child must not resolve `node` from a runner's PATH");
+// The SDK spawns the bare string "node", so the child's Node comes from PATH and
+// not from the parent. On a runner where setup-node put Node 16 in front, six
+// legs of run #13 opened on Node 16 and died at startup.
+const sep = path.delimiter;
+check("our own Node's directory goes to the front", () => {
+  const out = withOwnNodeFirst({ PATH: "/usr/bin" + sep + "/bin" }, "/opt/node24/bin/node");
+  assert.strictEqual(out.PATH.split(sep)[0], path.dirname("/opt/node24/bin/node"));
+  assert.match(out.PATH, /usr.bin/, "the rest of PATH must survive");
+});
+// The runner case, spelled out: Node 16 is first and has to stop being first.
+check("a Node planted in front by setup-node stops being the one found", () => {
+  const out = withOwnNodeFirst({ PATH: "/opt/hostedtoolcache/node/16.20.2/bin" + sep + "/usr/bin" }, "/opt/node20/bin/node");
+  const first = out.PATH.split(sep)[0];
+  assert.strictEqual(first, path.dirname("/opt/node20/bin/node"));
+  assert.doesNotMatch(first, /16\.20\.2/);
+  // Still reachable, just not first. Removing entries is somebody else's PATH
+  // to break.
+  assert.match(out.PATH, /16\.20\.2/);
+});
+// Windows spells it `Path`. process.env is a case-insensitive proxy there, a
+// plain object is not - so writing "PATH" onto a copy that already has "Path"
+// hands the child two of them and lets it choose. That is the whole bug class
+// this project keeps meeting: a fix that looks applied and is not.
+check("on Windows the existing `Path` is edited, not shadowed by a second key", () => {
+  const out = withOwnNodeFirst({ Path: "C:\\Windows\\System32", USERNAME: "x" }, "C:\\node24\\node.exe");
+  const pathKeys = Object.keys(out).filter((k) => k.toLowerCase() === "path");
+  assert.deepStrictEqual(pathKeys, ["Path"], "expected exactly one PATH key, keeping its original spelling");
+  assert.strictEqual(out.Path.split(sep)[0], "C:\\node24");
+});
+check("an environment with no PATH at all gets one", () => {
+  const out = withOwnNodeFirst({ HOME: "/root" }, "/opt/node24/bin/node");
+  assert.strictEqual(out.PATH, path.dirname("/opt/node24/bin/node"));
+  assert.strictEqual(out.HOME, "/root");
+});
+check("already at the front means leave it alone", () => {
+  const dir = path.dirname("/opt/node24/bin/node");
+  const out = withOwnNodeFirst({ PATH: dir + sep + "/usr/bin" }, "/opt/node24/bin/node");
+  assert.strictEqual(out.PATH, dir + sep + "/usr/bin");
+});
+// Nothing here may break a run. A runtime we cannot name is a reason to leave
+// the environment as it was, not a reason to hand the child a broken PATH.
+check("without a usable exec path the environment is passed through unchanged", () => {
+  const before = { PATH: "/usr/bin" };
+  for (const bad of ["", null, undefined]) {
+    const out = withOwnNodeFirst(before, bad);
+    assert.deepStrictEqual(out, before);
+  }
+});
+check("the caller's own environment is never mutated", () => {
+  const before = { PATH: "/usr/bin" };
+  const out = withOwnNodeFirst(before, "/opt/node24/bin/node");
+  assert.strictEqual(before.PATH, "/usr/bin", "process.env must not be edited in place");
+  assert.notStrictEqual(out, before);
+});
+check("the run says which Node the child will get, and says so when it cannot", () => {
+  assert.match(childNodeLine("/opt/node20/bin/node"), /\/opt\/node20\/bin\/node/);
+  assert.match(childNodeLine(""), /unknown/);
+});
+// The wiring, same reason as the stderr one below: an env nobody passed to the
+// SDK is the fix not applied, and this file is the only thing that would say so.
+check("every query() call in agent.mjs is given the patched environment", () => {
+  const src = fs.readFileSync(path.join(root, "scripts", "agent.mjs"), "utf8");
+  const calls = (src.match(/\bquery\(\{/g) || []).length;
+  const envs = (src.match(/env: childEnv\(\)/g) || []).length;
+  assert.ok(calls >= 3, "expected agent.mjs to still call query()");
+  assert.strictEqual(envs, calls);
+});
+// `executable: process.execPath` would work today and break silently on the
+// SDK's next release: the type is 'node' | 'bun' | 'deno', and nothing
+// validates it at run time. Vault 108 section 3.
+check("the SDK's `executable` is never handed a path", () => {
+  const src = fs.readFileSync(path.join(root, "scripts", "agent.mjs"), "utf8");
+  assert.doesNotMatch(src, /executable\s*:/, "executable is typed as three strings, not a path - use PATH instead");
+});
 
 console.log("\ncreateStderrSink - the runtime's last words, which used to be discarded");
 // Six legs of run #13 died in eight seconds and left one line: `process exited
