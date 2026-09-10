@@ -1624,6 +1624,22 @@ if (!after.ok) {
   // right as far as it went and a second breakage was sitting behind it. The change is
   // reverted either way - this decides what to say, never what to keep.
   const diff = failureChanged(baseline.output, after.output);
+  // Saved before the revert deletes the only copy, the way the stall, cap and
+  // reviewer paths already do. This one did not, and it is the path the
+  // product's own claim turns on.
+  //
+  // Five outside readings of this exact case disagreed on what to call it -
+  // "found a fix it could not prove" or "had nothing to offer" - and the one
+  // that dissolved the disagreement pointed out that the observable run is
+  // identical either way. What separates them is whether this patch would have
+  // passed an independent check, and that question cannot be asked of a patch
+  // that no longer exists. It is why the refusal column has never once fired on
+  // this path: not bad luck, no evidence.
+  //
+  // Saving is not shipping. The tests were just run against this and they
+  // failed; it goes where a human or a later check can pick it up, and the run
+  // still reports that nothing was delivered.
+  const unverified = savePatch(changedEntries, "sma-unverified.patch");
   log("\nTests still fail. Reverting every change...");
   revertAll();
   if (diff.changed) {
@@ -1656,14 +1672,16 @@ if (!after.ok) {
     for (const line of diff.appeared.slice(0, 5)) log("  - " + line);
   }
   fail(
-    diff.changed
+    (diff.changed
       ? "Tests still fail, but not the same way they failed before. Everything was " +
           "reverted and no PR will be opened - the comparison above says what to try next."
       : alsoBroke
         ? "Tests still fail the way they did before, and the change added " +
           diff.appeared.length +
           " new failure(s) on top. Everything was reverted, no PR will be opened."
-        : "Tests still fail after the fix. Everything was reverted, no PR will be opened."
+        : "Tests still fail after the fix. Everything was reverted, no PR will be opened.") +
+      " " +
+      patchNote(unverified.saved, unverified.path, "The change that did not hold")
   );
 }
 
