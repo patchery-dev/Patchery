@@ -25,6 +25,7 @@ import {
   OUR_NODE_FLOOR,
   OLDEST_USABLE,
   FALLBACK,
+  requireEsmSide,
 } from "./node-version.mjs";
 import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.mjs";
 import { goldenVerdict, renderGolden } from "./golden-verdict.mjs";
@@ -2513,6 +2514,23 @@ check("a run with no local work at all renders no breakdown, rather than an empt
   assert.strictEqual(toolBreakdownLine([]), "");
 });
 
+// "Node 20" names two different experiments. require() of an ES module throws on
+// 20.18 and works on 20.19, so a packaging break reproduces on one and vanishes
+// on the other - and every benchmark row written so far records only the major
+// the workflow asked setup-node for.
+check("the require(esm) boundary is read from a full version, never from a major", () => {
+  assert.strictEqual(requireEsmSide("v20.19.0"), "above", "the boundary version itself is above it");
+  assert.strictEqual(requireEsmSide("20.18.3"), "below");
+  assert.strictEqual(requireEsmSide("v22.12.0"), "above");
+  assert.strictEqual(requireEsmSide("22.11.0"), "below");
+  assert.strictEqual(requireEsmSide("v24.20.0"), "above", "24 shipped with it unflagged");
+  assert.strictEqual(requireEsmSide("v18.20.8"), "below");
+  // A major is not an answer, and must not be turned into one by rounding.
+  assert.strictEqual(requireEsmSide("20"), null, "a bare major has no side");
+  assert.strictEqual(requireEsmSide(""), null);
+  assert.strictEqual(requireEsmSide(undefined), null);
+});
+
 // There were two of these objects. The happy path writes its own richer line -
 // it alone knows the cost and the model list - and had grown its own copy of the
 // telemetry fields beside it, so a tool breakdown added to the exit path came
@@ -2553,9 +2571,19 @@ check("the timing fields the agent measures reach the benchmark row", () => {
   for (const [written, exposed, field] of [
     ["tool_breakdown", "tool-breakdown", "toolBreakdown"],
     ["harness_tool_seconds", "harness-tool-seconds", "harnessToolSeconds"],
+    ["suite_node", "suite-node", "suiteNode"],
+    ["suite_node_esm", "suite-node-esm", "suiteNodeEsm"],
   ]) {
     assert.match(agentSrc, new RegExp(written + ":"), "agent.mjs does not record " + written);
-    assert.match(actionSrc, new RegExp("steps\\.run\\.outputs\\." + written), "action.yml does not expose " + written);
+    // Anchored at the end of the name. Without the boundary, `suite_node`
+    // matches inside `suite_node_esm`, so removing the shorter output entirely
+    // still passed - the check was reading its own neighbour and reporting it as
+    // the thing it was looking for.
+    assert.match(
+      actionSrc,
+      new RegExp("steps\\.run\\.outputs\\." + written + "(?![\\w])"),
+      "action.yml does not expose " + written,
+    );
     assert.match(workflow, new RegExp("--" + exposed + ' "\\$'), "the benchmark invocation does not pass --" + exposed);
     assert.match(outcomeSrc, new RegExp("^\\s*" + field + ":", "m"), "the row does not carry " + field);
   }

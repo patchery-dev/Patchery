@@ -301,6 +301,22 @@ outputs:
   local-work-seconds:
     description: "The single longest gap between messages, in seconds."
     value: ${{ steps.run.outputs.local_work_seconds }}
+  suite-node:
+    description: >-
+      The exact Node the test suite ran on - `v20.19.4`, not `20` - asked of the
+      same shell that runs your test command rather than read from the action's
+      own process, which may be on a different runtime. A major is not an answer
+      to this question: require() of an ES module throws on 20.18 and works on
+      20.19, so "Node 20" names two different experiments, and a packaging break
+      reproduces on one and vanishes on the other. Empty when it could not be
+      read; never a guess.
+    value: ${{ steps.run.outputs.suite_node }}
+  suite-node-esm:
+    description: >-
+      Which side of that line the run landed on - "above" or "below" - so a row
+      can be read without anyone looking up release notes. Empty when the version
+      could not be read, and empty must not be taken for either side.
+    value: ${{ steps.run.outputs.suite_node_esm }}
   tool-breakdown:
     description: >-
       Where the local half went, per tool, as "name seconds/calls" - busiest

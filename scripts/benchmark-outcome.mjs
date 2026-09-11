@@ -494,6 +494,13 @@ if (isMain) {
     // to let that stand as "tools are slow", and both put the same alternative
     // first - tools that are fast and called constantly. The call count in this
     // field is what separates them, and no total can.
+    // `node` above is the major the workflow asked for. These two are what ran.
+    // A row recording only the major cannot be read across the require(esm)
+    // boundary - 20.18 and 20.19 are different experiments and both are "20" -
+    // which means every row this benchmark has written so far is ambiguous about
+    // the single most consequential fact for a packaging break.
+    suiteNode: a["suite-node"] || "",
+    suiteNodeEsm: a["suite-node-esm"] || "",
     toolBreakdown: a["tool-breakdown"] || "",
     // And the one part of the inside we can actually clock: the commands the
     // action ran itself. A floor under real tool time; the agent's own tools run

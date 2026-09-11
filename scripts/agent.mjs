@@ -83,6 +83,7 @@ import {
 } from "./guard.mjs";
 import { createStderrSink, stderrNote } from "./sdk-stderr.mjs";
 import { withOwnNodeFirst, childNodeLine } from "./sdk-env.mjs";
+import { requireEsmSide } from "./node-version.mjs";
 
 /**
  * The environment the SDK's child process gets, with our own Node at the front
@@ -485,6 +486,18 @@ function writeStepSummary(md) {
  */
 let telemetrySaid = false;
 
+// Declared up here, beside the telemetry that reads them, rather than beside the
+// baseline that fills them. buildTelemetry runs on every exit including the ones
+// that happen before the baseline, and a `const` read before its declaration
+// throws ReferenceError - which `typeof` does not protect against for const and
+// let. An early exit would have taken the whole run down to report a Node
+// version nobody had asked for yet.
+//
+// Empty means "not read", never a guess: a major is not an answer to this
+// question, which is the whole reason the field exists.
+let SUITE_NODE = "";
+let SUITE_NODE_ESM = null;
+
 /**
  * Every continuous measure the run can report, built in exactly one place.
  *
@@ -515,6 +528,11 @@ function buildTelemetry() {
     model_wait_seconds: gaps ? String(gaps.modelSec) : "",
     local_work_seconds: gaps ? String(gaps.localSec) : "",
     tool_breakdown: toolBreakdownLine(breakdown),
+    // The runtime that actually measured the suite, and which side of the
+    // require(esm) line it fell on. Both empty when we could not read it - a row
+    // that says nothing is honest, a row that guesses a major is not.
+    suite_node: SUITE_NODE,
+    suite_node_esm: SUITE_NODE_ESM || "",
     // Empty, never "0", when this process ran no command at all: a run that died
     // before the baseline spent no harness time, and a run nobody measured is a
     // different answer.
@@ -932,6 +950,28 @@ log("\n-> baseline: " + (baseline.ok ? "PASS" : "FAIL (exit " + baseline.code + 
 // protectedReason are what stands in that case. Said out loud for the same
 // reason the census says why it could not count: a gap and a clean sheet must
 // not print the same.
+// The exact runtime the SUITE ran on, asked of the same shell that runs the test
+// command rather than read from this process - agent.mjs may be running on our
+// own Node while the case runs on its. A major is not an answer here: require()
+// of an ES module throws on 20.18 and works on 20.19, so "node: 20" names two
+// different experiments and every row we have recorded so far says only the
+// major it asked for.
+try {
+  const r = timed("node-version", () =>
+    spawnSync("node -v", { cwd: TARGET_DIR, shell: true, encoding: "utf8", timeout: 60000 })
+  );
+  SUITE_NODE = r.status === 0 ? String(r.stdout || "").trim() : "";
+} catch {
+  SUITE_NODE = "";
+}
+SUITE_NODE_ESM = requireEsmSide(SUITE_NODE);
+log(
+  SUITE_NODE
+    ? "-> the suite ran on Node " + SUITE_NODE +
+        (SUITE_NODE_ESM ? " (require(esm) " + (SUITE_NODE_ESM === "above" ? "unflagged" : "still throws") + " here)" : "")
+    : "-> could not read the Node version the suite ran on"
+);
+
 const BASELINE_TEST_FILES = collectedTestFiles(baseline.output);
 log(
   BASELINE_TEST_FILES.length

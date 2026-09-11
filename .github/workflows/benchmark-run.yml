@@ -455,6 +455,8 @@ jobs:
             --clock-percent "$CLOCK_PCT" \
             --model-wait-seconds "$MODEL_WAIT" \
             --local-work-seconds "$LOCAL_WORK" \
+            --suite-node "$SUITE_NODE" \
+            --suite-node-esm "$SUITE_NODE_ESM" \
             --tool-breakdown "$TOOL_BREAKDOWN" \
             --harness-tool-seconds "$HARNESS_TOOL_SEC" \
             --runner "$RUNNER_ID ${ImageOS:-} ${ImageVersion:-}" \
@@ -492,6 +494,13 @@ jobs:
           CLOCK_PCT: ${{ steps.patchery.outputs.clock-percent }}
           MODEL_WAIT: ${{ steps.patchery.outputs.model-wait-seconds }}
           LOCAL_WORK: ${{ steps.patchery.outputs.local-work-seconds }}
+          # NODE_USED above is the major this workflow ASKED setup-node for.
+          # These two are what actually ran, measured inside the run - and the
+          # difference is not cosmetic: the major cannot say which side of the
+          # require(esm) line the suite was on, and the two sides reproduce
+          # different breaks.
+          SUITE_NODE: ${{ steps.patchery.outputs.suite-node }}
+          SUITE_NODE_ESM: ${{ steps.patchery.outputs.suite-node-esm }}
           TOOL_BREAKDOWN: ${{ steps.patchery.outputs.tool-breakdown }}
           HARNESS_TOOL_SEC: ${{ steps.patchery.outputs.harness-tool-seconds }}
           # The machine and the image, which both blind rounds asked for and

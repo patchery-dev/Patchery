@@ -66,6 +66,50 @@ export const FALLBACK = "20";
 export const OLDEST_USABLE = 18;
 
 /**
+ * Where `require()` of an ES module stopped throwing, per release line.
+ *
+ * This is the single most consequential line in the runtime for the breaks this
+ * corpus is made of, and it does not fall on a major boundary. `require(esm)`
+ * was unflagged in 20.19.0 and 22.12.0, so "Node 20" names two different
+ * experiments: on 20.18 a packaging break reproduces, on 20.19 it does not.
+ *
+ * Every layer above this asks for a MAJOR - node-version.mjs resolves one,
+ * setup-node installs whatever is latest within it, and the benchmark row
+ * records the major it asked for. Which means a row saying "node: 20" cannot be
+ * read: nobody can tell from it which side of this line the suite ran on, and
+ * the two sides are different results.
+ *
+ * The policy is not to pick a side here - that is a decision about what the
+ * corpus measures, and it belongs to whoever fixes the denominator. The policy
+ * is that no run may be silent about which side it landed on.
+ */
+export const REQUIRE_ESM_UNFLAGGED = { 20: "20.19.0", 22: "22.12.0" };
+
+/**
+ * Which side of that line a concrete runtime fell on.
+ *
+ * Takes a full version, never a major, because a major cannot answer it - which
+ * is the entire point. Returns "above", "below", or null when the version is
+ * unreadable, and null must not be read as either side.
+ *
+ * @param {string} version e.g. "v20.19.4", "22.11.0"
+ * @returns {"above"|"below"|null}
+ */
+export function requireEsmSide(version) {
+  const m = String(version || "").match(/(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return null;
+  const [major, minor, patch] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  // Lines with no boundary of their own: everything before 20 is below it,
+  // everything after 22 shipped with it already unflagged.
+  if (major < 20) return "below";
+  if (major > 22 || major === 21 || major === 23) return major >= 23 ? "above" : "below";
+  const [bMajor, bMinor, bPatch] = REQUIRE_ESM_UNFLAGGED[major].split(".").map(Number);
+  if (major !== bMajor) return null;
+  if (minor !== bMinor) return minor > bMinor ? "above" : "below";
+  return patch >= bPatch ? "above" : "below";
+}
+
+/**
  * The CI major to actually measure on: the lowest at or above the floor, and if
  * every version CI names is older than that, the highest of them.
  *
