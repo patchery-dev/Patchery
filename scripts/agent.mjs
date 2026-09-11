@@ -390,6 +390,7 @@ function writeOutputs(obj) {
     tokens_input: String(SPEND.input),
     tokens_output: String(SPEND.output),
     tokens_cache_read: String(SPEND.cacheRead),
+    tokens_cache_write: String(SPEND.cacheCreation),
     tokens_total: String(SPEND.input + SPEND.output + SPEND.cacheRead + SPEND.cacheCreation),
   };
   const lines = Object.entries(obj).map(([k, v]) => {

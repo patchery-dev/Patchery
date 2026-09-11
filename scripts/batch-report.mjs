@@ -307,20 +307,59 @@ export function renderReport(rows, { kind = "benchmark", queued = 0 } = {}) {
     // same rule as the node column and the census.
     const withTokens = sorted.filter((r) => Number(r.tokensOutput) > 0 || Number(r.tokensInput) > 0);
     if (withTokens.length) {
+      // Cached input is the bulk of the bill on a long agent loop, and no row
+      // carried it until the action exposed it: run #13's reported input came
+      // to about a fifth of what the provider's dashboard charged for the same
+      // window. So the table shows it, and shows it as its own column - the
+      // four quantities bill at four different rates, and one summed column
+      // could not be priced by anyone.
+      //
+      // A row counts as carrying cache accounting only when the field is
+      // present. An older row is not a row that spent nothing, and averaging it
+      // in as zero would drag its group down by exactly the amount this column
+      // exists to reveal - so a group holding even one such row prints nothing
+      // for these two rather than a number that is quietly too low.
+      const measured = (v) => v !== undefined && v !== null && v !== "";
       const byOutcome = new Map();
       for (const r of withTokens) {
         const k = label(r, kind);
-        const acc = byOutcome.get(k) || { runs: 0, input: 0, output: 0 };
+        const acc = byOutcome.get(k) || { runs: 0, input: 0, output: 0, cacheRead: 0, total: 0, cacheRuns: 0 };
         acc.runs++;
         acc.input += Number(r.tokensInput) || 0;
         acc.output += Number(r.tokensOutput) || 0;
+        if (measured(r.tokensCacheRead)) {
+          acc.cacheRuns++;
+          acc.cacheRead += Number(r.tokensCacheRead) || 0;
+          acc.total += measured(r.tokensTotal)
+            ? Number(r.tokensTotal) || 0
+            : (Number(r.tokensInput) || 0) +
+              (Number(r.tokensOutput) || 0) +
+              (Number(r.tokensCacheRead) || 0) +
+              (Number(r.tokensCacheWrite) || 0);
+        }
         byOutcome.set(k, acc);
       }
-      out.push("| what it cost | runs | output tokens each | input tokens each |", "|---|---|---|---|");
+      const each = (sum, runs) => Math.round(sum / runs).toLocaleString("en-US");
+      let anyUnmeasured = false;
+      out.push(
+        "| what it cost | runs | output tokens each | fresh input each | cached input each | billed total each |",
+        "|---|---|---|---|---|---|"
+      );
       for (const [name, a] of [...byOutcome.entries()].sort((x, y) => y[1].output / y[1].runs - x[1].output / x[1].runs)) {
+        const full = a.cacheRuns === a.runs;
+        if (!full) anyUnmeasured = true;
         out.push(
-          "| " + name + " | " + a.runs + " | " + Math.round(a.output / a.runs).toLocaleString("en-US") +
-            " | " + Math.round(a.input / a.runs).toLocaleString("en-US") + " |"
+          "| " + name + " | " + a.runs + " | " + each(a.output, a.runs) + " | " + each(a.input, a.runs) +
+            " | " + (full ? each(a.cacheRead, a.runs) : "not measured") +
+            " | " + (full ? each(a.total, a.runs) : "not measured") + " |"
+        );
+      }
+      if (anyUnmeasured) {
+        out.push(
+          "",
+          '"not measured" means at least one run in that group predates cache accounting. ' +
+            "Those runs did spend cached tokens - the action counted them and no output carried them - " +
+            "so the fresh-input column beside it is a fraction of what the provider billed, not the bill."
         );
       }
       if (withTokens.length < sorted.length) {

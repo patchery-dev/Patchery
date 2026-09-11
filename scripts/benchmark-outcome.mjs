@@ -53,6 +53,28 @@ export function parseArgs(argv) {
 }
 
 /**
+ * A token quantity that keeps "not measured" apart from "measured, and it was 0".
+ *
+ * parseArgs hands back "" both for a flag nobody passed and for one whose
+ * workflow expression rendered empty, and both mean the same thing here: this
+ * leg was never asked. Rows from before a field existed have to stay
+ * distinguishable from rows that genuinely spent none of it, or an average over
+ * the column silently counts the unmeasured ones as free - which is the shape
+ * of the error this field was added to fix.
+ *
+ * Written without `??` for the same reason parseArgs is: this file has to parse
+ * on Node 12.
+ *
+ * @param {string} raw the flag as parseArgs left it
+ * @returns {number|string} the quantity, or "" when it was never measured
+ */
+export function tokenField(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === "") return "";
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : "";
+}
+
+/**
  * The whole judgement, as one pure function of what was observed.
  *
  * Order matters, and the ordering rules live at the branches that depend on them.
@@ -491,8 +513,25 @@ if (isMain) {
     // that shipped nothing cost as much as one that shipped a fix? In run #10
     // nine of fourteen cases produced no patch and every one of them wrote a
     // long diagnosis, and nothing in the table said what that cost.
+    // Five fields, not two. The action counted cached input from the day this
+    // row was added and exposed only two of the four quantities, so every
+    // benchmark.json written since records the fresh sliver and calls it the
+    // input: run #13 reported about a fifth of what the provider's dashboard
+    // billed for the same window, and the four legs whose logs survive spent
+    // 3,956,841 cached tokens against 1,112,451 fresh. A single summed field
+    // would hide that again in a new shape - the four carry different rates, so
+    // only the breakdown can be priced, and only the total can be checked
+    // against a dashboard.
+    //
+    // Absent stays "" and never 0 for the three new ones: rows written before
+    // this existed did not spend nothing, they were never looked at, and a
+    // table that averages them as zero would understate the very number this is
+    // here to correct.
     tokensInput: Number(a["tokens-input"]) || 0,
     tokensOutput: Number(a["tokens-output"]) || 0,
+    tokensCacheRead: tokenField(a["tokens-cache-read"]),
+    tokensCacheWrite: tokenField(a["tokens-cache-write"]),
+    tokensTotal: tokenField(a["tokens-total"]),
     guardReason: a["guard-reason"] || "",
     // What became of the patch, from candidateRecord in guard.mjs. `files`
     // below lists what SHIPPED, so a patch the guard reverted and a run that

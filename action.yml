@@ -302,11 +302,43 @@ outputs:
     description: "The single longest gap between messages, in seconds."
     value: ${{ steps.run.outputs.local_work_seconds }}
   tokens-input:
-    description: "Input tokens this run spent across every model call, fixer and reviewer."
+    description: >-
+      Fresh input tokens this run spent across every model call, fixer and
+      reviewer. Fresh only: on a long agent loop most of the prompt is served
+      from the provider's cache and billed under tokens-cache-read instead, so
+      this number on its own is not what the run consumed. Add the four.
     value: ${{ steps.run.outputs.tokens_input }}
   tokens-output:
     description: "Output tokens this run spent across every model call."
     value: ${{ steps.run.outputs.tokens_output }}
+  tokens-cache-read:
+    description: >-
+      Prompt tokens served from the provider's cache. On run #13 these were the
+      bulk of the bill and no output carried them: of the four legs whose logs
+      survive, 1,112,451 tokens were fresh input against 3,956,841 cached, a
+      factor of 4.56, and the run's reported input sat about 4.9x under the
+      provider's dashboard for the same window. The counter had them all along -
+      agent.mjs has accumulated SPEND.cacheRead since f202fe4, and the step
+      summary printed "N cached" - but that commit exposed two of the four
+      fields here, so everything downstream could only ever see input and
+      output. Cached input is charged at a fraction of fresh input (31x cheaper
+      on DeepSeek, 5x on GLM), which is why it stays a separate field instead of
+      being folded into tokens-input: only your provider's rate table turns
+      these four quantities back into money.
+    value: ${{ steps.run.outputs.tokens_cache_read }}
+  tokens-cache-write:
+    description: >-
+      Prompt tokens written INTO the provider's cache, charged at a premium over
+      fresh input on most providers. Usually small beside cache-read, and
+      reported separately for the same reason: four quantities, four rates.
+    value: ${{ steps.run.outputs.tokens_cache_write }}
+  tokens-total:
+    description: >-
+      The four added up - the quantity a provider dashboard counts for this run,
+      and therefore the only one of the five that can be checked against it.
+      Comparable, not convertible: the parts carry different rates, so a total
+      cannot be turned back into a cost.
+    value: ${{ steps.run.outputs.tokens_total }}
   pending-count:
     description: >-
       mode=scan only. How many dependencies have shipped a new major. Says

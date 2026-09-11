@@ -53,7 +53,7 @@ import {
   applyCounterexample,
   attemptPolicy,
 } from "./counterexample.mjs";
-import { benchmarkOutcome, parseArgs, renderOutcome } from "./benchmark-outcome.mjs";
+import { benchmarkOutcome, parseArgs, renderOutcome, tokenField } from "./benchmark-outcome.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
 import {
   taglineCore,
@@ -5537,9 +5537,69 @@ check("every exit carries the token totals", () => {
   const src = fs.readFileSync(new URL("agent.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const writer = /function writeOutputs\(obj\) \{([\s\S]*?)\n\}/.exec(src);
   assert.ok(writer, "writeOutputs not found");
-  for (const field of ["tokens_input", "tokens_output", "tokens_total"]) {
+  for (const field of ["tokens_input", "tokens_output", "tokens_cache_read", "tokens_cache_write", "tokens_total"]) {
     assert.match(writer[1], new RegExp(field + ":"), field + " is not written on every exit");
   }
+});
+
+// A counted quantity that nothing exposes is a quantity nobody has. The agent
+// has accumulated cached input since f202fe4 and printed it in the step summary
+// the whole time; the same commit exposed two of the four fields in action.yml,
+// and everything downstream - the benchmark row, the cost table, three runs of
+// analysis - therefore saw the fresh sliver and called it the input. Run #13
+// reported about a fifth of what the provider's dashboard billed.
+//
+// Nothing failed. Both halves were individually correct, and the gap was
+// between two files. So the check is on the join, and it is derived from the
+// source on both sides: adding a sixth quantity to writeOutputs without
+// exposing it fails here rather than in a report read six weeks later.
+check("every token quantity the agent counts is exposed by the action", () => {
+  const agentSrc = fs.readFileSync(new URL("agent.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const actionSrc = fs.readFileSync(new URL("../action.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const writer = /function writeOutputs\(obj\) \{([\s\S]*?)\n\}/.exec(agentSrc);
+  assert.ok(writer, "writeOutputs not found");
+
+  const written = [...writer[1].matchAll(/^\s*(tokens_\w+):/gm)].map((m) => m[1]).sort();
+  const exposed = [...actionSrc.matchAll(/steps\.run\.outputs\.(tokens_\w+)/g)].map((m) => m[1]).sort();
+  assert.ok(written.length >= 5, "expected the agent to still write token fields; found " + written.length);
+  assert.deepStrictEqual(
+    written.filter((f) => !exposed.includes(f)),
+    [],
+    "counted by agent.mjs and not exposed in action.yml - nothing downstream can see it",
+  );
+  assert.deepStrictEqual(
+    exposed.filter((f) => !written.includes(f)),
+    [],
+    "exposed in action.yml and never written - the output renders empty",
+  );
+});
+
+check("a token quantity that was never measured is not read as zero", () => {
+  assert.strictEqual(tokenField(""), "", "an absent flag must stay absent");
+  assert.strictEqual(tokenField(undefined), "", "an unpassed flag must stay absent");
+  assert.strictEqual(tokenField("  "), "", "an empty workflow expression must stay absent");
+  assert.strictEqual(tokenField("not-a-number"), "", "an unparseable value is not a measurement");
+  assert.strictEqual(tokenField("0"), 0, "a measured zero is a measurement, and stays one");
+  assert.strictEqual(tokenField("3956841"), 3956841);
+});
+
+// The cost table's whole job is comparing outcomes to each other, so a column
+// that counts unmeasured rows as zero understates exactly the groups holding
+// them - by the largest quantity in the bill, and in the direction that makes
+// the tool look cheaper than it is.
+check("a cost group holding a pre-cache run reports no cache figure, not a low one", () => {
+  const text = renderReport(
+    [
+      { outcome: "FIXED", repo: "a/a", package: "p", version: "1", tokensInput: 100, tokensOutput: 50, tokensCacheRead: 900, tokensCacheWrite: 0, tokensTotal: 1050 },
+      { outcome: "FIXED", repo: "b/b", package: "q", version: "1", tokensInput: 100, tokensOutput: 50 },
+      { outcome: "NO-CHANGE", repo: "c/c", package: "r", version: "1", tokensInput: 200, tokensOutput: 10, tokensCacheRead: 800, tokensCacheWrite: 0, tokensTotal: 1010 },
+    ],
+    { kind: "benchmark", queued: 3 },
+  );
+  const row = (name) => text.split("\n").find((l) => l.startsWith("| " + name + " |"));
+  assert.match(row("FIXED"), /not measured \| not measured \|/, "a mixed group must not average an unmeasured row as zero");
+  assert.match(row("NO-CHANGE"), /\| 800 \| 1,010 \|/, "a fully measured group must report its cache and total");
+  assert.match(text, /predates cache accounting/, "the table must say why a cell is empty");
 });
 
 // The outcome list in action.yml is the contract a user reads, and it was wrong
@@ -5714,6 +5774,29 @@ check("the benchmark row records the runtime the suite was measured on", () => {
     "utf8",
   );
   assert.match(outcomeSrc, /^\s*node: a\.node \|\| "",/m, "the row does not carry a node field");
+});
+
+// The same join, one link further down. action.yml can expose a quantity and
+// the benchmark row still not have it - which is where the cached-input figure
+// actually died: exposed nowhere, passed nowhere, recorded nowhere, and no test
+// anywhere looked at the seam between the three files. Derived from action.yml
+// on one side and the invocation on the other, so a sixth quantity cannot be
+// added to the action and silently skip the table.
+check("every token output the action exposes reaches the benchmark row", () => {
+  const actionSrc = fs.readFileSync(new URL("../action.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const outcomeSrc = fs.readFileSync(new URL("../scripts/benchmark-outcome.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const call = /benchmark-outcome\.mjs[\s\S]*?--out /.exec(runYml);
+  assert.ok(call, "the benchmark-outcome invocation moved - fix the probe, not the file");
+
+  const outputs = [...actionSrc.matchAll(/^ {2}(tokens-[\w-]+):$/gm)].map((m) => m[1]);
+  assert.ok(outputs.length >= 5, "expected the action to still expose token outputs; found " + outputs.length);
+  for (const name of outputs) {
+    assert.match(call[0], new RegExp("--" + name + ' "\\$'), "the invocation does not pass --" + name);
+    assert.match(runYml, new RegExp(": \\$\\{\\{ steps\\.patchery\\.outputs\\." + name + " \\}\\}"),
+      name + " is passed but never bound from the action's output");
+    const field = name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
+    assert.match(outcomeSrc, new RegExp("^\\s*" + field + ":", "m"), "the row does not carry a " + field + " field");
+  }
 });
 
 // A test says a rule works on the input the test hands it. It cannot say the
