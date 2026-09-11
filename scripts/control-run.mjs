@@ -92,7 +92,10 @@ export const EDITS = {
 
 export function scriptFor(kind, work) {
   if (kind === "empty") return { marker: MARKER, turns: [], finalText: "I could not find a safe change to make." };
-  const edit = EDITS[kind];
+  // The clock control borrows golden's script and never gets to finish it: the
+  // stub answers the opening turns and then goes quiet, so the run's own wall
+  // clock is what ends it. What is under test is not the edit but the exit.
+  const edit = EDITS[kind === "clock" ? "golden" : kind];
   if (!edit) throw new Error("no script for control: " + kind);
   return {
     marker: MARKER,
@@ -130,6 +133,10 @@ export async function runControl(kind) {
   // apart.
   const stub = startControlStub(scriptFor(kind, work), {
     onRequest: (route, k, stop) => console.log("   [stub] " + route + " " + k + " -> " + stop),
+    // Two turns, then silence. Enough that the run has a real turn count and a
+    // real token tally to have lost, which is the whole point: an exit that
+    // records nothing looks identical to an exit that had nothing to record.
+    stallAfter: kind === "clock" ? 2 : 0,
   });
   const base = await stub.listen();
   console.log("   [stub] listening on " + base);
@@ -171,6 +178,11 @@ export async function runControl(kind) {
       SMA_CHANGELOG: "fake-lib 2.0.0: formatPrice(amount, currency) now requires currency.",
       SMA_EXTRA_INSTRUCTIONS: MARKER,
       SMA_MAX_TURNS: "6",
+      // One minute, and only for the clock control. The floor is a whole minute
+      // (run-budget-minutes is floored to an integer), so this control costs
+      // about that in wall time - the price of watching the most expensive exit
+      // the product has without paying a provider for it.
+      ...(kind === "clock" ? { SMA_RUN_BUDGET_MINUTES: "1" } : {}),
       // The reviewer is OFF, and the control is narrower because of it.
       //
       // It is a second model call with its own structured-output contract, and
@@ -213,6 +225,11 @@ export async function runControl(kind) {
     files: (outputs.files || "").split("\n").filter(Boolean),
     candidate: outputs.candidate_disposition || "",
     candidateFiles: outputs.candidate_files || "",
+    // The two things a leg that delivers nothing can still leave behind. Both
+    // were absent from every wall-clock leg of run #13, and an exit that leaves
+    // neither cannot be told apart from one that had nothing to leave.
+    diagnosisFile: outputs.diagnosis_file || "",
+    tokensTotal: outputs.tokens_total || "",
     suiteAfter: suite.status,
     stdout: "",
     stderr: "",
@@ -223,7 +240,7 @@ export async function runControl(kind) {
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const only = process.argv[2];
-  for (const kind of only ? [only] : ["golden", "empty", "poison-red", "poison-green"]) {
+  for (const kind of only ? [only] : ["golden", "empty", "poison-red", "poison-green", "clock"]) {
     const r = await runControl(kind);
     console.log("\n=== " + kind + " ===");
     console.log("agent exit      : " + r.exit);
@@ -233,6 +250,8 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
     console.log("files           : " + JSON.stringify(r.files));
     console.log("candidate       : " + JSON.stringify(r.candidate) + " / " + JSON.stringify(r.candidateFiles));
     console.log("suite afterwards: exit " + r.suiteAfter);
+    console.log("diagnosis file  : " + JSON.stringify(r.diagnosisFile));
+    console.log("tokens total    : " + JSON.stringify(r.tokensTotal));
     if (!r.outcome) console.log("--- stderr tail ---\n" + r.stderr.split("\n").slice(-15).join("\n"));
   }
 }

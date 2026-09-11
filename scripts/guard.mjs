@@ -1556,6 +1556,46 @@ export function tokenTotals(modelUsage = {}) {
 }
 
 /**
+ * The same four quantities, read off a single message as it streams past.
+ *
+ * modelUsage above arrives only on the SDK's final result message, and a run we
+ * abort at its wall clock never gets one: the call throws out of the loop and
+ * the totals die with it. Six legs of run #13 burned 45 minutes each and left no
+ * token count at all - not a small one, none - because the only place the spend
+ * was read was a message that never came.
+ *
+ * So the ledger is kept from what has already arrived. Each assistant message
+ * carries its own usage, and summing them is the same arithmetic tokenTotals
+ * does across models, one turn at a time.
+ *
+ * Both spellings are read because the two shapes are different halves of the
+ * same SDK: the result message reports camelCase (inputTokens), and an assistant
+ * message carries the API's own snake_case (input_tokens). A reader that knew
+ * only one would return a confident zero for the other, which is the failure
+ * this whole field exists to stop.
+ *
+ * @param {object} usage one message's usage object, in either spelling
+ * @returns {{input: number, output: number, cacheRead: number, cacheCreation: number, total: number}}
+ */
+export function messageUsage(usage) {
+  const t = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 };
+  if (!usage || typeof usage !== "object") return t;
+  const read = (...names) => {
+    for (const n of names) {
+      const v = Number(usage[n]);
+      if (Number.isFinite(v)) return v;
+    }
+    return 0;
+  };
+  t.input = read("inputTokens", "input_tokens");
+  t.output = read("outputTokens", "output_tokens");
+  t.cacheRead = read("cacheReadInputTokens", "cache_read_input_tokens");
+  t.cacheCreation = read("cacheCreationInputTokens", "cache_creation_input_tokens");
+  t.total = t.input + t.output + t.cacheRead + t.cacheCreation;
+  return t;
+}
+
+/**
  * What a run cost, said in a unit that is actually true.
  *
  * The SDK's `total_cost_usd` prices tokens with Anthropic's own rate table and

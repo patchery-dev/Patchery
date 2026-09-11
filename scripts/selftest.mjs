@@ -102,6 +102,7 @@ import {
   normalizeVerifyTools,
   reviewPassPlan,
   tokenTotals,
+  messageUsage,
   renderSpend,
   agentFinishedLine,
   dependencyMisuseReasons,
@@ -5572,6 +5573,51 @@ check("every token quantity the agent counts is exposed by the action", () => {
     [],
     "exposed in action.yml and never written - the output renders empty",
   );
+});
+
+// The result message is the only place modelUsage appears, and a run we abort
+// never receives one. Six legs of run #13 spent 45 minutes each and reported no
+// tokens at all - so the ledger has to be readable from the messages that did
+// arrive, in the spelling those messages actually use.
+check("a streaming message's spend is read in either spelling the SDK uses", () => {
+  const api = messageUsage({
+    input_tokens: 12003,
+    output_tokens: 4000,
+    cache_read_input_tokens: 285552,
+    cache_creation_input_tokens: 7,
+  });
+  assert.deepStrictEqual(
+    [api.input, api.output, api.cacheRead, api.cacheCreation, api.total],
+    [12003, 4000, 285552, 7, 301562],
+  );
+  const camel = messageUsage({
+    inputTokens: 1,
+    outputTokens: 2,
+    cacheReadInputTokens: 3,
+    cacheCreationInputTokens: 4,
+  });
+  assert.deepStrictEqual([camel.input, camel.output, camel.cacheRead, camel.cacheCreation, camel.total], [1, 2, 3, 4, 10]);
+});
+
+check("a message with no usage reports nothing, and never invents a field", () => {
+  for (const shape of [undefined, null, "nope", {}, { tokens: 900 }]) {
+    assert.strictEqual(messageUsage(shape).total, 0, JSON.stringify(shape) + " must total nothing");
+  }
+});
+
+// The two halves of the wall-clock ledger, pinned at the exit that lost them.
+// This is a source check because the path is unreachable from a unit test - it
+// lives in a catch in a top-level script - and the control that DOES reach it
+// costs a minute of wall clock. Both exist: this fails in a second when someone
+// deletes a line, and `control-run.mjs clock` proves the line still works.
+check("the wall-clock exit keeps both books before it leaves", () => {
+  const src = fs.readFileSync(new URL("agent.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const branch = /if \(agentDeadline\.expired\(\)\) \{([\s\S]*?)\n  \}/.exec(src);
+  assert.ok(branch, "the deadline branch moved - fix the probe, not the file");
+  assert.match(branch[1], /adoptLiveSpend\(\)/, "the wall-clock exit does not adopt the streamed token tally");
+  assert.match(branch[1], /writeDiagnosis\(/, "the wall-clock exit writes no diagnosis");
+  assert.match(branch[1], /diagnosis_file:/, "the diagnosis is written and then not reported");
+  assert.match(src, /noteLiveUsage\(message\?\.message\?\.usage\)/, "nothing accumulates the streamed usage");
 });
 
 check("a token quantity that was never measured is not read as zero", () => {

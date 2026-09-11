@@ -164,7 +164,16 @@ export function routeOf(url) {
   return "other";
 }
 
-export function startControlStub(script, { onRequest } = {}) {
+/**
+ * @param {object} script the scripted turns
+ * @param {{onRequest?: Function, stallAfter?: number}} opts
+ *   stallAfter - answer this many scripted turns, then stop answering entirely.
+ *   A provider that goes quiet is the one condition no control could produce, and
+ *   it is the condition behind the most expensive exit the product has: six legs
+ *   of run #13 spent 45 minutes each waiting on a wall clock. Without this the
+ *   only way to see that path was to pay for a real run and hope one stalled.
+ */
+export function startControlStub(script, { onRequest, stallAfter = 0 } = {}) {
   const marker = script && script.marker;
   let served = 0;
   const log = [];
@@ -183,6 +192,15 @@ export function startControlStub(script, { onRequest } = {}) {
         res.writeHead(200, { "content-type": "application/json" });
         res.end("{}");
         log.push({ route });
+        return;
+      }
+      // Go quiet rather than answer. The socket is left open on purpose: a
+      // provider that has stopped responding does not close the connection, and
+      // a close would surface as a network error, which is a different exit with
+      // a different message. The run's own clock has to be the thing that ends it.
+      if (stallAfter && served >= stallAfter) {
+        log.push({ route, kind: "stalled" });
+        if (onRequest) onRequest(route, "stalled", null);
         return;
       }
       const kind = classifyRequest(body, marker);

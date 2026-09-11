@@ -37,6 +37,7 @@ import {
   renderSpend,
   agentFinishedLine,
   tokenTotals,
+  messageUsage,
   normalizeModelTimeout,
   normalizeRunBudget,
   budgetDelayMs,
@@ -346,6 +347,59 @@ function spend(args) {
   return renderSpend(args);
 }
 
+/**
+ * The same four quantities, accumulated from the messages as they arrive.
+ *
+ * SPEND is filled from the SDK's result message, which a run we abort never
+ * receives: the wall clock fires, the call throws, and the count dies with it.
+ * That is not a rounding error - six legs of run #13 spent 45 minutes each and
+ * reported no tokens at all, so the most expensive exit there is was also the
+ * only one nobody could price.
+ *
+ * Kept beside SPEND rather than added into it, so the authoritative total stays
+ * authoritative. It is folded in only on the path that will never get a result
+ * message, and only when SPEND is still empty - two counts of the same tokens
+ * would be a worse number than none.
+ */
+const LIVE_SPEND = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, messages: 0 };
+
+const noteLiveUsage = (usage) => {
+  const t = messageUsage(usage);
+  if (!t.total) return;
+  LIVE_SPEND.input += t.input;
+  LIVE_SPEND.output += t.output;
+  LIVE_SPEND.cacheRead += t.cacheRead;
+  LIVE_SPEND.cacheCreation += t.cacheCreation;
+  LIVE_SPEND.messages++;
+};
+
+/**
+ * Hand the streamed ledger to SPEND, for an exit that will never see a result.
+ *
+ * Returns what it recorded so the caller can say so out loud, and "" when there
+ * was nothing to record - which is a real answer on a leg that died before the
+ * first message, and must not be dressed up as a measured zero.
+ */
+function adoptLiveSpend() {
+  const already = SPEND.input + SPEND.output + SPEND.cacheRead + SPEND.cacheCreation;
+  if (already || !LIVE_SPEND.messages) return "";
+  // Through spend(), not around it. The suite pins that renderSpend has exactly
+  // one caller, so that a model call added later cannot be rendered without
+  // being counted - and a tally that added itself to SPEND and then rendered
+  // separately would be the first hole in that rule.
+  return spend({
+    modelUsage: {
+      "streamed-from-messages": {
+        inputTokens: LIVE_SPEND.input,
+        outputTokens: LIVE_SPEND.output,
+        cacheReadInputTokens: LIVE_SPEND.cacheRead,
+        cacheCreationInputTokens: LIVE_SPEND.cacheCreation,
+      },
+    },
+    customEndpoint: true,
+  });
+}
+
 // Filled by announceRun, which every exit path calls before writeOutputs. Kept
 // module-level rather than threaded through six call sites: the alternative is
 // six places to forget it, and the last time a measurement depended on one call
@@ -486,10 +540,10 @@ function announceRun() {
   };
 }
 
-function fail(message, outcome = "failed") {
+function fail(message, outcome = "failed", extra = {}) {
   announceRun();
   console.error("\n[ERROR] " + clean(message));
-  writeOutputs({ outcome, changed: "false", tests_passed: "false", summary: message });
+  writeOutputs({ outcome, changed: "false", tests_passed: "false", summary: message, ...extra });
   writeStepSummary("### Patchery\n\nFailed: " + message);
   process.exit(1);
 }
@@ -980,6 +1034,9 @@ try {
     agentGaps.push({ ms: Date.now() - lastMessageAt, kind: message.type });
     lastMessageAt = Date.now();
     agentDeadline.touch();
+    // Read the spend off every message, not off the result. A run we abort gets
+    // no result message, and until this line the ledger for those legs was empty.
+    noteLiveUsage(message?.message?.usage);
     if (message.type === "assistant") {
       const toolUses = [];
       for (const block of message.message.content) {
@@ -1024,7 +1081,40 @@ try {
     // The clock fires out of a catch, before anything has enumerated the tree.
     // Count it here or the most common exit there is reports nothing at all.
     noteCandidate("ceiling", safeChangedCount());
-    fail(agentDeadline.reason(), deadlineOutcome(agentDeadline.firedBy()));
+    // Keep the books before leaving. Both halves of this were missing and they
+    // were missing together: the turn-budget exit falls out of the loop and
+    // reaches the ledger below, while the wall-clock exit throws past all of it
+    // to fail(). Ten legs of run #13 ended half-finished, and the split was
+    // clean - four ran out of turns and left a diagnosis and a token count, six
+    // ran out of minutes and left nothing at all. Same run, same agent, one code
+    // path apart.
+    //
+    // Nothing here may throw: this is the last thing standing between a 45-minute
+    // leg and an exit that says nothing about it.
+    const streamed = adoptLiveSpend();
+    if (streamed) log("\nSpend, from the messages that arrived before the clock: " + streamed);
+    const s = stallDetector.inspect();
+    const clockDiagnosis = writeDiagnosis({
+      packageName: PACKAGE,
+      targetRel: targetRel || ".",
+      testCommand: TEST_COMMAND,
+      reason: agentDeadline.reason(),
+      outcome: deadlineOutcome(agentDeadline.firedBy()),
+      baselineOutput: baseline.output,
+      changelog: CHANGELOG,
+      turns: s.toolTurns,
+      edits: s.edits,
+      discovered: s.keys,
+      spend: streamed,
+      // What it was reaching for when the clock stopped it. On a leg that
+      // delivers nothing this is the whole content of the run, and "we do not
+      // know what those six legs were attempting" is what note 104 had to
+      // record instead.
+      agentNotes: agentText.length ? agentText[agentText.length - 1].trim() : "",
+    });
+    fail(agentDeadline.reason(), deadlineOutcome(agentDeadline.firedBy()), {
+      diagnosis_file: clockDiagnosis,
+    });
   }
   // A dead child process is our runtime, not the agent declining to answer. Filed
   // as a plain failure it became NO-CHANGE - "Patchery had nothing to offer" - for
