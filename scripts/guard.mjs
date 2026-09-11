@@ -11,6 +11,56 @@
  * @param {string} relPath path relative to the repository root
  * @returns {string|null} reason the path is off limits, or null if it is fair game
  */
+/**
+ * The test files the baseline run actually loaded, read off its own output.
+ *
+ * Every rule in protectedReason is a list, and a list is always incomplete: of
+ * 15 common test layouts measured on 2026-09-11, 10 were editable, and the fix
+ * for that was to type more names into the list. This is the other half, and the
+ * better one - it does not ask what a test file is called, it asks what the
+ * runner opened, and protects that.
+ *
+ * Only the runners' own file-listing markers are read, never a bare path. A
+ * failing suite prints stack frames full of SOURCE paths - `at foo (src/app.js:12:5)` -
+ * and a reader loose enough to pick those up would protect the very files the
+ * migration has to edit, turning the guard into a wall around the whole repo.
+ * So each pattern is anchored at the start of a line and the path must END at
+ * its extension, which a `:line:col` frame never does.
+ *
+ * An unrecognized runner returns an EMPTY set, and the caller must read that as
+ * "not learned" rather than "there are none" - the same refusal census() makes
+ * for counts. Protecting nothing because we could not see is a gap; reporting it
+ * as a clean sheet is a lie.
+ *
+ * @param {string} output the baseline run's combined stdout and stderr
+ * @returns {string[]} repo-relative paths, forward-slashed, deduplicated, sorted
+ */
+export function collectedTestFiles(output) {
+  // Colour codes inline rather than imported: guard.mjs is the authority the
+  // rest of the tree depends on, and it does not depend back on any of it.
+  // eslint-disable-next-line no-control-regex
+  const text = String(output || "").replace(/\[[0-9;]*m/g, "").replace(/\r\n/g, "\n");
+  const found = new Set();
+  const patterns = [
+    // jest, and anything that copies its reporter
+    /^\s*(?:PASS|FAIL|RUNS)\s+(\S+\.[cm]?[jt]sx?)\s*$/gm,
+    // vitest's file lines, and node --test's spec reporter
+    /^\s*[✓✔✗✖×❯]\s+(\S+\.[cm]?[jt]sx?)\s*$/gm,
+    // node --test through TAP, which names every file as a subtest
+    /^\s*#\s*Subtest:\s+(\S+\.[cm]?[jt]sx?)\s*$/gm,
+  ];
+  for (const re of patterns) {
+    for (const m of text.matchAll(re)) {
+      const p = m[1].replace(/\\/g, "/").replace(/^\.\//, "");
+      // An absolute path is the runner's, not the repository's, and comparing it
+      // with a git-relative path would silently protect nothing at all.
+      if (!p || p.startsWith("/") || /^[a-z]:\//i.test(p)) continue;
+      found.add(p);
+    }
+  }
+  return [...found].sort();
+}
+
 export function protectedReason(relPath) {
   // Lowercased before anything is matched. `Tests/a.Test.js` was passing every
   // rule here, and on macOS or Windows it is the same file as `tests/a.test.js` -
@@ -20,8 +70,28 @@ export function protectedReason(relPath) {
   // nothing, and allowing it costs the whole guarantee.
   const p = String(relPath).replace(/\\/g, "/").toLowerCase();
   if (/(^|\/)node_modules\//.test(p)) return "inside node_modules";
-  if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(p)) return "test file";
+  // `foo_test.js` and `foo-test.js` are the same file as `foo.test.js` to
+  // everyone except this regex, which anchored on a dot. Go's convention is the
+  // underscore, and JS projects that came from it keep it; measured on 2026-09-11,
+  // `src/foo_test.js` and `src/x_spec.js` were both editable.
+  if (/[._-](test|spec)\.[cm]?[jt]sx?$/.test(p)) return "test file";
   if (/(^|\/)(__tests__|__mocks__|tests?)\//.test(p)) return "inside a test directory";
+  // The layouts the rule above misses, anchored at the REPOSITORY ROOT and only
+  // there. Measured: of 15 common test paths, 10 were editable, and `spec/` and
+  // `e2e/` are not exotic - they are the default in whole ecosystems.
+  //
+  // Root-anchored on purpose, and this is the whole judgement in the rule.
+  // `features/` at the top of a repository is Cucumber; `src/features/checkout/`
+  // is a React application's own code, and refusing to edit it would block the
+  // migrations this product exists to perform. Same for `testing/` and `t/`. A
+  // rule that is right about test files by being wrong about source files has
+  // not helped anyone.
+  //
+  // And a list is still a list: see collectedTestFiles, which protects what the
+  // runner actually loaded rather than what someone remembered to type here.
+  if (/^(spec|e2e|integration|acceptance|features|testing|t)\//.test(p)) {
+    return "inside a top-level test directory";
+  }
   // A snapshot IS the assertion, and it was the one assertion left unguarded.
   //
   // The rule above is anchored to the extension, so `Button.test.js.snap` does

@@ -233,6 +233,36 @@ export function censusHeld(before, after) {
         " pass now - the suite got smaller, which is not a fix",
     };
   }
+  // Last, because it is the widest net and the narrower rules above say more
+  // about what happened. What only this one sees is the suite that went green by
+  // DELETING its failures: `skipped` does not rise, `passed` rises rather than
+  // falls, and until this line nothing compared the size of the suite at all.
+  // Three providers were given the two rules above and no code, and all three
+  // derived that escape independently.
+  //
+  // NECESSARY AND NOT SUFFICIENT, and the gap is one line of arithmetic: delete
+  // two failing tests, add two trivial ones, and the total is unchanged.
+  //
+  //            passed  failed  skipped  total
+  //   before      10      2       0      12
+  //   after       12      0       0      12   <- every rule here says yes
+  //
+  // The suite got weaker and no count can see it, because a count is not an
+  // identity. What closes that is knowing WHICH tests ran, and the half of it
+  // this project has today is collectedTestFiles in guard.mjs - the files the
+  // baseline actually loaded are protected from leaving. Identity WITHIN a file
+  // is still uncovered, and no run may be described as proof against a padded
+  // suite until it is.
+  if (Number(after.total) < Number(before.total)) {
+    return {
+      ok: false,
+      why:
+        before.total +
+        " tests ran before the break and only " +
+        after.total +
+        " ran after - tests left the suite, which is not a fix however green the rest is",
+    };
+  }
   return { ok: true, why: after.passed + " of " + before.passed + " baseline tests still pass" };
 }
 

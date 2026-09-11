@@ -23,6 +23,7 @@ import { classifyFailure, briefing, normalizeBriefing } from "./classify-break.m
 import { census, censusHeld, censusTableCell } from "./test-census.mjs";
 import {
   protectedReason,
+  collectedTestFiles,
   parsePorcelainEntries,
   outOfScopeReason,
   parsePathList,
@@ -834,6 +835,24 @@ const baseline = runTests();
 log(baseline.output.slice(-4000) || "(no output)");
 log("\n-> baseline: " + (baseline.ok ? "PASS" : "FAIL (exit " + baseline.code + ")"));
 
+// Learn the suite from the run instead of from a list of names. Taken here and
+// only here: after the agent has touched the tree, the set of files the runner
+// loads is a thing the agent can influence, and a protected set the subject can
+// edit protects nothing.
+//
+// Empty means NOT LEARNED, never "there are no test files" - a runner whose
+// output we do not recognize leaves this blank, and the named rules in
+// protectedReason are what stands in that case. Said out loud for the same
+// reason the census says why it could not count: a gap and a clean sheet must
+// not print the same.
+const BASELINE_TEST_FILES = collectedTestFiles(baseline.output);
+log(
+  BASELINE_TEST_FILES.length
+    ? "-> the baseline loaded " + BASELINE_TEST_FILES.length + " test file(s); they are now protected by measurement"
+    : "-> could not tell which files the baseline loaded from this runner's output - " +
+        "the named rules are the only path protection on this run"
+);
+
 // What kind of break this is, from the runner's own error code. Free, and it
 // answers a question the agent otherwise spends turns on: the express run spent
 // roughly half its budget establishing what Node had already stated in the first
@@ -1583,6 +1602,13 @@ function diffSummary(file, maxLines = 40) {
 function violationReason(entry) {
   const byPath = protectedReason(entry.path);
   if (byPath) return byPath;
+
+  // What the baseline run actually opened, which no list can be trusted to
+  // predict. This catches the layout nobody thought to name - and it is checked
+  // before scope, because a file the suite loads is a test file wherever it sits.
+  if (BASELINE_TEST_FILES.includes(entry.path)) {
+    return "the baseline test run loaded this file - it is part of the suite that judges the change";
+  }
 
   const byScope = outOfScopeReason(entry.path, targetRel, ALLOWED_PATHS);
   if (byScope) return byScope;

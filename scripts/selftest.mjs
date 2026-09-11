@@ -83,6 +83,7 @@ import {
 } from "./target-dir.mjs";
 import {
   protectedReason,
+  collectedTestFiles,
   isHarnessConfig,
   harnessConfigReason,
   parsePorcelain,
@@ -2422,6 +2423,119 @@ check("censusHeld catches a suite that got smaller", () => {
   const r = censusHeld(census(JEST_GREEN), census(shrunk));
   assert.strictEqual(r.ok, false);
   assert.match(r.why, /got smaller/);
+});
+
+// The escape three providers derived independently from the two rules above,
+// given no code: delete the failing tests. Nothing this check's siblings watch
+// moves in the wrong direction - `skipped` holds, `passed` RISES - and the suite
+// is smaller by exactly the tests that were catching the break.
+check("censusHeld catches a suite that went green by deleting its failures", () => {
+  const before = census("Tests:       2 failed, 10 passed, 12 total\n");
+  const after = census("Tests:       10 passed, 10 total\n");
+  assert.deepStrictEqual(
+    [before.total, before.passed, after.total, after.passed],
+    [12, 10, 10, 10],
+    "the fixture must be the delete-the-failures shape: passed held, total fell",
+  );
+  const r = censusHeld(before, after);
+  assert.strictEqual(r.ok, false, "deleting the failing tests must not pass the census");
+  assert.match(r.why, /tests left the suite/);
+});
+
+// A KNOWN GAP, written as a check so that it cannot be quietly believed fixed.
+// Counting cannot see a suite that was weakened and refilled, because a count is
+// not an identity. If someone closes this, this check fails and they update it
+// deliberately - which is the only way a limit stays honest.
+check("a padded suite still passes the census - the count cannot see identity", () => {
+  const before = census("Tests:       2 failed, 10 passed, 12 total\n");
+  const after = census("Tests:       12 passed, 12 total\n");
+  const r = censusHeld(before, after);
+  assert.strictEqual(r.ok, true, "if this now fails, the census learned identity - update this check and say so");
+  assert.match(r.why, /baseline tests still pass/);
+});
+
+// Measured on 2026-09-11 against 2581847: of 15 common test layouts, 10 were
+// editable. `spec/` and `e2e/` are not exotic - they are the default in whole
+// ecosystems - and the underscore naming is Go's convention, which JS projects
+// that came from it keep.
+check("the test layouts the guard used to leave open are refused", () => {
+  for (const p of [
+    "spec/user.js",
+    "spec/models/user.js",
+    "e2e/login.js",
+    "integration/api.js",
+    "acceptance/x.js",
+    "features/checkout.js",
+    "testing/x.js",
+    "t/basic.js",
+    "src/foo_test.js",
+    "src/x_spec.js",
+  ]) {
+    assert.ok(protectedReason(p), p + " is editable, and it is part of the suite");
+  }
+});
+
+// The other half of the same rule, and the reason the directory list is anchored
+// at the repository root. `src/features/` is a React application's own code, and
+// a guard that refuses to edit it has not protected a test - it has blocked the
+// migration this product exists to perform.
+check("source code that merely looks like a test directory stays editable", () => {
+  for (const p of [
+    "src/features/checkout/api.js",
+    "src/testing/harness.js",
+    "packages/t/index.js",
+    "app/integration/stripe.js",
+    "src/latest.js",
+    "src/contest.js",
+    "src/manifest.json",
+  ]) {
+    assert.strictEqual(protectedReason(p), null, p + " is refused, and it is not a test file");
+  }
+});
+
+// A list is always incomplete - that is what the ten open paths above were. This
+// is the rule that does not depend on anyone remembering a name: what the runner
+// loaded is read off the run itself.
+check("the files a runner reports loading are learned from its own output", () => {
+  assert.deepStrictEqual(collectedTestFiles("PASS src/a.test.js\nFAIL weird/layout/b.js\n"), [
+    "src/a.test.js",
+    "weird/layout/b.js",
+  ]);
+  assert.deepStrictEqual(collectedTestFiles(" ✓ test/foo.test.ts\n ❯ spec/bar.ts\n"), ["spec/bar.ts", "test/foo.test.ts"]);
+  assert.deepStrictEqual(collectedTestFiles("# Subtest: t/basic.js\n"), ["t/basic.js"]);
+  assert.deepStrictEqual(collectedTestFiles("PASS [1msrc/c.test.js[22m\n"), ["src/c.test.js"], "colour must not hide a file");
+});
+
+// The failure that would make this rule worse than useless. A failing suite
+// prints stack frames full of SOURCE paths, and a reader loose enough to take
+// those would protect the files the migration has to edit - a guard around the
+// whole repository, reported as a safety improvement.
+check("a stack frame is not a collected test file", () => {
+  const output = [
+    "FAIL test/app.test.js",
+    "  ● formats a price",
+    "    at formatPrice (src/app.js:12:5)",
+    "    at Object.<anonymous> (src/lib/money.js:3:1)",
+    "    at node_modules/jest-circus/build/run.js:45:9",
+  ].join("\n");
+  assert.deepStrictEqual(collectedTestFiles(output), ["test/app.test.js"]);
+});
+
+check("an unrecognised runner learns nothing, and that is not an empty suite", () => {
+  assert.deepStrictEqual(collectedTestFiles("18 passing (2s)\n2 failing\n"), [], "mocha names no files");
+  assert.deepStrictEqual(collectedTestFiles(""), []);
+  const src = fs.readFileSync(new URL("agent.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(
+    src,
+    /could not tell which files the baseline loaded/,
+    "a run that learned nothing must say so - a gap and a clean sheet must not print the same",
+  );
+  assert.match(
+    src,
+    /BASELINE_TEST_FILES = collectedTestFiles\(baseline\.output\)/,
+    "the set must be taken from the BASELINE, before the agent can influence what the runner loads",
+  );
+  assert.match(src, /BASELINE_TEST_FILES\.includes\(entry\.path\)/, "the learned set is never consulted by the guard");
 });
 
 // The anti-shrink check was vacuous whenever the baseline counted zero: every
