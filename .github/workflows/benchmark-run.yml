@@ -455,6 +455,8 @@ jobs:
             --clock-percent "$CLOCK_PCT" \
             --model-wait-seconds "$MODEL_WAIT" \
             --local-work-seconds "$LOCAL_WORK" \
+            --tool-breakdown "$TOOL_BREAKDOWN" \
+            --harness-tool-seconds "$HARNESS_TOOL_SEC" \
             --runner "$RUNNER_ID ${ImageOS:-} ${ImageVersion:-}" \
             --node "$NODE_USED" \
             --tokens-input "$TOKENS_IN" \
@@ -490,6 +492,8 @@ jobs:
           CLOCK_PCT: ${{ steps.patchery.outputs.clock-percent }}
           MODEL_WAIT: ${{ steps.patchery.outputs.model-wait-seconds }}
           LOCAL_WORK: ${{ steps.patchery.outputs.local-work-seconds }}
+          TOOL_BREAKDOWN: ${{ steps.patchery.outputs.tool-breakdown }}
+          HARNESS_TOOL_SEC: ${{ steps.patchery.outputs.harness-tool-seconds }}
           # The machine and the image, which both blind rounds asked for and
           # neither the row nor the log carried. Left varying on purpose - pinning
           # a host makes the result unrepresentative of a fleet - so it has to be

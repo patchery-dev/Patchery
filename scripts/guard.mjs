@@ -1499,6 +1499,57 @@ export function gapStats(gaps, slowMs = 60000) {
   };
 }
 
+/**
+ * Which tools filled the local half, and how often each was called.
+ *
+ * gapStats answers "what ENDED the gap". This answers the question two blind
+ * providers said the 56% figure could not: what FILLED it. Both of them put the
+ * same alternative first - tools that are fast but called obsessively - and
+ * ranked "tools are slow" nowhere near the top. Those need opposite fixes, and
+ * a total over all tools cannot tell them apart: 300 seconds is one slow suite
+ * or six hundred half-second reads, and only the count says which.
+ *
+ * A gap carries the tool that was pending when it started, so the attribution is
+ * the run's own record rather than an inference about names.
+ *
+ * LIMIT, and it is the same one gapStats carries: this is the gap around a tool
+ * call, not the tool's own clock. Whatever the SDK spends framing a request and
+ * parsing its result is inside these numbers and cannot be separated from
+ * outside the child. So a large figure here still does not say "this tool is
+ * slow" - it says "this much of the run went through this tool".
+ *
+ * @param {Array<{ms:number, kind:string, tool?:string}>} gaps
+ * @returns {Array<{tool:string, sec:number, calls:number}>} busiest first
+ */
+export function toolBreakdown(gaps) {
+  const by = new Map();
+  for (const g of gaps || []) {
+    if (!g || typeof g !== "object") continue;
+    if (g.kind === "assistant") continue;
+    const ms = Number(g.ms);
+    if (!Number.isFinite(ms) || ms < 0) continue;
+    // Unattributed is its own bucket, never folded into a named tool. A gap we
+    // could not attribute is not evidence about any tool in particular, and
+    // spreading it over the named ones would inflate exactly the figure someone
+    // is about to act on.
+    const name = g.tool || "(unattributed)";
+    const acc = by.get(name) || { tool: name, sec: 0, calls: 0 };
+    acc.sec += ms / 1000;
+    acc.calls++;
+    by.set(name, acc);
+  }
+  return [...by.values()]
+    .map((a) => ({ ...a, sec: Math.round(a.sec) }))
+    .sort((a, b) => b.sec - a.sec);
+}
+
+/** The breakdown as one field, or "" when the run recorded no local work. */
+export function toolBreakdownLine(rows, limit = 6) {
+  const list = (rows || []).slice(0, limit);
+  if (!list.length) return "";
+  return list.map((r) => r.tool + " " + r.sec + "s/" + r.calls).join(" · ");
+}
+
 /** The timing half of the telemetry line, or nothing when no message ever came. */
 export function gapStatsLine(stats) {
   if (!stats) return "";

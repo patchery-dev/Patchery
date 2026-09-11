@@ -489,6 +489,16 @@ if (isMain) {
     clockPercent: a["clock-percent"] || "",
     modelWaitSeconds: a["model-wait-seconds"] || "",
     localWorkSeconds: a["local-work-seconds"] || "",
+    // What filled the local half, not what ended it. localWorkSeconds says how
+    // much time did not end at an assistant message; two blind providers refused
+    // to let that stand as "tools are slow", and both put the same alternative
+    // first - tools that are fast and called constantly. The call count in this
+    // field is what separates them, and no total can.
+    toolBreakdown: a["tool-breakdown"] || "",
+    // And the one part of the inside we can actually clock: the commands the
+    // action ran itself. A floor under real tool time; the agent's own tools run
+    // in the SDK's child where only their gap is visible.
+    harnessToolSeconds: a["harness-tool-seconds"] || "",
     // Deliberately left varying, therefore recorded. A run that differed on a
     // different machine or a different image is a different explanation from one
     // that differed on the same.

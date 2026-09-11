@@ -127,6 +127,8 @@ import {
   budgetUsageLine,
   gapStats,
   gapStatsLine,
+  toolBreakdown,
+  toolBreakdownLine,
   candidateRecord,
   candidateOutputs,
   CANDIDATE_EXITS,
@@ -2470,6 +2472,100 @@ check("the disappearance figure is never printed without its split", () => {
   assert.match(text, /it means nothing/, "a loading package says nothing about an api break");
   assert.match(text, /Upper bound, not the answer/, "the limit must travel with the number");
   assert.match(text, /Measured 2026-09-11 on Node v24\.0\.0/, "a rate with no date and no runtime is not a measurement");
+});
+
+// "56% of the run was local work" is an attribution from what ENDED each gap.
+// Two blind providers, independently, refused to let it stand as "tools are
+// slow" - and both ranked the same alternative first: tools that are fast and
+// called constantly. Those need opposite fixes and a total cannot separate them.
+check("local time is attributed per tool, with the call count that tells the two stories apart", () => {
+  const rows = toolBreakdown([
+    { ms: 120000, kind: "user", tool: "Bash" },
+    { ms: 180000, kind: "user", tool: "Bash" },
+    { ms: 1000, kind: "user", tool: "Read" },
+    { ms: 1000, kind: "user", tool: "Read" },
+    { ms: 1000, kind: "user", tool: "Read" },
+    { ms: 90000, kind: "assistant", tool: "" },
+  ]);
+  assert.deepStrictEqual(rows, [
+    { tool: "Bash", sec: 300, calls: 2 },
+    { tool: "Read", sec: 3, calls: 3 },
+  ]);
+  assert.strictEqual(toolBreakdownLine(rows), "Bash 300s/2 · Read 3s/3");
+});
+
+// Spreading unattributed time over the named tools would inflate exactly the
+// figure someone is about to act on - and the action it would prompt is cutting
+// a tool that was never the cost.
+check("a gap we could not attribute is its own bucket, not spread over the tools", () => {
+  const rows = toolBreakdown([
+    { ms: 10000, kind: "user", tool: "Bash" },
+    { ms: 50000, kind: "user", tool: "" },
+  ]);
+  assert.deepStrictEqual(rows, [
+    { tool: "(unattributed)", sec: 50, calls: 1 },
+    { tool: "Bash", sec: 10, calls: 1 },
+  ]);
+});
+
+check("a run with no local work at all renders no breakdown, rather than an empty one", () => {
+  assert.strictEqual(toolBreakdownLine(toolBreakdown([{ ms: 5000, kind: "assistant", tool: "" }])), "");
+  assert.strictEqual(toolBreakdownLine([]), "");
+});
+
+// There were two of these objects. The happy path writes its own richer line -
+// it alone knows the cost and the model list - and had grown its own copy of the
+// telemetry fields beside it, so a tool breakdown added to the exit path came
+// out EMPTY on every successful run. Measured, carried by one path, and absent
+// from the one that actually ran: the same defect as the cached-token figure,
+// one file further in. A second copy is how it happened, so a second copy is
+// what fails here.
+check("the telemetry a benchmark row reads is built in exactly one place", () => {
+  const src = fs.readFileSync(new URL("agent.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const constructors = [...src.matchAll(/^\s*(?:runTelemetry = )?\{?\s*clock_minutes:/gm)].length;
+  assert.strictEqual(constructors, 1, "clock_minutes is constructed " + constructors + " times; only buildTelemetry may");
+  assert.match(src, /function buildTelemetry\(\)/);
+  // Assignments only - `let runTelemetry = {}` is the declaration, not a second
+  // source of truth.
+  const assignments = [...src.matchAll(/^\s*runTelemetry = (.+)$/gm)].map((m) => m[1]);
+  assert.ok(assignments.length >= 2, "expected both exits to set the telemetry, found " + assignments.length);
+  assert.deepStrictEqual(
+    assignments.filter((a) => a !== "buildTelemetry();"),
+    [],
+    "every assignment must come from buildTelemetry - a hand-built copy is how the last one drifted",
+  );
+});
+
+// The gap that lost the cached-token figure for three runs was between two
+// files, so this join is checked from both sides too. A quantity the agent
+// measures and the action does not expose is a quantity nobody has.
+check("the timing fields the agent measures reach the benchmark row", () => {
+  const agentSrc = fs.readFileSync(new URL("agent.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const actionSrc = fs.readFileSync(new URL("../action.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const outcomeSrc = fs.readFileSync(new URL("benchmark-outcome.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  // Read here rather than using the module-level `runYml`, which is declared
+  // further down the file: a check that reaches forward to a const throws a
+  // ReferenceError instead of failing, and a suite that crashes stops every
+  // check after it from running at all.
+  const workflow = fs
+    .readFileSync(new URL("../.github/workflows/benchmark-run.yml", import.meta.url), "utf8")
+    .replace(/\r\n/g, "\n");
+  for (const [written, exposed, field] of [
+    ["tool_breakdown", "tool-breakdown", "toolBreakdown"],
+    ["harness_tool_seconds", "harness-tool-seconds", "harnessToolSeconds"],
+  ]) {
+    assert.match(agentSrc, new RegExp(written + ":"), "agent.mjs does not record " + written);
+    assert.match(actionSrc, new RegExp("steps\\.run\\.outputs\\." + written), "action.yml does not expose " + written);
+    assert.match(workflow, new RegExp("--" + exposed + ' "\\$'), "the benchmark invocation does not pass --" + exposed);
+    assert.match(outcomeSrc, new RegExp("^\\s*" + field + ":", "m"), "the row does not carry " + field);
+  }
+  // Absent is not zero, here as everywhere: a run that died before the baseline
+  // spent no harness time, and a run nobody measured is a different answer.
+  assert.match(
+    agentSrc,
+    /harness_tool_seconds: HARNESS_TOOL\.calls \? String\(/,
+    "harness time must be empty rather than 0 when no command ran",
+  );
 });
 
 check("censusHeld catches a suite that got smaller", () => {

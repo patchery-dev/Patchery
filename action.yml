@@ -301,6 +301,25 @@ outputs:
   local-work-seconds:
     description: "The single longest gap between messages, in seconds."
     value: ${{ steps.run.outputs.local_work_seconds }}
+  tool-breakdown:
+    description: >-
+      Where the local half went, per tool, as "name seconds/calls" - busiest
+      first. local-work-seconds says how much; this says through what, and the
+      call count is the point. 300 seconds is one slow suite or six hundred
+      half-second reads, those need opposite fixes, and a total cannot tell them
+      apart. Still the gap AROUND a call rather than the tool's own clock:
+      whatever the SDK spends framing the request is inside these numbers, so a
+      large figure says "this much of the run went through this tool", never
+      "this tool is slow".
+    value: ${{ steps.run.outputs.tool_breakdown }}
+  harness-tool-seconds:
+    description: >-
+      Seconds this action spent running commands itself - the baseline suite, the
+      recount, any extra checks - measured with its own clock rather than
+      inferred from a gap. A floor under real tool time, not the whole of it: the
+      agent's own tools run inside the SDK's child and only their gap is visible
+      from out here. Empty, never 0, when no command ran at all.
+    value: ${{ steps.run.outputs.harness_tool_seconds }}
   tokens-input:
     description: >-
       Fresh input tokens this run spent across every model call, fixer and

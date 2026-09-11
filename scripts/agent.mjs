@@ -51,6 +51,8 @@ import {
   budgetUsageLine,
   gapStats,
   gapStatsLine,
+  toolBreakdown,
+  toolBreakdownLine,
   candidateRecord,
   candidateOutputs,
   harnessCrash,
@@ -482,6 +484,60 @@ function writeStepSummary(md) {
  * record. Called from fail/refuse/stop, which every one of them goes through.
  */
 let telemetrySaid = false;
+
+/**
+ * Every continuous measure the run can report, built in exactly one place.
+ *
+ * There were two of these objects - the happy path writes its own richer line
+ * and had grown its own copy of the fields beside it - and the copies had
+ * already drifted: a tool breakdown added to one of them came out empty on every
+ * successful run, because success never goes through the other. That is the same
+ * defect as the cached-token figure, one file further in: a quantity measured and
+ * then not carried by the path that actually ran.
+ *
+ * So the object has one constructor and the suite pins that it has one. The two
+ * exits still say different things in prose - only the happy path knows the cost
+ * and the model list - but what a benchmark row reads is built here or nowhere.
+ */
+function buildTelemetry() {
+  const usage = budgetUsage(Date.now() - RUN_STARTED_AT, RUN_BUDGET_MIN);
+  let gaps = null;
+  let breakdown = [];
+  try {
+    gaps = gapStats(agentGaps);
+    breakdown = toolBreakdown(agentGaps);
+  } catch {
+    // A telemetry field is never worth ending a run over.
+  }
+  return {
+    clock_minutes: usage ? String(usage.minutes) : "",
+    clock_percent: usage ? String(usage.percent) : "",
+    model_wait_seconds: gaps ? String(gaps.modelSec) : "",
+    local_work_seconds: gaps ? String(gaps.localSec) : "",
+    tool_breakdown: toolBreakdownLine(breakdown),
+    // Empty, never "0", when this process ran no command at all: a run that died
+    // before the baseline spent no harness time, and a run nobody measured is a
+    // different answer.
+    harness_tool_seconds: HARNESS_TOOL.calls ? String(Math.round(HARNESS_TOOL.ms / 1000)) : "",
+  };
+}
+
+/** The breakdown as a log line, or nothing when the run did no local work. */
+function logToolBreakdown() {
+  let breakdown = [];
+  try {
+    breakdown = toolBreakdown(agentGaps);
+  } catch {
+    breakdown = [];
+  }
+  if (breakdown.length) log("  local time by tool: " + toolBreakdownLine(breakdown));
+  if (HARNESS_TOOL.calls) {
+    log(
+      "  of which this harness ran " + HARNESS_TOOL.calls + " command(s) taking " +
+        Math.round(HARNESS_TOOL.ms / 1000) + "s - a floor under real tool time, not the whole of it"
+    );
+  }
+}
 function announceRun() {
   if (telemetrySaid) return;
   telemetrySaid = true;
@@ -533,12 +589,8 @@ function announceRun() {
       partial: !haveResult,
     }) + budgetUsageLine(usage) + gapStatsLine(gaps)
   );
-  runTelemetry = {
-    clock_minutes: usage ? String(usage.minutes) : "",
-    clock_percent: usage ? String(usage.percent) : "",
-    model_wait_seconds: gaps ? String(gaps.modelSec) : "",
-    local_work_seconds: gaps ? String(gaps.localSec) : "",
-  };
+  logToolBreakdown();
+  runTelemetry = buildTelemetry();
 }
 
 function fail(message, outcome = "failed", extra = {}) {
@@ -623,14 +675,47 @@ function git(args, { trim = true } = {}) {
   return trim ? out.trim() : out.replace(/\r?\n+$/, "");
 }
 
+/**
+ * What the harness itself spent running commands, measured rather than inferred.
+ *
+ * 56% of run #13's observable time sat in gaps that did not end at an assistant
+ * message, and we called that "local work". Two blind providers, independently,
+ * refused to let that stand as "tools are slow": it is an attribution from the
+ * END of a gap, not a measurement of what was inside it. The one part of the
+ * inside we can actually see is the commands THIS process runs - the baseline
+ * suite, the recount, the extra checks - because we hold their clock.
+ *
+ * So it is held. This is a floor under real tool time, not the whole of it: the
+ * agent's own tools run inside the SDK's child and only their gap is visible
+ * from here. A floor is still enough to settle the question note 107 posed - if
+ * the suite alone accounts for most of the local half, "tools are slow" stops
+ * being a hypothesis; if it accounts for a sliver, the rest is orchestration and
+ * nothing about the tools would have fixed it.
+ */
+const HARNESS_TOOL = { ms: 0, calls: 0 };
+
+function timed(label, fn) {
+  const started = Date.now();
+  try {
+    return fn();
+  } finally {
+    const took = Date.now() - started;
+    HARNESS_TOOL.ms += took;
+    HARNESS_TOOL.calls++;
+    if (took >= 5000) log("  [" + label + "] " + Math.round(took / 1000) + "s");
+  }
+}
+
 function runTests() {
-  const r = spawnSync(TEST_COMMAND, {
-    cwd: TARGET_DIR,
-    shell: true,
-    encoding: "utf8",
-    env: { ...process.env, CI: "true" },
-    timeout: 15 * 60 * 1000,
-  });
+  const r = timed("test-command", () =>
+    spawnSync(TEST_COMMAND, {
+      cwd: TARGET_DIR,
+      shell: true,
+      encoding: "utf8",
+      env: { ...process.env, CI: "true" },
+      timeout: 15 * 60 * 1000,
+    })
+  );
   const output = (r.stdout ?? "") + (r.stderr ?? "");
   return { ok: r.status === 0, code: r.status, output: output.trim() };
 }
@@ -656,13 +741,15 @@ function writeDiagnosis(fields) {
 
 /** Run one extra check (a lint or a type-check) and report only whether it passed. */
 function runCheck(command) {
-  const r = spawnSync(command, {
-    cwd: TARGET_DIR,
-    shell: true,
-    encoding: "utf8",
-    env: { ...process.env, CI: "true" },
-    timeout: 15 * 60 * 1000,
-  });
+  const r = timed("extra-check", () =>
+    spawnSync(command, {
+      cwd: TARGET_DIR,
+      shell: true,
+      encoding: "utf8",
+      env: { ...process.env, CI: "true" },
+      timeout: 15 * 60 * 1000,
+    })
+  );
   return { ok: r.status === 0, output: ((r.stdout ?? "") + (r.stderr ?? "")).trim() };
 }
 
@@ -1011,6 +1098,11 @@ let result = null;
 // there are guarded for exactly that.
 const agentGaps = [];
 let lastMessageAt = Date.now();
+// What the run is waiting on right now, so the gap that follows can be charged
+// to it. Cleared when a turn's tools have all been seen: a gap after a text-only
+// turn belongs to nothing, and guessing would put orchestration time on a tool's
+// bill - which is the exact error this measurement exists to settle.
+let pendingTool = "";
 let stalledReason = null;
 const stallDetector = createStallDetector({
   repeats: STALL_REPEATS,
@@ -1050,7 +1142,21 @@ try {
     // model thinking; a gap closed by anything else is a tool running locally,
     // and running this project's suite takes minutes. Untagged, the first
     // version of this reported 1889s of "waiting" in a 1920s run.
-    agentGaps.push({ ms: Date.now() - lastMessageAt, kind: message.type });
+    // Tagged by what ended it AND by what it was waiting on. The first is
+    // gapStats; the second is the question two blind providers said the 56%
+    // figure could not answer - not what ended the gap, what filled it. A gap
+    // that ends at anything but an assistant message is the tool named by the
+    // assistant message before it.
+    agentGaps.push({
+      ms: Date.now() - lastMessageAt,
+      kind: message.type,
+      tool: message.type === "assistant" ? "" : pendingTool,
+    });
+    // The call this gap was waiting on is over. Cleared here rather than in the
+    // assistant branch so that a text-only turn leaves it empty: the gap after
+    // "let me think about that" is not a tool running, and charging it to the
+    // last tool named would put orchestration time on that tool's bill.
+    pendingTool = "";
     lastMessageAt = Date.now();
     agentDeadline.touch();
     // Read the spend off every message, not off the result. A run we abort gets
@@ -1065,6 +1171,12 @@ try {
         } else if (block.type === "tool_use") {
           log("[tool] " + block.name + " " + JSON.stringify(block.input).slice(0, 180));
           toolUses.push({ name: block.name, input: block.input });
+          // The first tool of the turn owns the gap that follows. A turn that
+          // asks for several is attributed to the first rather than split
+          // between them: we cannot see which of them the child was running at
+          // any moment, and inventing a split would be a number with no
+          // measurement under it.
+          if (!pendingTool) pendingTool = block.name;
         }
       }
 
@@ -1231,16 +1343,8 @@ log(
     budgetUsageLine(budgetUsage(Date.now() - RUN_STARTED_AT, RUN_BUDGET_MIN)) +
     gapStatsLine(gapStats(agentGaps))
 );
-{
-  const u = budgetUsage(Date.now() - RUN_STARTED_AT, RUN_BUDGET_MIN);
-  const g = gapStats(agentGaps);
-  runTelemetry = {
-    clock_minutes: u ? String(u.minutes) : "",
-    clock_percent: u ? String(u.percent) : "",
-    model_wait_seconds: g ? String(g.modelSec) : "",
-    local_work_seconds: g ? String(g.localSec) : "",
-  };
-}
+logToolBreakdown();
+runTelemetry = buildTelemetry();
 log("-> model(s) used: " + (modelsUsed.join(", ") || "(unknown)"));
 
 // Warn when a custom endpoint was requested but an Anthropic model was reported:

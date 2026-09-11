@@ -230,6 +230,11 @@ export async function runControl(kind) {
     // neither cannot be told apart from one that had nothing to leave.
     diagnosisFile: outputs.diagnosis_file || "",
     tokensTotal: outputs.tokens_total || "",
+    // Where the local half went. A control is the only place this can be read
+    // without paying for a run, and "the field is empty" is a result worth
+    // seeing here rather than discovering in a benchmark table.
+    toolBreakdown: outputs.tool_breakdown || "",
+    harnessToolSeconds: outputs.harness_tool_seconds || "",
     suiteAfter: suite.status,
     stdout: "",
     stderr: "",
@@ -252,6 +257,8 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
     console.log("suite afterwards: exit " + r.suiteAfter);
     console.log("diagnosis file  : " + JSON.stringify(r.diagnosisFile));
     console.log("tokens total    : " + JSON.stringify(r.tokensTotal));
+    console.log("tool breakdown  : " + JSON.stringify(r.toolBreakdown));
+    console.log("harness tool s  : " + JSON.stringify(r.harnessToolSeconds));
     if (!r.outcome) console.log("--- stderr tail ---\n" + r.stderr.split("\n").slice(-15).join("\n"));
   }
 }
