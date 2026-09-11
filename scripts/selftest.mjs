@@ -54,6 +54,7 @@ import {
   attemptPolicy,
 } from "./counterexample.mjs";
 import { benchmarkOutcome, parseArgs, renderOutcome, tokenField } from "./benchmark-outcome.mjs";
+import { renderReport as renderDisappearance } from "./disappearance.mjs";
 import { inlineNodeBlocks, shellInterpolations } from "./check-workflows.mjs";
 import {
   taglineCore,
@@ -2435,6 +2436,42 @@ check("censusHeld passes when the same tests still pass", () => {
 
 // This is the case the whole census exists for: a green run that is green
 // because the tests that would have failed are no longer being run.
+// A corpus of packaging breaks has a shelf life, and quoting a ratio measured
+// against cases that have since evaporated is quoting a number about last year.
+// The rate is a measurement with a date - and these are the rules that keep it
+// from flattering us.
+check("a case that could not be probed is counted in neither figure", () => {
+  const text = renderDisappearance(
+    [
+      { repo: "a/a", package: "p", version: "1", class: "packaging", verdict: "loads" },
+      { repo: "b/b", package: "q", version: "1", class: "packaging", verdict: "still-broken" },
+      { repo: "c/c", package: "r", version: "1", class: "packaging", verdict: "unmeasured", why: "registry timeout" },
+    ],
+    { node: "v24.0.0", when: "2026-09-11" },
+  );
+  assert.match(text, /packaging: \*\*1 of 3\*\*/, "an unmeasured case must not be counted as having survived");
+  assert.match(text, /1 case\(s\) could not be measured/);
+  assert.match(text, /not evidence that a break survived/);
+});
+
+// The two classes answer different questions and a single headline over both
+// would be four-fifths decided by the easier half - the same rule the benchmark
+// report already follows for break classes.
+check("the disappearance figure is never printed without its split", () => {
+  const text = renderDisappearance(
+    [
+      { repo: "a/a", package: "p", version: "1", class: "packaging", verdict: "loads" },
+      { repo: "b/b", package: "q", version: "1", class: "api", verdict: "loads" },
+    ],
+    { node: "v24.0.0", when: "2026-09-11" },
+  );
+  assert.match(text, /packaging: \*\*1 of 1\*\*/);
+  assert.match(text, /api: \*\*1 of 1\*\*/);
+  assert.match(text, /it means nothing/, "a loading package says nothing about an api break");
+  assert.match(text, /Upper bound, not the answer/, "the limit must travel with the number");
+  assert.match(text, /Measured 2026-09-11 on Node v24\.0\.0/, "a rate with no date and no runtime is not a measurement");
+});
+
 check("censusHeld catches a suite that got smaller", () => {
   const shrunk = "Tests:       0 skipped, 900 passed, 900 total\n";
   const r = censusHeld(census(JEST_GREEN), census(shrunk));

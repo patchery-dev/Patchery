@@ -1,0 +1,132 @@
+{
+  "node": "v24.20.0",
+  "when": "2026-09-11T13:12:13.473Z",
+  "rows": [
+    {
+      "repo": "bcoe/yargs",
+      "package": "which",
+      "version": "7",
+      "class": "api",
+      "verdict": "loads",
+      "why": "",
+      "engines": "^22.22.2 || ^24.15.0 || >=26.0.0"
+    },
+    {
+      "repo": "expressjs/body-parser",
+      "package": "content-type",
+      "version": "3",
+      "class": "packaging",
+      "verdict": "loads",
+      "why": "",
+      "engines": ">=22"
+    },
+    {
+      "repo": "expressjs/body-parser",
+      "package": "raw-body",
+      "version": "4",
+      "class": "packaging",
+      "verdict": "loads",
+      "why": "",
+      "engines": ">=22"
+    },
+    {
+      "repo": "expressjs/express",
+      "package": "content-disposition",
+      "version": "3",
+      "class": "packaging",
+      "verdict": "loads",
+      "why": "",
+      "engines": ">=22"
+    },
+    {
+      "repo": "expressjs/express",
+      "package": "content-type",
+      "version": "3",
+      "class": "packaging",
+      "verdict": "loads",
+      "why": "",
+      "engines": ">=22"
+    },
+    {
+      "repo": "expressjs/multer",
+      "package": "append-field",
+      "version": "2",
+      "class": "packaging",
+      "verdict": "loads",
+      "why": "",
+      "engines": "^12.20.0 || ^14.13.1 || >=16.0.0"
+    },
+    {
+      "repo": "jquense/yup",
+      "package": "type-fest",
+      "version": "5",
+      "class": "packaging",
+      "verdict": "still-broken",
+      "why": "node:internal/modules/cjs/loader:761\r",
+      "engines": ">=20"
+    },
+    {
+      "repo": "mozilla/treeherder",
+      "package": "@fortawesome/fontawesome-svg-core",
+      "version": "7",
+      "class": "api",
+      "verdict": "loads",
+      "why": "",
+      "engines": ">=6"
+    },
+    {
+      "repo": "node-fetch/node-fetch",
+      "package": "data-uri-to-buffer",
+      "version": "8",
+      "class": "packaging",
+      "verdict": "loads",
+      "why": "",
+      "engines": ">= 20"
+    },
+    {
+      "repo": "node-fetch/node-fetch",
+      "package": "fetch-blob",
+      "version": "4",
+      "class": "packaging",
+      "verdict": "still-broken",
+      "why": "node:internal/modules/esm/module_job:313\r",
+      "engines": ">=16.7"
+    },
+    {
+      "repo": "nodemailer/nodemailer",
+      "package": "proxy",
+      "version": "4",
+      "class": "packaging",
+      "verdict": "loads",
+      "why": "",
+      "engines": ">= 20"
+    },
+    {
+      "repo": "winstonjs/winston",
+      "package": "is-stream",
+      "version": "4",
+      "class": "packaging",
+      "verdict": "loads",
+      "why": "",
+      "engines": ">=18"
+    },
+    {
+      "repo": "winstonjs/winston",
+      "package": "readable-stream",
+      "version": "4",
+      "class": "api",
+      "verdict": "loads",
+      "why": "",
+      "engines": "^12.22.0 || ^14.17.0 || >=16.0.0"
+    },
+    {
+      "repo": "winstonjs/winston",
+      "package": "through2",
+      "version": "5",
+      "class": "packaging",
+      "verdict": "loads",
+      "why": "",
+      "engines": ""
+    }
+  ]
+}
