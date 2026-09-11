@@ -1835,11 +1835,28 @@ check("a Node planted in front by setup-node stops being the one found", () => {
 // plain object is not - so writing "PATH" onto a copy that already has "Path"
 // hands the child two of them and lets it choose. That is the whole bug class
 // this project keeps meeting: a fix that looks applied and is not.
-check("on Windows the existing `Path` is edited, not shadowed by a second key", () => {
-  const out = withOwnNodeFirst({ Path: "C:\\Windows\\System32", USERNAME: "x" }, "C:\\node24\\node.exe");
+// The fixture is built from the running platform's own path shapes, not from a
+// hard-coded `C:\node24`. A Windows path is only a path on Windows: on Linux
+// `path.dirname("C:\\node24\\node.exe")` is ".", so withOwnNodeFirst correctly
+// declines to touch anything, and `sep` is ":" so the assertion then cuts the
+// drive letter off and compares "C". This suite was green on a Windows desktop
+// and red on every CI run for 19 hours on exactly that, reporting a drive
+// letter - which reads like a product bug and is not one. The function uses the
+// delimiter and the parser of the platform it runs on, which is the only
+// correct choice, so the test has to do the same.
+//
+// What is being tested is the KEY, and that is platform-independent: Windows
+// spells it `Path`, process.env is a case-insensitive proxy there and a plain
+// object is not, so writing "PATH" onto a copy that already has "Path" hands
+// the child two of them and lets it choose. That is the bug class this project
+// keeps meeting - a fix that looks applied and is not.
+check("an existing `Path` is edited in place, not shadowed by a second key", () => {
+  const nodeDir = path.join(path.sep, "node24");
+  const systemDir = path.join(path.sep, "system32");
+  const out = withOwnNodeFirst({ Path: systemDir, USERNAME: "x" }, path.join(nodeDir, "node.exe"));
   const pathKeys = Object.keys(out).filter((k) => k.toLowerCase() === "path");
   assert.deepStrictEqual(pathKeys, ["Path"], "expected exactly one PATH key, keeping its original spelling");
-  assert.strictEqual(out.Path.split(sep)[0], "C:\\node24");
+  assert.strictEqual(out.Path, nodeDir + sep + systemDir);
 });
 check("an environment with no PATH at all gets one", () => {
   const out = withOwnNodeFirst({ HOME: "/root" }, "/opt/node24/bin/node");
