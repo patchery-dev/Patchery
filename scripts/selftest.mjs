@@ -147,6 +147,7 @@ import {
 } from "./guard.mjs";
 import { createStderrSink, stderrNote } from "./sdk-stderr.mjs";
 import { withOwnNodeFirst, childNodeLine } from "./sdk-env.mjs";
+import { COUNTING, countingRule, countingPromise } from "./counting.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -1710,6 +1711,62 @@ check("the message says what to do about it", () =>
   assert.match(timeoutReason("reviewer", 20), /model-timeout-minutes/)
 );
 
+console.log("\nthe product may not tell you how it will be counted");
+// Run #13 printed "is reported as `harness-error` so it stays out of any
+// success ratio" seven times, while benchmark-outcome.mjs filed every one of
+// those runs as CRASHED - inside the denominator. Nothing could catch it,
+// because the counting rule had no machine-readable home to disagree with.
+// counting.mjs is that home; these are the checks that keep the two in step.
+check("every outcome the benchmark can file has a counting decision", () => {
+  const src = fs.readFileSync(path.join(root, "scripts", "benchmark-outcome.mjs"), "utf8");
+  const filed = [...new Set([...src.matchAll(/outcome:\s*"([A-Z][A-Z-]*)"/g)].map((m) => m[1]))];
+  assert.ok(filed.length >= 8, "expected benchmark-outcome to still file outcomes; found " + filed.length);
+  const undecided = filed.filter((o) => !COUNTING[o]);
+  assert.deepStrictEqual(undecided, [], "outcomes with no counting rule: " + JSON.stringify(undecided));
+});
+// The expensive direction. Widening this list is how a success rate quietly
+// becomes a rate over the runs that went well, so the count is pinned rather
+// than the membership.
+check("exactly one outcome is out of the denominator, and it is BLOCKED", () => {
+  const out = Object.entries(COUNTING).filter(([, r]) => !r.counted).map(([o]) => o);
+  assert.deepStrictEqual(out, ["BLOCKED"]);
+});
+check("an outcome nobody decided on throws, rather than defaulting", () => {
+  assert.throws(() => countingRule("SOMETHING-NEW"), /no counting rule/);
+  assert.strictEqual(countingRule("CRASHED").counted, true);
+  assert.strictEqual(countingRule("BLOCKED").counted, false);
+});
+// Positive control for the detector itself, on the exact sentence that shipped.
+check("the detector catches the sentence that actually shipped", () => {
+  assert.strictEqual(
+    countingPromise('fail("... is reported as `harness-error` so it stays out of any success ratio.")'),
+    "stays out of any success ratio"
+  );
+  assert.ok(countingPromise('log("this run is excluded from the success rate")'));
+  assert.ok(countingPromise('log("kept out of the denominator")'));
+});
+// A comment explaining the rule to the next developer is the right place for
+// it. A string is what reaches the operator's log. Only the second is banned,
+// and the detector has to tell them apart or it would forbid the explanation
+// along with the lie.
+check("a counting rule explained in a comment is not a promise to an operator", () => {
+  assert.strictEqual(countingPromise("// filed as BLOCKED and kept out of the denominator"), null);
+  assert.strictEqual(countingPromise("/* stays out of any success ratio */"), null);
+  assert.ok(countingPromise('const m = "kept out of the denominator";'), "a string still counts");
+});
+// The contract itself: message_for(outcome) may not state counting_rule_for(outcome).
+// A tool cannot declare its own exclusion - whether a run counts is a decision
+// about the measurement, made by whoever fixed the denominator before the
+// results were seen.
+check("no string the product can print promises anything about counting", () => {
+  const offenders = [];
+  for (const file of ["guard.mjs", "agent.mjs", "benchmark-outcome.mjs", "test-census.mjs"]) {
+    const hit = countingPromise(fs.readFileSync(path.join(root, "scripts", file), "utf8"));
+    if (hit) offenders.push(file + ': "' + hit + '"');
+  }
+  assert.deepStrictEqual(offenders, [], "counting promise in a printable string: " + offenders.join(" | "));
+});
+
 console.log("\nnothing agent.mjs writes to disk escapes redaction");
 // A patch is the one file here whose content is the agent's own edits rather
 // than our prose, so it is where a key the agent copied out of the environment
@@ -1982,10 +2039,16 @@ check("nothing thrown is not a diagnosis", () => {
   assert.strictEqual(harnessCrash(""), null);
   assert.strictEqual(harnessCrash(new Error("   ")), null);
 });
-check("the message keeps the raw error and says why it is out of the ratio", () => {
+// The name of this check used to end "...and says why it is out of the ratio",
+// which was the same false claim the message made, asserted back at it. A test
+// whose name states the defect it is guarding against will read as proof that
+// the defect is intended.
+check("the message keeps the raw error, names the outcome, and claims nothing about counting", () => {
   const m = harnessCrash("Claude Code process exited with code 1");
   assert.match(m, /process exited with code 1/);
   assert.match(m, /harness-error/);
+  assert.match(m, /says nothing about whether the break is fixable/);
+  assert.strictEqual(countingPromise('"' + m + '"'), null);
 });
 // The two files are joined by nothing but this word, exactly as with
 // blocked-by-guard above.

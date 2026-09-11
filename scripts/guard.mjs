@@ -1483,7 +1483,14 @@ export function timeoutReason(label, minutes) {
  * never alive long enough to offer anything. Three cases sat in that column.
  *
  * It belongs with the treeherder case (a source file three times the SDK's read
- * limit): our side of the fence, so `harness-error`, so out of the denominator.
+ * limit): our side of the fence, so `harness-error`.
+ *
+ * Not "so out of the denominator", which is what this comment used to say and
+ * what the message below used to print. A runtime we ship dying is the tool
+ * under test failing, not the measuring apparatus failing - the benchmark files
+ * it as CRASHED and counts it. The two harnesses are different things and
+ * conflating them is how a defect we shipped would have been excused as an
+ * outage we suffered. Where the line is drawn now lives in counting.mjs.
  *
  * Deliberately narrow. Anything that leaves the denominator has to earn it, and
  * a bug in our own code throwing inside the message loop is a real failure that
@@ -1505,12 +1512,23 @@ export function harnessCrash(err) {
     // The CLI the SDK shells out to was never there to begin with.
     /\bENOENT\b/.test(text);
   if (!runtimeDied) return null;
+  // Three propositions, kept apart on purpose, and a fourth deliberately absent.
+  //
+  //   what happened      the runtime stopped, and here is what it said
+  //   what it does not say   nothing about whether this break is fixable
+  //   what it is filed as    `harness-error`, the name the benchmark reads
+  //
+  // Absent: whether this run counts. That is a decision about the measurement,
+  // made by whoever fixed the denominator before the results were seen, and a
+  // tool cannot declare its own exclusion. The old sentence claimed it did -
+  // "so it stays out of any success ratio" - while the benchmark counted every
+  // one of those runs. selftest now fails if any printable string makes that
+  // kind of promise again; the rule itself lives in counting.mjs.
   return (
     "the agent runtime stopped before the agent reached a conclusion: " +
     text +
-    ". This is our harness failing, not the agent having nothing to offer - the run " +
-    "says nothing about whether the break is fixable, and is reported as " +
-    "`harness-error` so it stays out of any success ratio."
+    ". The run says nothing about whether the break is fixable - the agent never " +
+    "reached a conclusion there was anything to judge. Filed as `harness-error`."
   );
 }
 
